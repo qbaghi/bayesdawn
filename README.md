@@ -62,6 +62,8 @@ The noisy data is then
   y = s + n
 ```
 
+2. Introduction of data gaps
+
 Now assume that some data are missing, i.e. the time series is cut by random gaps.
 The pattern is represented by a mask vector with entries equal to 1 when data
 is observed, and 0 otherwise:
@@ -81,6 +83,8 @@ Therefore, we do not observe the data y but its masked version, mask*y:
   y = s + n
   y = mask * y
 ```
+
+3. Missing data imputation
 
 Assune that we know exactly the deterministic signal:
 
