@@ -1,6 +1,5 @@
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
-import os
 from os import path
 # io.open is needed for projects that support Python 2.7
 # It ensures open() defaults to text mode with universal newlines,
@@ -51,7 +50,6 @@ setup(
     packages=find_packages(),
     python_requires='>=3.5',
     install_requires=['numpy', 'scipy', 'pyfftw', 'ptemcee', 'h5py'],
-    cmdclass=cmdclass,
 
 )
 
