@@ -8,27 +8,11 @@ from os import path
 # Python 3 only projects can skip this import
 from io import open
 
-# For cython modules
-from distutils.core import setup
-from distutils.extension import Extension
-from Cython.Distutils import build_ext
-import numpy
-
-
 here = path.abspath(path.dirname(__file__))
 # Get the long description from the README file
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-
-# Cython module compilation
-cmdclass = { }
-ext_modules = [ ]
-
-ext_modules += [
-    Extension("bayesdawn.dns.sandwich", [ "bayesdawn/dns/sandwich.pyx" ]),
-]
-cmdclass.update({'build_ext': build_ext })
 
 # Arguments marked as "Required" below must be included for upload to PyPI.
 # Fields marked as "Optional" may be commented out.
@@ -39,7 +23,7 @@ setup(
     description='A bayesian data augmentation algorithm',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/pypa/sampleproject',
+    url='https://github.com/qbaghi/bayesdawn',
     author='Quentin Baghi',
     author_email='quentin.baghi@protonmail.com',
     classifiers=[  # Optional
@@ -66,10 +50,8 @@ setup(
     keywords='bayesesian data analysis',
     packages=find_packages(),
     python_requires='>=3.5',
-    install_requires=['numpy', 'scipy', 'pyfftw', 'ptemcee', 'h5py', 'cython'],
+    install_requires=['numpy', 'scipy', 'pyfftw', 'ptemcee', 'h5py'],
     cmdclass=cmdclass,
-    ext_modules=ext_modules,
-    include_dirs=[numpy.get_include(), os.path.join(numpy.get_include(), 'numpy')]
 
 )
 
