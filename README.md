@@ -27,8 +27,7 @@ To begin with, we generate some simple time series which contains noise and sign
 To generate the noise, we start with a white, zero-mean Gaussian noise that
 we then filter to obtain a stationary colored noise:
 
-.. code-block::
-
+```python
   # Import mecm and other useful packages
   from bayesdawn import imputation
   import numpy as np
@@ -42,16 +41,17 @@ we then filter to obtain a stationary colored noise:
   r = 0.01
   b, a = signal.butter(3, 0.1/0.5, btype='high', analog=False)
   n = signal.lfilter(b,a, noise, axis=-1, zi=None) + noise*r
+```
 
 Then we need a deterministic signal to add. We choose a sinusoid with some
 frequency f0 and amplitude a0:
 
-.. code-block::
-
+```python
   t = np.arange(0,N)
   f0 = 1e-2
   a0 = 5e-3
   s = a0*np.sin(2*np.pi*f0*t)
+```
 
 We just have generated a time series that can be written in the form
 
@@ -63,13 +63,13 @@ Now assume that some data are missing, i.e. the time series is cut by random gap
 The pattern is represented by a mask vector M with entries equal to 1 when data
 is observed, and 0 otherwise:
 
-.. code-block::
-
+```python
   mask = np.ones(N)
   Ngaps = 30
   gapstarts = (N*np.random.random(Ngaps)).astype(int)
   gaplength = 10
   gapends = (gapstarts+gaplength).astype(int)
   for k in range(Ngaps): mask[gapstarts[k]:gapends[k]]= 0
+```
 
 Therefore, we do not observe y but its masked version, mask*y.
