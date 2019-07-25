@@ -2,7 +2,7 @@
 import numpy as np
 import ptemcee
 import h5py
-from .. import gaps
+from . import gaps
 
 # FTT modules
 import pyfftw
@@ -289,7 +289,7 @@ class fullSampler(FullModel):
         signal_cls : instance of GibbsModel
             the class providing the log likelihood function and auxiliary parameters
             update functions.
-        psd_cls : instance of PSD_spline class
+        psd_cls : instance of PSDSpline class
             class defining the noise model and methods necessary to update its parameters
         imp_cls : instance of the approximp class
             class defining the way to perform missing data imputation

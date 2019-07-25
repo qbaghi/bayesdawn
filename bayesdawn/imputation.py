@@ -9,7 +9,7 @@ This module provide classes to perform missing data imputation steps based on
 Gaussian conditional model
 """
 
-from gaps import gapgenerator
+from .gaps import gapgenerator
 import numpy as np
 import time
 from scipy import linalg as LA
@@ -78,7 +78,7 @@ class nearestNeighboor(object):
         # Indices of observed data
         self.ind_obs = np.where(M == 1)[0]
 
-    def conditionalDraw(self, z_o, S_2N, CooI, C_mo, ind_obs, ind_mis, M):
+    def conditionalDraw(self, z_o, S_2N, CooI, C_mo, ind_obs, ind_mis, M, C):
         """
         Function performing random draws of the complete data noise vector
         conditionnaly on the observed data.
@@ -118,7 +118,8 @@ class nearestNeighboor(object):
 
         # the size of the vector that is randomly drawn is
         # equal to the size of the mask.
-        e = np.real(noise.generateNoiseFromDSP(np.sqrt(S_2N*2.), 1.)[0:M.shape[0]])
+        # e = np.real(noise.generateNoiseFromDSP(np.sqrt(S_2N*2.), 1.)[0:M.shape[0]])
+        e = np.random.multivariate_normal(np.zeros(M.shape[0]), C[0:M.shape[0], 0:M.shape[0]])
 
         # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
         eps = e[ind_mis] + C_mo.dot(CooI.dot(z_o - e[ind_obs]))
@@ -229,7 +230,7 @@ class nearestNeighboor(object):
         #C_mm = C[np.ix_(ind_misj,ind_misj)]
         CooI = LA.inv(C[np.ix_(ind_obsj, ind_obsj)])
 
-        out = self.conditionalDraw(yj[ind_obsj], S_2N, CooI, C_mo, ind_obsj, ind_misj, Mj)
+        out = self.conditionalDraw(yj[ind_obsj], S_2N, CooI, C_mo, ind_obsj, ind_misj, Mj, C)
         #out = conditionalDraw2(yj[ind_obsj],C_mm,C_mo,CooI)
 
         return out

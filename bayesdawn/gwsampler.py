@@ -10,7 +10,7 @@ import numpy as np
 from scipy import linalg as LA
 from . import mhmcmc
 from bayesdawn.bayesdawn.waveforms import wavefuncs, lisaresp
-from ..gaps import gapgenerator
+from .gaps import gapgenerator
 
 # FTT modules
 import pyfftw
