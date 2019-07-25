@@ -9,7 +9,7 @@ This module provide classes to perform missing data imputation steps based on
 Gaussian conditional model
 """
 
-from .gaps import gapgenerator
+from gaps import gapgenerator
 import numpy as np
 import time
 from scipy import linalg as LA

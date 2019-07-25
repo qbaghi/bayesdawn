@@ -2,7 +2,7 @@
 import numpy as np
 import ptemcee
 import h5py
-from .gaps import gapgenerator
+from .. import gaps
 
 # FTT modules
 import pyfftw
@@ -38,7 +38,7 @@ class FullModel(object):
 
         # Windowing smoothing parameter (optimized for signal estimation)
         self.n_wind = n_wind
-        self.w = gapgenerator.modified_hann(self.signal_cls.N, n_wind=self.n_wind)
+        self.w = gaps.gapgenerator.modified_hann(self.signal_cls.N, n_wind=self.n_wind)
         # Normalization constant for signal amplitude
         self.K1 = np.sum(self.w)
 

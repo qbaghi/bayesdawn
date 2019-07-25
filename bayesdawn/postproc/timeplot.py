@@ -12,9 +12,6 @@ import os
 import numpy as np
 import h5py
 import time
-import copy
-
-import tdi
 
 # FTT modules
 import pyfftw
@@ -24,11 +21,8 @@ from pyfftw.interfaces.numpy_fft import fft, ifft
 
 # Plot modules
 import myplots
-import seaborn as sns
-import matplotlib as mpl
 import matplotlib.pyplot as plt
-from mpl_toolkits.axes_grid1.inset_locator import zoomed_inset_axes, mark_inset, inset_axes
-from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+from mpl_toolkits.axes_grid1.inset_locator import mark_inset, inset_axes
 
 from scipy import linalg as LA
 

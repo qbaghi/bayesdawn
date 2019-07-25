@@ -9,7 +9,7 @@ Class to set up a simple Metropolis Hasting sampler for the PSD parameters
 """
 
 import numpy as np
-from .psd import psdspline2
+from ..psd import psdspline2
 from . import mhmcmc
 from scipy import interpolate
 
