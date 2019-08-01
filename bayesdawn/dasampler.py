@@ -1,6 +1,7 @@
 
 import numpy as np
 import ptemcee
+import cpnest
 import h5py
 from . import gaps
 
@@ -12,7 +13,7 @@ from pyfftw.interfaces.numpy_fft import fft, ifft
 
 class FullModel(object):
 
-    def __init__(self, y, mask, p0_aux, signal_cls, psd_cls=None, imp_cls=None, outdir='./', rescale=None,
+    def __init__(self, y, mask, p0_aux, signal_cls, psd_cls=None, imp_cls=None, outdir='./',
                  n_wind=500, n_wind_psd=500000, prefix='samples'):
         # Data vector in time domain
         self.y = y
@@ -32,10 +33,6 @@ class FullModel(object):
 
         self.psd_file_name = prefix + '_psd.hdf5'
 
-        # Signal parameter boundaries
-        self.lo, self.hi = signal_cls.get_lohi()
-        self.ndim = len(self.lo)
-
         # Windowing smoothing parameter (optimized for signal estimation)
         self.n_wind = n_wind
         self.w = gaps.gapgenerator.modified_hann(self.signal_cls.N, n_wind=self.n_wind)
@@ -47,16 +44,16 @@ class FullModel(object):
 
         if self.imp_cls is not None:
             # If the missing data imputation is activated, then the window for PSD does not have gaps
-            self.w_psd = gapgenerator.modified_hann(self.signal_cls.N, n_wind=self.n_wind_psd)
+            self.w_psd = gaps.gapgenerator.modified_hann(self.signal_cls.N, n_wind=self.n_wind_psd)
 
         else:
             # If the missing data imputation is disabled, we have to take the gaps (if any) into account in the
             # windowing
             if any(mask == 0):
-                nd, nf = gapgenerator.findEnds(mask)
-                self.w_psd = gapgenerator.windowing(nd, nf, self.N, window='modified_hann', n_wind=self.n_wind_psd)
+                nd, nf = gaps.gapgenerator.findEnds(mask)
+                self.w_psd = gaps.gapgenerator.windowing(nd, nf, self.N, window='modified_hann', n_wind=self.n_wind_psd)
             else:
-                self.w_psd = gapgenerator.modified_hann(self.signal_cls.N, n_wind=self.n_wind_psd)
+                self.w_psd = gaps.gapgenerator.modified_hann(self.signal_cls.N, n_wind=self.n_wind_psd)
 
         # Normalization constant for noise amplitude
         self.K1_psd = np.sum(self.w_psd)
@@ -64,26 +61,16 @@ class FullModel(object):
         self.K2_psd = np.sum(self.w_psd ** 2)
         # Windowed signal DFT optimized for PSD estimation
         self.y_fft_psd = fft(self.y * self.w_psd)
-
-        # Rescaling of parameters
-        if rescale is None:
-            self.rescale = np.ones(self.ndim)
-        else:
-            self.rescale = rescale
-            self.lo *= 1. / rescale
-            self.hi *= 1. / rescale
-
         self.psd_samples = []
         self.psd_logpvals = []
         self.psd_save = 1
 
-
-    def logl(self, params, S, y_fft):
-        """
-        log-likelihood taking into account parameter rescaling.
-        """
-
-        return self.signal_cls.log_likelihood(params * self.rescale, S, y_fft)
+    # def logl(self, params, S, y_fft):
+    #     """
+    #     log-likelihood taking into account parameter rescaling.
+    #     """
+    #
+    #     return self.signal_cls.log_likelihood(params * self.rescale, S, y_fft)
 
     def update_miss(self, pos0):
         """
@@ -105,7 +92,7 @@ class FullModel(object):
 
             if self.psd_cls is None:
                 # Draw the signal
-                y_gw_fft = self.signal_cls.draw_frequency_signal(pos0 * self.rescale, self.S)
+                y_gw_fft = self.signal_cls.draw_frequency_signal(pos0, self.S)
                 # Inverse Fourier transform back in time domain
             y_gw = np.real(ifft(y_gw_fft))
             # Draw the missing data
@@ -134,7 +121,7 @@ class FullModel(object):
         # PSD POSTERIOR STEP
         if self.psd_cls is not None:
             # Draw the signal (windowed DFT)
-            y_gw_fft = self.signal_cls.draw_frequency_signal(pos0 * self.rescale, self.S, self.y_fft)
+            y_gw_fft = self.signal_cls.draw_frequency_signal(pos0, self.S, self.y_fft)
             # Calculation of the model residuals
             z_fft = self.y_fft_psd - self.K1_psd / self.N * y_gw_fft
             # Update periodogram
@@ -204,7 +191,7 @@ class FullModel(object):
         # Initialization of PSD parameters and missing data
         if self.psd_cls is not None:
             # Draw the signal (windowed DFT)
-            y_gw_fft = self.signal_cls.draw_frequency_signal(pos0 * self.rescale, self.S, self.y_fft)
+            y_gw_fft = self.signal_cls.draw_frequency_signal(pos0, self.S, self.y_fft)
             # Calculation of the model residuals
             z_fft = self.y_fft_psd - self.K1_psd / self.N * y_gw_fft
             # Initialization of periodogram
@@ -268,7 +255,7 @@ class FullModel(object):
 
 class fullSampler(FullModel):
 
-    def __init__(self, y, mask, p0_aux, signal_cls, psd_cls=None, imp_cls=None, outdir='./', rescale=None,
+    def __init__(self, y, mask, p0_aux, signal_cls, psd_cls=None, imp_cls=None, outdir='./',
                  prefix='samples', order=None, nwalkers=12, ntemps=10, n_wind=500, n_wind_psd=500000):
         """
         
@@ -295,10 +282,6 @@ class fullSampler(FullModel):
             class defining the way to perform missing data imputation
         outdir : string
             where to store the psd results and other things
-        rescale : array_like
-            vector of same size of the GW signal parameter vector, which apply
-            a rescaling of the parameters (can be usefull for numerical reasons,
-            so that all parameters have roughly the same magnitude)
         nwalkers : scalar integer
             number of chains to use
         ntemps : scalar integer
@@ -324,11 +307,11 @@ class fullSampler(FullModel):
         """
 
         FullModel.__init__(self, y, mask, p0_aux, signal_cls, psd_cls=psd_cls, imp_cls=imp_cls, outdir=outdir,
-                           rescale=rescale, n_wind=n_wind, n_wind_psd=n_wind_psd, prefix=prefix)
+                           n_wind=n_wind, n_wind_psd=n_wind_psd, prefix=prefix)
 
         if order is None:
             self.logp = self.signal_cls.logp
-            self.logpargs = [self.lo, self.hi]
+            self.logpargs = [self.signal_cls.lo, self.signal_cls.hi]
         else:
             self.logp = self.signal_cls.logpo
             self.logpargs = [self.lo, self.hi, order[0], order[1]]
@@ -338,7 +321,7 @@ class fullSampler(FullModel):
         # ---------------------------------------------------------------------
         # Parallel-tempered MCMC with several chains and affine invariant
         # swaps
-        self.sampler = ptemcee.Sampler(nwalkers, self.ndim, self.logl,
+        self.sampler = ptemcee.Sampler(nwalkers, self.signal_cls.ndim_tot, signal_cls.log_likelihood,
                                        self.logp, ntemps=ntemps,
                                        loglargs=p0_aux, logpargs=self.logpargs)
         # Define the sampling function
@@ -426,3 +409,98 @@ class fullSampler(FullModel):
 
         return fullchain
 
+
+class MyCPModel(cpnest.model.Model):
+
+    def __init__(self, signal_cls, spectrum, y_fft):
+
+        names = signal_cls.names
+        bounds = signal_cls.bounds
+
+        self.signal_model = signal_cls
+        self.spectrum = spectrum
+        self.y_fft = y_fft
+
+    def log_likelihood(self, params):
+
+        return self.signal_model.log_likelihood(params, self.spectrum, self.y_fft)
+
+
+class CPSampler(FullModel):
+
+    def __init__(self, y, mask, p0_aux, signal_cls, psd_cls=None, imp_cls=None, outdir='./', rescale=None,
+                 prefix='samples', order=None, nlive=12, n_wind=500, n_wind_psd=500000):
+        """
+
+        Class to sample GW signal parameters, noise parameters and missing data with CPNest.
+
+        Parameters
+        ----------
+        y : array_like
+            data in the time domain, possiby masked by a binary mask (missing
+            values are indicated by zeros)
+        mask : array_like
+            binary mask vector with entries 0 if data is missing and 1 if data
+            is observed.
+        p0_aux : list of array_like
+            initial guess for the auxiliary data (S,y_fft). We assume that
+            y_fft is properly normalized so that it takes into account any
+            possible windowing or masking applied to the time series
+        signal_cls : instance of GibbsModel
+            the class providing the log likelihood function and auxiliary parameters
+            update functions.
+        psd_cls : instance of PSDSpline class
+            class defining the noise model and methods necessary to update its parameters
+        imp_cls : instance of the approximp class
+            class defining the way to perform missing data imputation
+        outdir : string
+            where to store the psd results and other things
+        rescale : array_like
+            vector of same size of the GW signal parameter vector, which apply
+            a rescaling of the parameters (can be usefull for numerical reasons,
+            so that all parameters have roughly the same magnitude)
+        nlive : scalar integer
+            number of live points
+        n_wind : scalar integer
+            smoothing parameter of the Tukey window applied to the signal to
+            prevent noise leakage for the GW parameter estimation
+        n_wind_psd : scalar integer
+            smoothing parameter of the Tukey window applied to the residuals to
+            prevent leakage for noise PSD estimation
+
+
+
+
+        Returns
+        -------
+        noise_params_new : array_like
+            updated PSD parameters
+
+
+
+
+        """
+
+        FullModel.__init__(self, y, mask, p0_aux, signal_cls, psd_cls=psd_cls, imp_cls=imp_cls, outdir=outdir,
+                           rescale=rescale, n_wind=n_wind, n_wind_psd=n_wind_psd, prefix=prefix)
+
+        if order is None:
+            self.logp = self.signal_cls.logp
+            self.logpargs = [self.lo, self.hi]
+        else:
+            self.logp = self.signal_cls.logpo
+            self.logpargs = [self.lo, self.hi, order[0], order[1]]
+
+
+        # CPNest model
+        gwmodel = MyCPModel(signal_cls, self.S, self.y_fft)
+
+
+        # ---------------------------------------------------------------------
+        # Instantiate the GW parameter sampler
+        # ---------------------------------------------------------------------
+        # Parallel-tempered MCMC with several chains and affine invariant
+        # swaps
+        self.sampler = cpnest.CPNest(gwmodel)
+        # Define the sampling function
+        self.sample = self.sampler.sample

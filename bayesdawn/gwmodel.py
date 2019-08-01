@@ -29,19 +29,45 @@ class GWModel(object):
 
     """
 
+    def __init__(self,
+                 smodel,
+                 names=['theta','phi','f_0','f_dot'],
+                 bounds=[[0, np.pi], [0, 2*np.pi], [1e-4, 1e-3], [1e-15, 1e-10]],
+                 distribs = ['uniform', 'uniform', 'symbeta', 'uniform'],
+                 timevect=[],
+                 tdi='X1',
+                 fmin=1e-4,
+                 fmax=1e-2,
+                 nsources=1,
+                 rescale=None):
+        """
 
-    def __init__(self,names=['theta','phi','f_0','f_dot'],
-        bounds=[[0,np.pi],[0.2*np.pi],[1e-4,1e-3],[1e-15,1e-10]],
-        distribs = ['uniform','uniform','symbeta','uniform'],
-        matmodeltype = 'chirping_GB_4p',
-        timevect=[],
-        tdi = 'X1',
-        Phi_rot = 0,
-        S_min = 1e-45,
-        nc = 20,
-        fmin = 1e-4,
-        fmax = 1e-2,
-        nsources = 1):
+        Parameters
+        ----------
+        smodel : instance of waveform.lisaresp.GWwaveform
+            GW LISA response model class
+        names : list of strings
+            parameter names
+        bounds : list of lists
+            parameter boundaries
+        distribs : list of string
+            parameter prior distribution
+        timevect : numpy array
+            time vector
+        tdi : string
+            type of tdi channel
+        fmin : scalar float
+            mininum frequency where to compute the likelihood
+        fmax : scalar float
+            maximum frequency where to compute the likelihood
+        nsources : scalar integer
+            number of considered sources in the analysis
+        rescale : array_like
+            vector of same size of the GW signal parameter vector, which apply
+            a rescaling of the parameters (can be usefull for numerical reasons,
+            so that all parameters have roughly the same magnitude)
+        """
+
 
         # ======================================================================
         # Initialization of fixed data / parameters
@@ -52,21 +78,25 @@ class GWModel(object):
         self.names = names
         # Boundaries of parameters
         self.bounds = bounds
-        self.lo,self.hi = self.get_lohi()
+        self.lo = np.array([bound[0] for bound in self.bounds])
+        self.hi = np.array([bound[1] for bound in self.bounds])
+        # Total number of parameters
+        self.ndim_tot = np.int(len(bounds))
         # Number of parameters per source
-        if nsources > 0:
-            self.ndim = np.int(len(bounds)/nsources)
+        self.ndim = np.int(self.ndim_tot/nsources)
+        # Rescaling of parameters
+        if rescale is None:
+            self.rescale = np.ones(self.ndim)
         else:
-            self.ndim = 0
+            self.rescale = rescale
+            self.lo *= 1. / rescale
+            self.hi *= 1. / rescale
         # Type of prior distribution for each parameter
         self.distribs = distribs
         # Type of TDI channel
         self.tdi = tdi
-        # Initial angle of LISA constellation
-        self.Phi_rot = Phi_rot
         # Length of data
         self.N = len(timevect)
-
 
         # ======================================================================
         # Parameters for waveform computation
@@ -75,33 +105,12 @@ class GWModel(object):
         self.L = 2.5e9
         self.fs = 1/self.ts
         self.Tobs = self.N*self.ts
-        
-        # Order of the Bessel decomposition for frequency model
-        self.nc = lisaresp.optimal_order(np.pi / 2, self.hi[2])
-#        # Waveform model
-#        if M == None:
-#            # if there is no windowing use the standard frequency model
-#            self.smodel = lisaresp.UCBWaveform(wavefuncs.v_func_gb,
-#                                             Phi_rot=Phi_rot,
-#                                             armlength=self.L,
-#                                             nc=self.nc)        
-#            self.T1 = 0
-#            self.T2 = self.Tobs
-#        else:
-#            self.M = M
-#            # if the windowing is a piece-wise tuckey window:
-#            f_segs,self.T1,self.T2 = gapgenerator.compute_freq_times(self.M,self.ts)
-            
+
         # Starting and end times of waveform model:
         self.T1 = 0
         self.T2 = self.Tobs        
         # Waveform model
-            
-        # Type of matrix model
-        self.smodel = lisaresp.UCBWaveform(wavefuncs.v_func_gb,
-                                           Phi_rot=Phi_rot,
-                                           armlength=self.L,
-                                           nc=self.nc)
+        self.smodel = smodel
 
         # Considered bandwidth for the fit
         self.fmin = fmin
@@ -115,7 +124,6 @@ class GWModel(object):
         print("The estimation domain has size " + str(len(self.inds_pos)))
         # Number of positive frequencies considered
         self.npos = len(self.inds_pos)
-        
 
     def matrix_model(self, f, params):
         """
@@ -137,27 +145,14 @@ class GWModel(object):
     
         return self.smodel.design_matrix_freq(f, params, self.ts, self.T1, self.T2, tdi=self.tdi)
 
-
-    def get_lohi(self):
-        """
-        Extract lower and upper bounds in separate vectors
-        """
-        
-        lo = np.array([bound[0] for bound in self.bounds])
-        hi = np.array([bound[1] for bound in self.bounds])
-        
-        return lo, hi
-    
-    
-    def logp(self,x,lo,hi):
+    def logp(self, x, lo, hi):
         return np.where(((x >= lo) & (x <= hi)).all(-1), 0.0, -np.inf)
     
-    def logpo(self,x, lo, hi, i1, i2):
+    def logpo(self, x, lo, hi, i1, i2):
         
         return np.where(((x >= lo) & (x <= hi)).all(-1) & (x[i1] <= x[i2]) , 0.0, -np.inf)
 
-
-    def log_prior(self,params):
+    def log_prior(self, params):
         """
         Logarithm of the prior probabilitiy of parameters f_0 and f_dot
 
@@ -174,11 +169,12 @@ class GWModel(object):
 
 
         """
+        # Rescale parameters if necessary
+        params_phys = self.rescale * params
         #prior probability for f_0 and f_dot
-        logs = [mhmcmc.logprob(params[i],self.distribs[i],self.bounds[i]) for i in range(len(params))]
+        logs = [mhmcmc.logprob(params_phys[i], self.distribs[i], self.bounds[i]) for i in range(len(params_phys))]
 
         return np.sum(np.array(logs))
-
 
     def log_likelihood(self, params, S, y_fft):
         """
@@ -203,6 +199,9 @@ class GWModel(object):
 
         """
 
+        # Rescale parameters if necessary
+        params_phys = self.rescale * params
+
         # # Update design matrix and derived quantities
         # A_freq,A_freq_w,ZI = self.compute_matrices(params, S)
         # # Data with real and imaginary part separated
@@ -213,26 +212,25 @@ class GWModel(object):
 
 
         # Update the frequency domain residuals
-        z_fft_inds = y_fft[self.inds_pos] - self.draw_frequency_signal_onBW(params,S,y_fft)
+        z_fft_inds = y_fft[self.inds_pos] - self.draw_frequency_signal_onBW(params_phys, S, y_fft)
 
         # Compute periodogram for relevant frequencies
         I_inds = np.abs(z_fft_inds)**2/self.N
 
         # Update reduced likelihood
-        # return np.real(-0.5*np.sum(np.log(S[self.inds_pos]) + I_inds/S[self.inds_pos]))
-        return np.real(-0.5 * np.sum(I_inds / S[self.inds_pos]))
+        return np.real(-0.5*np.sum(np.log(S[self.inds_pos]) + I_inds/S[self.inds_pos]))
+        # return np.real(-0.5 * np.sum(I_inds / S[self.inds_pos]))
 
-
-    def draw_single_freq_signal_onBW(self, params, S, y_fft):
+    def draw_single_freq_signal_onBW(self, params_phys, S, y_fft):
         """
         Compute deterministic signal model on the restricted bandwidth,
         for one single source only
         """
         # Update design matrix and derived quantities
-        A_freq, A_freq_w, ZI = self.compute_matrices(params,S)
+        A_freq, A_freq_w, ZI = self.compute_matrices(params_phys, S)
 
         #ZI = alfastfreq.compute_inverse_normal(A_freq,ApS)
-        beta = self.draw_beta(ZI,A_freq_w,y_fft) 
+        beta = self.draw_beta(ZI, A_freq_w, y_fft)
 
         # Return the frequency domain GW signal
         #return np.dot(A_freq,beta)   
@@ -240,33 +238,33 @@ class GWModel(object):
 
         return y_gw_fft_2[0:self.npos] + 1j*y_gw_fft_2[self.npos:]
 
-    def draw_frequency_signal_onBW(self, params, S, y_fft):
+    def draw_frequency_signal_onBW(self, params_phys, S, y_fft):
         """
         Compute deterministic signal model on the restricted bandwidth only
         """
 
         if self.nsources > 0:
-            y_gw_fft = self.draw_single_freq_signal_onBW(params, S, y_fft)
+            y_gw_fft = self.draw_single_freq_signal_onBW(params_phys, S, y_fft)
         else:
             y_gw_fft = np.zeros(self.npos, dtype=np.complex128)
                 
         # Return the frequency domain GW signal
         return y_gw_fft     
-    
-    
+
     def draw_frequency_signal(self, params, S, y_fft):
         """
         Compute deterministic signal model on the full Fourier grid
         """
+
+        # Rescale parameters if necessary
+        params_phys = params * self.rescale
         
         y_gw_fft = np.zeros(self.N, dtype=np.complex128)
 
-        y_gw_fft[self.inds_pos] = self.draw_frequency_signal_onBW(params,S,y_fft)
+        y_gw_fft[self.inds_pos] = self.draw_frequency_signal_onBW(params_phys, S, y_fft)
         y_gw_fft[self.inds_neg] = np.conj( y_gw_fft[self.inds_pos] )
 
         return y_gw_fft
-
-
 
     def compute_matrices(self,params,S):
         """
@@ -297,7 +295,6 @@ class GWModel(object):
 
         return A_freq,A_freq_w,ZI
 
-
     def ls_estimate_beta(self,ZI,ApS,data_fft):
         """
         Generalized least-square estimate of the extrinsic parameters
@@ -308,7 +305,6 @@ class GWModel(object):
         #return np.real(np.dot( ZI, np.dot(np.transpose(ApS).conj(),data_fft[self.inds])))
         return np.dot( ZI, np.dot(np.transpose(ApS).conj(),data_real))
         #return np.dot( ZI, np.dot(np.transpose(ApS).conj(),data_fft[self.inds_pos]))
-
 
     def draw_beta(self,ZI,ApS,data_fft):
         """
@@ -331,8 +327,6 @@ class GWModel(object):
         """
         return np.random.multivariate_normal(self.ls_estimate_beta(ZI,ApS,data_fft), ZI)
         #return np.real(np.dot( ZI, np.dot(np.transpose(ApS).conj(),data_fft[self.inds])))
-
-
 
     def compute_time_signal(self,y_gw_fft):
         """
@@ -380,12 +374,7 @@ class GWModel(object):
         lp = self.log_prior(params)
         if not np.isfinite(lp):
             return -np.inf
-        return lp + self.log_likelihood(params,params_aux)
-
-
-
-
-
+        return lp + self.log_likelihood(params, params_aux)
 
 
 

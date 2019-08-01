@@ -10,9 +10,12 @@ Created on Fri Feb  1 15:09:36 2019
 import copy
 import numpy as np
 import LISAConstants as LC
+import tdi
 from scipy import special
 from .coeffs import k_coeffs
-import lisabeta
+# from lisabeta.lisa import lisa
+import lisabeta.lisa.lisa as lisa
+import lisabeta.tools.pytools as pytools
 from scipy.interpolate import InterpolatedUnivariateSpline as spline
 
 # For MBHB only, use MLDC code
@@ -36,6 +39,14 @@ def optimal_order(theta, f_0):
 
     return nc
 
+
+def convert_xyz_to_aet(X, Y, Z):
+
+    A = (Z - X)/np.sqrt(2)
+    E = (X - 2*Y + Z)/np.sqrt(6)
+    T = (X + Y + Z)/np.sqrt(3)
+
+    return A, E, T
 
 
 class GWwaveform(object):
@@ -93,15 +104,18 @@ class UCBWaveform(GWwaveform):
 
         super().__init__(Phi_rot=Phi_rot, armlength=armlength)
 
+
+        # Name of intrinsic parameters
+        self.names = ['theta', 'phi', 'f_0', 'f_dot']
         # Phase function
         self.v_func = v_func
         # For Fourier series decomposition:
         self.M = 4
-        self.m_vect = np.arange(0,self.M+1)
+        self.m_vect = np.arange(0, self.M+1)
         self.nc = nc
         self.jw2 = []
 
-    def indices_low_freq(self, tdi):
+    def indices_low_freq(self, channel):
         """
     
         Returns the indices of the integrated gravitational strain signal for the
@@ -111,7 +125,7 @@ class UCBWaveform(GWwaveform):
     
         Parameters
         ----------
-        tdi : string
+        channel : string
             tdi channel among {'X1','Y1','Z1'}
     
         Returns
@@ -124,15 +138,15 @@ class UCBWaveform(GWwaveform):
     
         """
     
-        if tdi == 'X1':
+        if channel == 'X1':
             i = 2
             j = 3
     
-        elif tdi == 'Y1':
+        elif channel == 'Y1':
             i = 3
             j = 1
     
-        elif tdi == 'Z1':
+        elif channel == 'Z1':
             i = 1
             j = 2
     
@@ -265,7 +279,7 @@ class UCBWaveform(GWwaveform):
         return Uc#,Us
 
 
-    def design_matrix_freq(self, f, params, ts, Tstart, Tend, tdi='X1'):
+    def design_matrix_freq(self, f, params, ts, Tstart, Tend, channel='X1'):
         """
         Compute design matrix such that the TDI variable (fist generation)
         can be written as
@@ -297,7 +311,7 @@ class UCBWaveform(GWwaveform):
         """
     
         # Indices of arms to be considered for the TDI variable
-        i, j = self.indices_low_freq(tdi)
+        i, j = self.indices_low_freq(channel)
     
         # Compute coefficients of the decomposition of basis functions u_alpha
         k_p, k_c = k_coeffs(params, self.Phi_rot, i, j)
@@ -361,13 +375,36 @@ class MBHBWaveform(GWwaveform):
 
         super().__init__(Phi_rot=Phi_rot, armlength=armlength)
 
+        # Name of intrinsic parameters
+        self.names = ['m1', 'm2', 'a1', 'a2', 'beta', 'psi', 'tc']
+
         # For PhenomD waveform
         # --------------------
         # fRef=0 means fRef=fpeak in PhenomD or maxf if out of range
         self.fRef = 0.0
         self.t0 = 0.0
 
-    def compute_signal_freq(self, f, params, del_t, tobs, tdi='TDIXYZ', real_imag=False):
+
+
+    def interpolate_waveform(self, fr_in, fr_out, x, real_imag=False):
+
+        real_func = spline(fr_in, np.real(x), ext='zeros')
+        imag_func = spline(fr_in, np.imag(x), ext='zeros')
+        xf_real = real_func(fr_out)
+        xf_imag = imag_func(fr_out)
+
+        if real_imag:
+            return xf_real, xf_imag
+        else:
+            return xf_real + 1j * xf_imag
+
+
+    def shift_time(self, f, xf, delay):
+
+        return xf*np.exp(-2j*np.pi*f*delay)
+
+
+    def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET', real_imag=False, ldc=True):
         """
         Compute LISA's response to the incoming MBHB GW in the frequency domain
 
@@ -381,7 +418,7 @@ class MBHBWaveform(GWwaveform):
             Observation Duration
         ts : scalar float
             sampling cadence
-        tdi : string
+        channel : string
             tdi channel among {'X1','X2','X3'}
         real_imag : boolean
             if True, returns real and imaginary parts of the signal in distinct arrays. Otherwise, one single complex
@@ -389,32 +426,48 @@ class MBHBWaveform(GWwaveform):
 
         """
 
-        phi0, m1, m2, a1, a2, dist, inc, lam, beta, psi, tc = params
+        # phi0, m1, m2, a1, a2, dist, inc, lam, beta, psi, tc = params
+        m1, m2, xi1, xi2, tc, dist, inc, phi0, lam, beta, psi = params
 
-        # phi0, fRef, m1, m2, a1, a2, dist, inc, lam, beta, psi, Tobs, tc, del_t = params
-        # TDI response on native grid
-        fr, x, y, z, wfTDI = GenerateFD_SignalTDIs.MBHB_LISAGenerateTDIfast(phi0, self.fRef, m1, m2, a1, a2,
-                                                                            dist, inc,
-                                                                            lam,
-                                                                            beta,
-                                                                            psi,
-                                                                            tobs,
-                                                                            tc,
-                                                                            del_t, tShift=0.0, fmin=1.e-5,
-                                                                            fmax=0.5 / del_t, frqs=None, resf=None)
+        if ldc:
+            # TDI response on native grid
+            fr, x, y, z, wfTDI = GenerateFD_SignalTDIs.MBHB_LISAGenerateTDIfast(phi0, self.fRef, m1, m2, xi1, xi2,
+                                                                                dist, inc,
+                                                                                lam,
+                                                                                beta,
+                                                                                psi,
+                                                                                tobs,
+                                                                                tc,
+                                                                                del_t, tShift=0, fmin=1.e-5,
+                                                                                fmax=0.5 / del_t, frqs=None, resf=None)
+
+            ch_interp = [self.interpolate_waveform(fr, f, ch) for ch in [x, y, z]]
+
+            if channel=='TDIAET':
+                # print(channel)
+                a, e, t = tdi.AET(ch_interp[0], ch_interp[1], ch_interp[2])
+                # a, e, t = convert_xyz_to_aet(ch_interp[0], ch_interp[1], ch_interp[2])
+                ch_interp = [a, e, t]
+
+        else:
+
+            # fstartobs22 = pytools.funcNewtonianfoft(m1, m2, tobs * LC.YRSID_SI)
+
+            # TDI response on native grid
+            wftdi = lisa.GenerateLISATDI(params, tobs=tobs, approximant='IMRPhenomD', TDItag=channel)
+
+            signal_freq = lisa.GenerateLISASignal(wftdi, f)
+
+            ch_interp = [self.shift_time(f, signal_freq['ch1'],  tobs).conj(),
+                         self.shift_time(f, signal_freq['ch2'],  tobs).conj(),
+                         self.shift_time(f, signal_freq['ch3'],  tobs).conj()]
 
         # Interpolate the response on required grid
-        real_func = spline(fr, np.real(x), ext='zeros')
-        imag_func = spline(fr, np.imag(x), ext='zeros')
-        xf_real = real_func(f)
-        xf_imag = imag_func(f)
+        # return signal_freq['ch1'], signal_freq['ch2'], signal_freq['ch3']
+        return ch_interp[0], ch_interp[1], ch_interp[2]
+        # return x, y, z
 
-        if real_imag:
-            return xf_real, xf_imag
-        else:
-            return xf_real + 1j * xf_imag
-
-    def design_matrix_freq(self, f, params, del_t, t1, t2, tdi='TDIXYZ', complex=False):
+    def design_matrix_freq(self, f, params, del_t, t1, t2, channel='TDIAET', complex=False):
         """
         Compute design matrix such that the TDI variable (fist generation)
         can be written as
@@ -445,25 +498,31 @@ class MBHBWaveform(GWwaveform):
 
         """
 
-        # phi0, m1, m2, a1, a2, dist, inc, lam, beta, psi, tc = params
-        # m1, m2, chi1, chi2, del_t, dist, inc, phi, lambd, beta, psi = params
+        # LISABETA
+        # m1, m2, chi1, chi2, tc, dist, inc, phi, lambd, beta, psi = params
+        i_dist = 5
+        i_phi0 = 7
+        i_inc = 6
+        i_psi = 10
+
         tobs = t2 - t1
 
         params_1 = copy.deepcopy(params)
         params_2 = copy.deepcopy(params)
 
+
         # Initial phase
-        params_1[0] = 0
-        params_2[0] = 0
+        params_1[i_phi0] = 0
+        params_2[i_phi0] = 0
         # Luminosity distance (Mpc)
-        params_1[5] = 1e3
-        params_2[5] = 1e3
+        params_1[i_dist] = 1e3
+        params_2[i_dist] = 1e3
         # Inclination
-        params_1[6] = 0 # 0.5 * np.pi
-        params_2[6] = 0 # 0.5 * np.pi
+        params_1[i_inc] = 0 # 0.5 * np.pi
+        params_2[i_inc] = 0 # 0.5 * np.pi
         # Polarization angle
-        params_1[9] = 0.0
-        params_2[9] = np.pi/4
+        params_1[i_psi] = 0.0
+        params_2[i_psi] = np.pi/4
 
 
         # amp = 2* G * mu / (dl * c**2)
@@ -480,8 +539,8 @@ class MBHBWaveform(GWwaveform):
 
 
         # Calculate the response on required grid
-        ac_plus_real, ac_plus_imag = self.compute_signal_freq(f, params_1, del_t, tobs, tdi=tdi, real_imag=True)
-        ac_cros_real, ac_cros_imag = self.compute_signal_freq(f, params_2, del_t, tobs, tdi=tdi, real_imag=True)
+        ac_plus_real, ac_plus_imag = self.compute_signal_freq(f, params_1, del_t, tobs, channel=channel, real_imag=True)
+        ac_cros_real, ac_cros_imag = self.compute_signal_freq(f, params_2, del_t, tobs, channel=channel, real_imag=True)
 
 
         if not complex:

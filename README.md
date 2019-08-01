@@ -3,7 +3,7 @@ BayesDawn
 
 
 
-BAYESDAWN stands for Bayesian Data Augmentation for Waves and Noise. It implements an iterative Bayesian augmentation 
+BayesDawn stands for Bayesian Data Augmentation for Waves and Noise. It implements an iterative Bayesian augmentation 
 method to handle data gaps in gravitational-wave data analysis, as described in this paper: https://arxiv.org/abs/1907.04747.
 
 Installation

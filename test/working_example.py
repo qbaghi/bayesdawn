@@ -50,9 +50,10 @@ if __name__=='__main__':
     psd_cls.estimate(y - s_mask)
     psd = psd_cls.calculate(N)
 
-    # Imputation of missing data
+
     # instantiate imputation class
     imp_cls = imputation.nearestNeighboor(mask, Na=50, Nb=50)
+    # Imputation of missing data
     y_rec = imp_cls.draw_missing_data(y_mask, s, psd_cls)
 
 

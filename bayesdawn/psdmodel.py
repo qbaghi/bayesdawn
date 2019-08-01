@@ -41,7 +41,7 @@ def spline_loglike(beta, per, A):
     ----------
     per : array_like
         vector of periodogram calculated at log-frequencies
-    spl : instance of PSD_spline
+    spl : instance of PSDSpline
         spline object
 
 
@@ -67,7 +67,7 @@ def spline_loglike_grad(beta, per, A):
     ----------
     per : array_like
         vector of periodogram
-    spl : instance of PSD_spline
+    spl : instance of PSDSpline
         spline object
 
 
@@ -98,7 +98,7 @@ def spline_loglike_hessian(beta, per, A):
         vector of log-frequencies taken into account in the likelihood
     per : array_like
         vector of periodogram calculated at log-frequencies minus C0
-    spl : instance of PSD_spline
+    spl : instance of PSDSpline
         spline object
 
 
@@ -215,7 +215,7 @@ def spline_matrix(x, knots, D):
 # PSD CLASS
 # ==============================================================================
 
-class PSD_spline(object):
+class PSDSpline(object):
 
     def __init__(self, N, fs, J=30, D=3, fmin=None, fmax=None):
 
@@ -261,18 +261,26 @@ class PSD_spline(object):
         # For Bayesian inference: the spline interpolation
         # Control frequencies
         self.logfc = np.concatenate((np.log(self.f_knots), [np.log(self.fs/2)]))
-        # Variance function values at control frequencies
-        self.varlogSc = np.array([3.60807571e-01, 8.90158814e-02, 1.45631966e-02, 3.55646693e-03,
-                                  1.09926717e-03, 4.15894275e-04, 1.86984136e-04, 9.73883423e-05,
-                                  5.74981099e-05, 3.77721249e-05, 2.71731280e-05, 2.11167300e-05,
-                                  1.75209167e-05, 1.53672320e-05, 1.41269765e-05, 1.35137347e-05,
-                                  1.33692054e-05, 1.36074455e-05, 1.41863625e-05, 1.50926724e-05,
-                                  1.63338849e-05, 1.79341767e-05, 1.99325803e-05, 2.23827563e-05,
-                                  2.53543168e-05, 2.89370991e-05, 3.32545462e-05, 3.85055177e-05,
-                                  4.50144967e-05, 5.26798764e-05, 4.86680827e-04])
+        # # Variance function values at control frequencies
+        # self.varlogSc = np.array([3.60807571e-01, 8.90158814e-02, 1.45631966e-02, 3.55646693e-03,
+        #                           1.09926717e-03, 4.15894275e-04, 1.86984136e-04, 9.73883423e-05,
+        #                           5.74981099e-05, 3.77721249e-05, 2.71731280e-05, 2.11167300e-05,
+        #                           1.75209167e-05, 1.53672320e-05, 1.41269765e-05, 1.35137347e-05,
+        #                           1.33692054e-05, 1.36074455e-05, 1.41863625e-05, 1.50926724e-05,
+        #                           1.63338849e-05, 1.79341767e-05, 1.99325803e-05, 2.23827563e-05,
+        #                           2.53543168e-05, 2.89370991e-05, 3.32545462e-05, 3.85055177e-05,
+        #                           4.50144967e-05, 5.26798764e-05, 4.86680827e-04])
+        #
+        # # Spline estimator of the variance of the log-PSD estimate
+        # self.logvar_fn = interpolate.interp1d(self.logfc[1:], self.varlogSc[1:], kind='cubic', fill_value="const")
 
-        # Spline estimator of the variance of the log-PSD estimate
-        self.logvar_fn = interpolate.interp1d(self.logfc[1:], self.varlogSc[1:], kind='cubic', fill_value="extrapolate")
+
+    def set_knots(self, f_knots):
+
+        self.f_knots = f_knots
+        self.logf_knots = np.log(self.f_knots)
+        self.logfc = np.concatenate((np.log(self.f_knots), [np.log(self.fs / 2)]))
+
 
     def choose_knots(self, J, fmin, fmax):
         """
@@ -300,7 +308,7 @@ class PSD_spline(object):
 
         ns = - np.log(fmax)/np.log(10)
         n0 = - np.log(fmin)/np.log(10)
-        jvect = np.arange(0,J)
+        jvect = np.arange(0, J)
         alpha_guess = 0.8
 
         targetfunc = lambda x : n0 - (1-x**(J))/(1-x) - ns
@@ -412,7 +420,7 @@ class PSD_spline(object):
         v = np.log(z) - self.C0
 
         # Spline estimator of the log-PSD
-        spl = interpolate.LSQUnivariateSpline(self.logf[NI], v, self.logf_knots, k=self.D, ext="extrapolate")
+        spl = interpolate.LSQUnivariateSpline(self.logf[NI], v, self.logf_knots, k=self.D, ext="const")
 
         return spl
 
