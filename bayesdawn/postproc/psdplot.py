@@ -14,7 +14,7 @@ numpy.fft = pyfftw.interfaces.numpy_fft
 from scipy import signal
 
 # Plot modules
-import myplots
+from plottools import myplots
 
 def compute_periodogram(x, fs=1.0, wind='tukey'):
     """
