@@ -187,16 +187,18 @@ if __name__ == '__main__':
     print("loglike value: " + str(test2))
     print("Likelihood computation time: " + str(t2 - t1))
 
+
+    now = datetime.datetime.now()
+    prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
+    out_dir = '/Users/qbaghi/Codes/data/results_ptemcee/local/'
     print("start sampling...")
-    das.run(n_it=100000, n_update=100, n_thin=1)
+    das.run(n_it=100000, n_update=100, n_thin=1, n_save=10, save_path=out_dir + 'chains_temp.hdf5')
     print("done.")
     # res = das.run(n_it=100000, n_update=1000, n_psd=10)
     # Or:
     # das.sampler_cls.run_nested(maxiter=100000)
 
-    now = datetime.datetime.now()
-    prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
-    out_dir = '/home/centos/data/mcmc/results_mbhb/'
+
     fh5 = h5py.File(out_dir + prefix + 'chains.hdf5', 'w')
     fh5.create_dataset("chains/chain", data=das.sampler_cls.chain)
     fh5.create_dataset("temperatures/beta_hist", data=das.sampler_cls._beta_history)

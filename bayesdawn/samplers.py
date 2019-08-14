@@ -8,6 +8,8 @@ from scipy import linalg as LA
 import copy
 from functools import reduce
 import ptemcee
+import h5py
+from dynesty import NestedSampler
 
 
 def clipcov(X, nit = 3, n_sig = 5):
@@ -294,7 +296,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             print("Update of auxiliary parameters at iteration " + str(it))
             callback(self.position[0, 0, :])
 
-    def run(self, n_it, n_update, n_thin, callback, pos0=None):
+    def run(self, n_it, n_update, n_thin, n_save, callback, pos0=None, save_path='./'):
 
         # Initialization of parameter values
         if pos0 is None:
@@ -305,23 +307,35 @@ class ExtendedPTMCMC(ptemcee.Sampler):
 
         self.position = pos[:]
 
-        # Initialization of iteration counter
-        # [self.single_sample(i, n_it, n_update, n_thin, callback) for i in range(n_it)]
-        i = 0
-        for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
+        with h5py.File(save_path, "a") as fi:
+            dset = fi.create_dataset('chain', (self.ntemps, self.nwalkers, n_update, pos.shape[2]),
+                                     maxshape=(self.ntemps, self.nwalkers, n_it, pos.shape[2]),
+                                     dtype=pos.dtype,
+                                     chunks=(self.ntemps, self.nwalkers, n_save, pos.shape[2]))
 
-            if i % n_update == 0:
-                print("Update of auxiliary parameters at iteration " + str(i))
-                callback(pos[0, 0, :])
-            i += 1
+            # Initialization of iteration counter
+            # [self.single_sample(i, n_it, n_update, n_thin, callback) for i in range(n_it)]
+            i = 0
+            for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
+
+                if i % n_update == 0:
+                    print("Update of auxiliary parameters at iteration " + str(i))
+                    callback(pos[0, 0, :])
+                if (i % n_save == 0) & (i != 0):
+                    print("Save data at iteration " + str(i))
+                    dset[:, :, -n_save:, :] = self.chain[:, :, -n_save:, :]
+
+                i += 1
+
+            fi.close()
 
 
-        # class ExtendedNestedSampler(NestedSampler):
-#
-#     def __init__(self, *args):
-#
-#         NestedSampler.__init__(self, args)
-#
-#     def update_log_likelihood(self, log_likelihood, loglike_args):
-#
-#         self.loglikelihood = log_likelihood
+class ExtendedNestedSampler(NestedSampler):
+
+    def __init__(self, *args):
+
+        NestedSampler.__init__(self, args)
+
+    def update_log_likelihood(self, log_likelihood, loglike_args):
+
+        self.loglikelihood = log_likelihood
