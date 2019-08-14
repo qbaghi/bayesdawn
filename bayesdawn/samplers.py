@@ -7,6 +7,7 @@ import numpy as np
 from scipy import linalg as LA
 import copy
 from functools import reduce
+import ptemcee
 
 
 def clipcov(X, nit = 3, n_sig = 5):
@@ -167,77 +168,6 @@ def metropolisHastings(target,proposal,xinit, Nsamples,proposalProb = []):
     return samples, naccept
 
 
-class gaussianDistribution(object):
-
-
-    def __init__(self,mean,cov):
-
-        self.mu = mean
-        self.cov = cov
-        self.covI = LA.inv(cov)
-        self.N = len(mean)
-
-        # # If the covariance is provided in the form of a matrix
-        # if len(cov.shape) == 2 :
-        #     self.draw =
-        # else:
-        #     self.weight = lambda x : x * np.sqrt(self.cov)
-
-
-
-    def logprob(self,x):
-
-        #res = x - self.mu  #self.weight( x - self.mu )
-        res = x - self.mu
-
-        return - 0.5*res.conj().T.dot( self.covI.dot( res ) )
-
-    def sample(self):
-
-        return np.random.multivariate_normal(self.mu,self.cov)
-
-        #return self.mu + self.weight(np.random.normal(loc=0.0, scale=1.0, size=self.N))
-
-
-
-
-
-
-
-
-def rejection_sample(q,logp_tilde,M):
-    """
-
-    Draw one realization of a variable following the p_tilde distribution using
-    rejection sampling
-
-    """
-
-    # Sample from proposal distribution
-    x = q.sample()
-    # Sample from uniform distribution
-    u = np.random.uniform(low=0.0, high=1.0)
-
-    while ( u > np.exp( logp_tilde(x) - q.logprob(x) )/M ):
-        # Sample from proposal distribution
-        x = q.sample()
-        # Sample from uniform distribution
-        u = np.random.uniform(low=0.0, high=1.0)
-
-    return x
-
-
-def rejection_sampleN(q,p_tilde,M,N_draws):
-    """
-
-    Draw several realizations of a variable following the p_tilde distribution using
-    rejection sampling
-
-    """
-
-    return [rejection_sample(q,p_tilde,M) for n in range(N_draws)]
-
-
 class MHSampler(object):
 
     def __init__(self, ndim, logp_tilde):
@@ -316,8 +246,8 @@ class MHSampler(object):
         """
         self.set_cov(cov0)
         self.accepted = 0
-        x_samples = np.zeros((Ns,self.N_params),dtype = np.float64)
-        logp_samples = np.zeros((Ns),dtype = np.float64)
+        x_samples = np.zeros((Ns,self.N_params), dtype=np.float64)
+        logp_samples = np.zeros((Ns), dtype=np.float64)
         x_samples[0, :] = x0
         logp_samples[0] = self.logp(x0)
 
@@ -335,3 +265,63 @@ class MHSampler(object):
                     self.set_cov( np.cov(self.x_samples[0:s+1,:].T)*2.38**2/self.N_params)
 
         return x_samples, logp_samples
+
+
+class ExtendedPTMCMC(ptemcee.Sampler):
+
+    def __init__(self, *args, **kwargs):
+
+        super(ExtendedPTMCMC, self).__init__(*args, **kwargs)
+        # ptemcee.Sampler.__init__(self, args)
+
+        self.position=[]
+
+    def update_log_likelihood(self, log_likelihood, loglike_args):
+
+        self._likeprior.logl = log_likelihood
+        self._likeprior.loglargs = loglike_args
+
+    def update_log_prior(self, log_prior, logp_args):
+
+        self._likeprior.logp = log_prior
+        self._likeprior.logpargs = logp_args
+
+    def single_sample(self, it, n_it, n_update, n_thin, callback):
+
+        self.position, lnlike0, lnprob0 = self.sample(self.position, n_it, thin=n_thin, storechain=True)
+
+        if it % n_update == 0:
+            print("Update of auxiliary parameters at iteration " + str(it))
+            callback(self.position[0, 0, :])
+
+    def run(self, n_it, n_update, n_thin, callback, pos0=None):
+
+        # Initialization of parameter values
+        if pos0 is None:
+            lo, hi = self._likeprior.logpargs
+            pos = np.random.uniform(lo, hi, size=(self.ntemps, self.nwalkers, len(hi)))
+        else:
+            pos = pos0[:]
+
+        self.position = pos[:]
+
+        # Initialization of iteration counter
+        # [self.single_sample(i, n_it, n_update, n_thin, callback) for i in range(n_it)]
+        i = 0
+        for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
+
+            if i % n_update == 0:
+                print("Update of auxiliary parameters at iteration " + str(i))
+                callback(pos[0, 0, :])
+            i += 1
+
+
+        # class ExtendedNestedSampler(NestedSampler):
+#
+#     def __init__(self, *args):
+#
+#         NestedSampler.__init__(self, args)
+#
+#     def update_log_likelihood(self, log_likelihood, loglike_args):
+#
+#         self.loglikelihood = log_likelihood

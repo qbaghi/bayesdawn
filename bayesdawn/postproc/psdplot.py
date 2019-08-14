@@ -1,6 +1,5 @@
 import load_mcmc_config
-# from . import resanalysis
-import resanalysis
+
 import gapgenerator as gg
 import pyFLR
 import alwaves
@@ -12,7 +11,6 @@ import scipy.signal
 import numpy.fft
 import h5py
 import time
-import spectrum
 
 import tdi
 
@@ -25,12 +23,92 @@ from pyfftw.interfaces.numpy_fft import fft, ifft
 # Monkey patch fftpack with pyfftw.interfaces.scipy_fftpack
 scipy.fftpack = pyfftw.interfaces.scipy_fftpack
 numpy.fft = pyfftw.interfaces.numpy_fft
+from scipy import signal
 
 
 # Plot modules
 import myplots
 import seaborn as sns
 from matplotlib import pyplot as plt
+
+def compute_periodogram(x, fs=1.0, wind='tukey'):
+    """
+
+    Parameters
+    ----------
+    x : numpy array
+        time series data
+    fs : scalar float
+        sampling frequency
+    wind : basestring
+        type of time windowing
+
+    Returns
+    -------
+    freq : numpy array
+        frequency vector
+    per : numpy array
+        periodogram of the time series expressed in A / Hz where A is the unit of x
+
+    """
+
+    n = x.shape[0]
+
+    freq = np.fft.fftfreq(n) * fs
+
+    if wind == 'tukey':
+        w = signal.tukey(n)
+    elif wind == 'hanning':
+        w = np.hanning(n)
+    elif wind == 'blackman':
+        w = np.blackman(n)
+    elif wind == 'rectangular':
+        w = np.ones(n)
+
+    k2 = np.sum(w**2)
+
+    return freq, np.abs(fft(x * w))**2 / (k2 * fs)
+
+
+def plot_periodogram(x, fs=1.0, wind='tukey', xlabel='Frequency [Hz]', ylabel='Periodogram', sqr=True, colors=None,
+                     linewidths=None, labels=None, linestyles='solid'):
+
+    if type(x) == list:
+        data_list = [compute_periodogram(xi, fs=fs, wind=wind) for xi in x]
+    else:
+        data_list = [compute_periodogram(x, fs=fs, wind=wind)]
+
+
+    fp = myplots.fplot(plotconf='frequency')
+    fp.xscale = 'log'
+    fp.yscale = 'log'
+    fp.draw_frame = True
+    fp.ylabel = r'Fractional frequency'
+    fp.legendloc = 'upper left'
+    fp.xlabel = xlabel
+    fp.ylabel = ylabel
+
+    if labels is None:
+        labels = [None for dat in data_list]
+    if linestyles=='solid':
+        linestyles = ['solid' for dat in data_list]
+    if linewidths is None:
+        linewidths = np.ones(7)
+    if colors is None:
+        colors = ['k', 'r', 'b', 'g', 'm', 'gray', 'o']
+
+    colors = [colors[i] for i in range(len(data_list))]
+
+    x_list = [dat[0][dat[0] > 0] for dat in data_list]
+    if sqr:
+        y_list = [np.sqrt(dat[1][dat[0] > 0]) for dat in data_list]
+    else:
+        y_list  = [dat[1][dat[0] > 0] for dat in data_list]
+
+    fig1, ax1 = fp.plot(x_list, y_list, colors, linewidths, linestyles=linestyles, labels=labels)
+
+    return fig1, ax1
+
 
 
 
@@ -83,7 +161,7 @@ def compute_psd_map(chain_psd, logp_psd, fs, N):
 
 if __name__ == '__main__':
 
-
+    import resanalysis
     # # For antenna gaps and f0 = 1e-4 Hz
     # base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/1e-4Hz/"
     # filepaths = [base, base, base]

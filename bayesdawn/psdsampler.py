@@ -10,11 +10,11 @@ Class to set up a simple Metropolis Hasting sampler for the PSD parameters
 
 import numpy as np
 from .psd import psdspline
-from . import mhmcmc
+from . import samplers
 from scipy import interpolate
 
 
-class PSDSampler(psdspline.PSDSpline, mhmcmc.MHSampler):
+class PSDSampler(psdspline.PSDSpline, samplers.MHSampler):
     """
     
     ** ** 
@@ -32,7 +32,7 @@ class PSDSampler(psdspline.PSDSpline, mhmcmc.MHSampler):
         # Periodogram of the residuals is an attribute
         self.I = []
         # Initialize the sampler
-        mhmcmc.MHSampler.__init__(self, J+1, self.psd_posterior)
+        samplers.MHSampler.__init__(self, J+1, self.psd_posterior)
 
     def set_periodogram(self, z_fft, K2=None):
         """

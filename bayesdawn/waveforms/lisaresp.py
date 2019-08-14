@@ -195,8 +195,6 @@ class UCBWaveform(GWwaveform):
         y_c = sum([Jw[k]*1/2.*v_minus[k] for k in range(len(v_minus))])
         #y_s = sum( [ -Jw[k]*1j/2.*v_minus[k] for k in range(len(v_minus)) ] )
         #y_s = -1j*y_c
-    
-    
         return y_c#,y_s
 
 
@@ -277,7 +275,6 @@ class UCBWaveform(GWwaveform):
 
 
         return Uc#,Us
-
 
     def design_matrix_freq(self, f, params, ts, Tstart, Tend, channel='X1'):
         """
@@ -384,7 +381,15 @@ class MBHBWaveform(GWwaveform):
         self.fRef = 0.0
         self.t0 = 0.0
 
-
+        # Indices of parameters in the full parameter vector
+        self.i_dist = 5
+        self.i_inc = 6
+        self.i_phi0 = 7
+        self.i_psi = 10
+        # Indices of extrinsic parameters
+        self.i_ext = [5, 6, 7, 10]
+        # Indices of intrinsic parameters
+        self.i_intr = [0, 1, 2, 3, 4, 8, 9]
 
     def interpolate_waveform(self, fr_in, fr_out, x, real_imag=False):
 
@@ -398,13 +403,11 @@ class MBHBWaveform(GWwaveform):
         else:
             return xf_real + 1j * xf_imag
 
-
     def shift_time(self, f, xf, delay):
 
         return xf*np.exp(-2j*np.pi*f*delay)
 
-
-    def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET', real_imag=False, ldc=True):
+    def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET', ldc=False):
         """
         Compute LISA's response to the incoming MBHB GW in the frequency domain
 
@@ -424,6 +427,12 @@ class MBHBWaveform(GWwaveform):
             if True, returns real and imaginary parts of the signal in distinct arrays. Otherwise, one single complex
             array is returned.
 
+        Returns
+        -------
+        ch_interp : list of numpy arrays
+            list containing the 3 TDI responses in channels A, E and T, expressed in fractional frequency amplidudes,
+            such that ch_interp[i] corresponds to fft(ch[i]) without any normalization
+
         """
 
         # phi0, m1, m2, a1, a2, dist, inc, lam, beta, psi, tc = params
@@ -442,32 +451,45 @@ class MBHBWaveform(GWwaveform):
                                                                                 fmax=0.5 / del_t, frqs=None, resf=None)
 
             ch_interp = [self.interpolate_waveform(fr, f, ch) for ch in [x, y, z]]
+            a, e, t = tdi.AET(ch_interp[0], ch_interp[1], ch_interp[2])
 
-            if channel=='TDIAET':
+            if (channel == 'TDIAET') | (channel == ['A', 'E', 'T']):
                 # print(channel)
-                a, e, t = tdi.AET(ch_interp[0], ch_interp[1], ch_interp[2])
                 # a, e, t = convert_xyz_to_aet(ch_interp[0], ch_interp[1], ch_interp[2])
-                ch_interp = [a, e, t]
+                ch_interp = [a / del_t, e / del_t, t / del_t]
+            elif channel == ['A']:
+                ch_interp = a / del_t
+            elif channel == ['E']:
+                ch_interp = e / del_t
+            elif channel == ['T']:
+                ch_interp = t / del_t
 
         else:
-
             # fstartobs22 = pytools.funcNewtonianfoft(m1, m2, tobs * LC.YRSID_SI)
-
             # TDI response on native grid
-            wftdi = lisa.GenerateLISATDI(params, tobs=tobs, approximant='IMRPhenomD', TDItag=channel)
-
+            wftdi = lisa.GenerateLISATDI(params, tobs=tobs, approximant='IMRPhenomD', TDItag='TDIAET')
             signal_freq = lisa.GenerateLISASignal(wftdi, f)
-
-            ch_interp = [self.shift_time(f, signal_freq['ch1'],  tobs).conj(),
-                         self.shift_time(f, signal_freq['ch2'],  tobs).conj(),
-                         self.shift_time(f, signal_freq['ch3'],  tobs).conj()]
+            ch_interp = [self.shift_time(f, signal_freq['ch1'],  tobs).conj() / del_t,
+                         self.shift_time(f, signal_freq['ch2'],  tobs).conj() / del_t,
+                         self.shift_time(f, signal_freq['ch3'],  tobs).conj() / del_t]
+            # Devide by del_t to be consistent with the unnormalized DFT
 
         # Interpolate the response on required grid
         # return signal_freq['ch1'], signal_freq['ch2'], signal_freq['ch3']
-        return ch_interp[0], ch_interp[1], ch_interp[2]
-        # return x, y, z
+        # return ch_interp[0] #, ch_interp[1], ch_interp[2]
+        return ch_interp
 
-    def design_matrix_freq(self, f, params, del_t, t1, t2, channel='TDIAET', complex=False):
+    def single_design_matrix(self, tdi_resp_plus, tdi_resp_cros):
+
+        a_mat = np.empty((2 * tdi_resp_plus.shape[0], 2), dtype=np.float64)
+        a_mat[:, 0] = np.concatenate((tdi_resp_plus.real, tdi_resp_plus.imag))
+        a_mat[:, 1] = np.concatenate((tdi_resp_cros.real, tdi_resp_cros.imag))
+        # a_mat[:, 2] = np.concatenate((tdi_resp_plus.imag, -tdi_resp_plus.real))
+        # a_mat[:, 3] = np.concatenate((tdi_resp_cros.imag, -tdi_resp_cros.real))
+
+        return a_mat
+
+    def design_matrix_freq(self, f, params_intr, del_t, t1, t2, channel='TDIAET', complex=False):
         """
         Compute design matrix such that the TDI variable (fist generation)
         can be written as
@@ -480,8 +502,8 @@ class MBHBWaveform(GWwaveform):
         ----------
         f : array_like
             frequencies where to compute the matrix
-        params : array_like
-            vector of extrinsinc parameters: theta,phi,f_0,f_dot
+        params_intr : array_like
+            vector of intrinsinc parameters
         Tobs : scalar float
             Observation Duration
         ts : scalar float
@@ -500,29 +522,26 @@ class MBHBWaveform(GWwaveform):
 
         # LISABETA
         # m1, m2, chi1, chi2, tc, dist, inc, phi, lambd, beta, psi = params
-        i_dist = 5
-        i_phi0 = 7
-        i_inc = 6
-        i_psi = 10
-
         tobs = t2 - t1
 
-        params_1 = copy.deepcopy(params)
-        params_2 = copy.deepcopy(params)
+        params_1 = np.zeros(11)
+        params_2 = np.zeros(11)
 
-
+        # Same intrinsic parameters
+        params_1[self.i_intr] = params_intr
+        params_2[self.i_intr] = params_intr
         # Initial phase
-        params_1[i_phi0] = 0
-        params_2[i_phi0] = 0
+        params_1[self.i_phi0] = 0
+        params_2[self.i_phi0] = 0
         # Luminosity distance (Mpc)
-        params_1[i_dist] = 1e3
-        params_2[i_dist] = 1e3
+        params_1[self.i_dist] = 1e3
+        params_2[self.i_dist] = 1e3
         # Inclination
-        params_1[i_inc] = 0 # 0.5 * np.pi
-        params_2[i_inc] = 0 # 0.5 * np.pi
+        params_1[self.i_inc] = 0 # 0.5 * np.pi
+        params_2[self.i_inc] = 0 # 0.5 * np.pi
         # Polarization angle
-        params_1[i_psi] = 0.0
-        params_2[i_psi] = np.pi/4
+        params_1[self.i_psi] = 0.0
+        params_2[self.i_psi] = np.pi/4
 
 
         # amp = 2* G * mu / (dl * c**2)
@@ -531,28 +550,18 @@ class MBHBWaveform(GWwaveform):
         # 1. 1.e-21, 0.5*np.pi, 0.0, 0.0
         # 2. 1.e-21, 0.5*np.pi, 0.25*np.pi, 0.0
 
-        # wftdi = lisabeta.lisa.GenerateLISATDI(params, tobs=1., minf=1e-5, maxf=1., torb=0., TDItag='TDIAET',
-        #                                       acc=1e-4, order_fresnel_stencil=0, approximant='IMRPhenomD',
-        #                                       LISAconst=lisabeta.lisa.pyresponse.LISAconstProposal,
-        #                                       responseapprox='full',
-        #                                       frozenLISA=False, TDIrescaled=False)
-
-
         # Calculate the response on required grid
-        ac_plus_real, ac_plus_imag = self.compute_signal_freq(f, params_1, del_t, tobs, channel=channel, real_imag=True)
-        ac_cros_real, ac_cros_imag = self.compute_signal_freq(f, params_2, del_t, tobs, channel=channel, real_imag=True)
-
+        tdi_response_plus = self.compute_signal_freq(f, params_1, del_t, tobs, channel=channel)
+        tdi_response_cros = self.compute_signal_freq(f, params_2, del_t, tobs, channel=channel)
 
         if not complex:
-            a_mat = np.empty((2 * len(f), 4), dtype=np.float64)
-            a_mat[:, 0] = np.concatenate((ac_plus_real, ac_plus_imag))
-            a_mat[:, 1] = np.concatenate((ac_cros_real, ac_cros_imag))
-            a_mat[:, 2] = np.concatenate((ac_plus_imag, -ac_plus_real))
-            a_mat[:, 3] = np.concatenate((ac_cros_imag, -ac_cros_real))
+
+            mat_list = [self.single_design_matrix(tdi_response_plus[i], tdi_response_cros[i])
+                        for i in range(len(tdi_response_plus))]
+
         else:
-            a_mat = np.empty((len(f), 4), dtype=np.complex128)
-            a_mat[:, 0] = ac_plus_real + 1j * ac_plus_imag
-            a_mat[:, 1] = ac_cros_real + 1j * ac_cros_imag
+
+            mat_list = [np.array([tdi_response_plus[i], tdi_response_cros[i]]).T for i in range(len(tdi_response_plus))]
 
         # # Compute model matrix in frequency domain (in fractional frequency)
         # # Uc,Us = self.u_matrices(f,params,ts,Tstart,Tend,nc = self.nc, derivative = 2)
@@ -573,5 +582,5 @@ class MBHBWaveform(GWwaveform):
         #
         # A = (self.armlength / LC.c) ** 2 * A_tmp
 
-        return a_mat
+        return mat_list
 

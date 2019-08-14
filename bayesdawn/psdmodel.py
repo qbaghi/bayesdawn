@@ -32,6 +32,7 @@ def find_closest_points(f_target, f):
 
     return inds
 
+
 def spline_loglike(beta, per, A):
     """
 
@@ -212,52 +213,129 @@ def spline_matrix(x, knots, D):
 
 
 # ==============================================================================
-# PSD CLASS
+# General PSD CLASS
 # ==============================================================================
+class PSD(object):
 
-class PSDSpline(object):
+    def __init__(self, N, fs, fmin=None, fmax=None):
 
-    def __init__(self, N, fs, J=30, D=3, fmin=None, fmax=None):
-
-        # Number of knots for the log-PSD spline model
-        self.J = J
+        # Sampling frequency
         self.fs = fs
         # Size of the sample
         self.N = N
-        self.f = np.fft.fftfreq(N)*fs
-        self.n = np.int((N-1)/2.)
-        
-        if fmin is None:
-            fmin = fs/N
-        if fmax is None:
-            fmax = fs/2
-            
-        # Set the knot grid
-        self.f_knots = self.choose_knots(J, fmin, fmax)
-        self.logf_knots = np.log(self.f_knots)
-        # Logarithm of positive Fourier frequencies for a grid of size N
-        self.f = np.fft.fftfreq(N)*fs
+        self.f = np.fft.fftfreq(N) * fs
+        self.n = np.int((N - 1) / 2.)
 
-        self.fmin = fmin
-        self.fmax = fmax
-        
+        if fmin is None:
+            self.fmin = fs / N
+        if fmax is None:
+            self.fmax = fs / 2
+
+        # Flexible interpolation of the estimated PSD
+        self.logPSD_fn = None
+        self.PSD_fn = None
+
+    def periodogram(self, y_fft, K2=None):
+        """
+        Simple periodogram with no windowing
+        """
+        if K2 is None:
+            per = np.abs(y_fft)**2/len(y_fft)
+        else:
+            per = np.abs(y_fft)**2/K2
+
+        return per
+
+    def calculate(self, arg):
+        """
+        Calculate the spectrum = PSD * fs / 2 at frequencies x
+
+        """
+
+        if (type(arg) == np.int) | (type(arg) == np.int64):
+            N = arg
+            # Symmetrize the estimates
+            if N % 2 == 0: # if N is even
+                # Compute PSD from f=0 to f = fs/2
+                if N == self.N:
+                    n = self.n
+                    f_tot = np.abs(np.concatenate(([self.f[1]], self.f[1:n+2])))
+                    spectr = np.exp(self.logPSD_fn(np.log(f_tot)))
+
+                else:
+
+                    f = np.fft.fftfreq(N)*self.fs
+                    n = np.int((N-1)/2.)
+                    #f_tot = np.abs( np.concatenate(([f[1]/10.],f[1:n+2])) )
+                    f_tot = np.abs(np.concatenate(([f[1]], f[1:n+2])))
+                    # A = self.compute_A(np.log(f_tot),
+                    # self.logf_knots,
+                    # self.D)
+                    spectr = self.PSD_fn(np.log(f_tot))
+
+                #SN = self.cs(np.abs(f[0:n+2]))
+                spectr_sym = np.concatenate((spectr[0:n+1], spectr[1:n+2][::-1]))
+
+            else: # if N is odd
+                if N == self.N:
+                    n = self.n
+                    f_tot = np.abs(np.concatenate(([self.f[1]], self.f[1:n+1])))
+                    spectr = self.PSD_fn(f_tot)
+
+                else:
+
+                    f = np.fft.fftfreq(N)*self.fs
+                    n = np.int((N-1)/2.)
+                    f_tot = np.abs(np.concatenate(([f[1]], f[1:n+1])))
+                    spectr = self.PSD_fn(f_tot)
+
+                spectr_sym = np.concatenate((spectr[0:n+1], spectr[1:n+1][::-1]))
+
+        elif type(arg) == np.ndarray:
+
+            f = arg[:]
+            spectr_sym = self.PSD_fn(f)
+
+        else:
+
+            raise TypeError("Argument must be integer or ndarray")
+
+        return spectr_sym
+
+    def calculate_autocorr(self, N):
+        """
+        Compute the autocovariance function from the PSD.
+
+        """
+
+        return np.real(ifft(self.calculate(2*N))[0:N])
+
+
+# ==============================================================================
+# Spline PSD model
+# ==============================================================================
+class PSDSpline(PSD):
+
+    def __init__(self, N, fs, J=30, D=3, fmin=None, fmax=None):
+
+        PSD.__init__(self, N, fs, fmin=fmin, fmax=fmax)
+
+        # Number of knots for the log-PSD spline model
+        self.J = J
+        # Set the knot grid
+        self.f_knots = self.choose_knots(J, self.fmin, self.fmax)
+        self.logf_knots = np.log(self.f_knots)
         # Spline order
         self.D = D
-
         self.C0 = -0.57721
-
         # Create a dictionary corresponding to each data length
         self.logf = {N:np.log(self.f[1:self.n+1])}
         # Spline coefficient vector
         self.beta = []
         # PSD at positive Fourier frequencies
         self.logS = []
-
-        # Flexible interpolation of the estimated PSD
-        self.logPSD_fn = None
         # Spectrum calcualed on the Fourier frequency grid
         self.S = []
-
         # For Bayesian inference: the spline interpolation
         # Control frequencies
         self.logfc = np.concatenate((np.log(self.f_knots), [np.log(self.fs/2)]))
@@ -274,13 +352,11 @@ class PSDSpline(object):
         # # Spline estimator of the variance of the log-PSD estimate
         # self.logvar_fn = interpolate.interp1d(self.logfc[1:], self.varlogSc[1:], kind='cubic', fill_value="const")
 
-
     def set_knots(self, f_knots):
 
         self.f_knots = f_knots
         self.logf_knots = np.log(self.f_knots)
         self.logfc = np.concatenate((np.log(self.f_knots), [np.log(self.fs / 2)]))
-
 
     def choose_knots(self, J, fmin, fmax):
         """
@@ -341,16 +417,6 @@ class PSDSpline(object):
         # Compute the spline parameter vector for the log-PSD model
         self.estimate_from_I(I)
 
-    def periodogram(self, y_fft, K2=None):
-        """
-        Simple periodogram with no windowing
-        """
-        if K2 == None:
-            I = np.abs(y_fft)**2/len(y_fft)
-        else:
-            I = np.abs(y_fft)**2/K2
-        return I
-
     def estimate_from_freq(self, y_fft, K2=None):
         """
 
@@ -382,12 +448,14 @@ class PSDSpline(object):
         # If there is only one periodogram
         if type(I) == np.ndarray:
             self.logPSD_fn = self.spline_lsqr(I)
+            self.PSD_fn = lambda x: np.exp(self.logPSD_fn(np.log(x)))
             self.beta = self.logPSD_fn.get_coeffs()
         elif type(I) == list:
             # If there are several periodograms, average the estimates
             spl_list = [self.spline_lsqr(I0) for I0 in I if self.fs / len(I0) < self.f_knots[0]]
             self.beta = sum([spl.get_coeffs for spl in spl_list])/len(I)
             self.logPSD_fn = interpolate.BSpline(spl_list[0].get_knots(), self.beta, self.D)
+            self.PSD_fn = lambda x: np.exp(self.logPSD_fn(np.log(x)))
 
         # Estimate psd at positive Fourier log-frequencies
         self.logS = self.logPSD_fn(self.logf[self.N])
@@ -396,11 +464,9 @@ class PSDSpline(object):
         # self.logvar_fn = interpolate.LSQUnivariateSpline(self.logf[self.N],
         #                                                  (np.log(I[1:self.n+1]) - self.C0 - self.logS)**2,
         #                                                  self.logf_knots, k=1, ext='const')
-
         # Update PSD control values (for Bayesian estimation)
         self.logSc = self.logPSD_fn(self.logfc)
         # self.varlogSc = self.logvar_fn(self.logfc)
-
 
     def spline_lsqr(self, I):
         """
@@ -423,77 +489,6 @@ class PSDSpline(object):
         spl = interpolate.LSQUnivariateSpline(self.logf[NI], v, self.logf_knots, k=self.D, ext="const")
 
         return spl
-
-    def calculate(self, arg):
-        """
-        Calculate the PSD at frequencies x
-
-        """
-
-        if (type(arg) == np.int) | (type(arg) == np.int64):
-            N = arg
-
-            # Symmetrize the estimates
-            if (N % 2 == 0): # if N is even
-                # Compute PSD from f=0 to f = fs/2
-                if N == self.N :
-                    # f_compl = np.abs( np.array([f[1]/10.,f[n+1]]) )
-                    # A_compl = self.compute_A(np.log(f_compl),self.logf_knots,self.D)
-                    # A = np.vstack((A_compl[[0],:],self.A_log,A_compl[[1],:]))
-                    # SN = np.exp( np.dot(A,self.beta) )
-                    n = self.n
-                    #f_tot = np.abs( np.concatenate(([self.f[1]/10.],self.f[1:n+2])) )
-                    # for f = 0 we take S(0) = S(f[1])
-                    f_tot = np.abs( np.concatenate(([self.f[1]],self.f[1:n+2])) )
-                    SN = np.exp( self.logPSD_fn(np.log(f_tot)) )
-
-                else:
-
-                    f = np.fft.fftfreq(N)*self.fs
-                    n = np.int( (N-1)/2. )
-                    #f_tot = np.abs( np.concatenate(([f[1]/10.],f[1:n+2])) )
-                    f_tot = np.abs( np.concatenate(([f[1]],f[1:n+2])) )
-                    # A = self.compute_A(np.log(f_tot),
-                    # self.logf_knots,
-                    # self.D)
-                    SN = np.exp( self.logPSD_fn(np.log(f_tot)) )
-
-                #SN = self.cs(np.abs(f[0:n+2]))
-                SN_sym = np.concatenate((SN[0:n+1],SN[1:n+2][::-1]))
-
-            else: # if N is odd
-                if N == self.N:
-                    f_tot = np.abs( np.concatenate(([self.f[1]],self.f[1:self.n+1])) )
-                    SN = np.exp(self.logPSD_fn(np.log(f_tot)))
-
-                else:
-
-                    f = np.fft.fftfreq(N)*self.fs
-                    n = np.int( (N-1)/2. )
-                    f_tot = np.abs( np.concatenate(([f[1]],f[1:n+1])) )
-                    SN = np.exp( self.logPSD_fn(np.log(f_tot)) )
-
-                SN_sym = np.concatenate((SN[0:n+1],SN[1:n+1][::-1]))
-
-        elif type(arg) == np.ndarray:
-
-            f = arg[:]
-            SN_sym = np.exp(self.logPSD_fn(np.log(f)))
-
-        else:
-
-            raise TypeError("Argument must be integer or ndarray")
-
-        return SN_sym
-
-    def calculate_autocorr(self, N):
-        """
-        Compute the autocovariance function from the PSD.
-
-        """
-
-        return np.real(ifft(self.calculate(2*N))[0:N])
-
 
 
 def scaled_gamma_distribution(mu, var):
@@ -520,7 +515,7 @@ def scaled_gamma_distribution(mu, var):
     nu = 4 + 2 * mu**2 / var
     s2 = (nu-2)/nu * mu
 
-    return nu,s2
+    return nu, s2
 
 
 def log_normal_distribution(mu_X, var_X):
@@ -536,5 +531,6 @@ def log_normal_distribution(mu_X, var_X):
     mu_Y = np.exp( mu_X + 0.5 * var_X )
     var_Y = np.exp( 2*mu_X + var_X ) * (np.exp(var_X) - 1 )
 
-    return mu_Y,var_Y
+    return mu_Y, var_Y
+
 
