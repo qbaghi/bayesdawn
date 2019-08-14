@@ -1,9 +1,6 @@
-
 import numpy as np
-import ptemcee
 import h5py
 from . import gaps
-from dynesty import utils as dyfunc
 import ptemcee
 
 # FTT modules
