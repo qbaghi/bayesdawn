@@ -1,5 +1,5 @@
 import numpy as np
-from bayesdawn.bayesdawn import datamodel, psdmodel
+from bayesdawn import psdmodel
 # from dynesty import NestedSampler
 # from dynesty import utils as dyfunc
 # import ptemcee
@@ -28,7 +28,6 @@ class PSDTheoretical(object):
         return sample_list, logp_values_list
 
 
-
 def theoretical_spectrum_func(f_sampling, channel, scale=1.0):
 
     if channel == 'A':
@@ -44,7 +43,7 @@ def theoretical_spectrum_func(f_sampling, channel, scale=1.0):
 
 if __name__ == '__main__':
 
-    from matplotlib import pyplot as plt
+    # from matplotlib import pyplot as plt
     # import pywt
     # from gwavelets import gwplot, gwdenoise
     import datetime
@@ -52,11 +51,10 @@ if __name__ == '__main__':
     import time
     import h5py
     # from scipy import signal
-    from bayesdawn.bayesdawn.postproc import psdplot
+    # from bayesdawn.postproc import psdplot
     from bayesdawn.bayesdawn.waveforms import lisaresp
-    from bayesdawn.bayesdawn import gwmodel, dasampler
-    from bayesdawn.bayesdawn.utils import loadings
-    from bayesdawn.bayesdawn import samplers
+    from bayesdawn import gwmodel, dasampler, datamodel, samplers
+    from bayesdawn.utils import loadings
     import tdi
 
     # FTT modules
