@@ -45,11 +45,13 @@ def theoretical_spectrum_func(f_sampling, channel, scale=1.0):
 if __name__ == '__main__':
 
     from matplotlib import pyplot as plt
-    import pywt
-    from gwavelets import gwplot, gwdenoise
+    # import pywt
+    # from gwavelets import gwplot, gwdenoise
+    import datetime
     # import myplots
     import time
-    from scipy import signal
+    import h5py
+    # from scipy import signal
     from bayesdawn.bayesdawn.postproc import psdplot
     from bayesdawn.bayesdawn.waveforms import lisaresp
     from bayesdawn.bayesdawn import gwmodel, dasampler
@@ -191,6 +193,14 @@ if __name__ == '__main__':
     # res = das.run(n_it=100000, n_update=1000, n_psd=10)
     # Or:
     # das.sampler_cls.run_nested(maxiter=100000)
+
+    now = datetime.datetime.now()
+    prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
+    out_dir = '/home/centos/data/mcmc/results_mbhb/'
+    fh5 = h5py.File(out_dir + prefix + 'chains.hdf5', 'w')
+    fh5.create_dataset("chains/chain", data=das.sampler_cls.chain)
+    fh5.create_dataset("temperatures/beta_hist", data=das.sampler_cls._beta_history)
+    fh5.close()
 
 
 
