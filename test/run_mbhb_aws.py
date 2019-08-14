@@ -52,7 +52,7 @@ if __name__ == '__main__':
     import h5py
     # from scipy import signal
     # from bayesdawn.postproc import psdplot
-    from bayesdawn.bayesdawn.waveforms import lisaresp
+    from bayesdawn.waveforms import lisaresp
     from bayesdawn import gwmodel, dasampler, datamodel, samplers
     from bayesdawn.utils import loadings
     import tdi
