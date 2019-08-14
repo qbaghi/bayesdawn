@@ -329,7 +329,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             fi.close()
 
 
-class ExtendedNestedSampler(dynesty.DynamicSampler):
+class ExtendedNestedSampler(dynesty.dynamicsampler.DynamicSampler):
 
     def __init__(self, *args, **kwargs):
 
