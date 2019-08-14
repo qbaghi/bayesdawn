@@ -9,8 +9,7 @@ import copy
 from functools import reduce
 import ptemcee
 import h5py
-from dynesty import NestedSampler
-
+import dynesty
 
 def clipcov(X, nit = 3, n_sig = 5):
     """
@@ -330,12 +329,17 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             fi.close()
 
 
-class ExtendedNestedSampler(NestedSampler):
+class ExtendedNestedSampler(dynesty.NestedSampler):
 
-    def __init__(self, *args):
+    def __init__(self, *args, **kwargs):
 
-        NestedSampler.__init__(self, args)
+        super(ExtendedNestedSampler, self).__init__(*args, **kwargs)
 
     def update_log_likelihood(self, log_likelihood, loglike_args):
 
-        self.loglikelihood = log_likelihood
+        self.loglikelihood.func = log_likelihood
+        self.loglikelihood.args = loglike_args
+
+    def update_log_prior(self, log_prior, log_prior_args):
+        pass
+
