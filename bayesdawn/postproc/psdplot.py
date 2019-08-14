@@ -1,5 +1,3 @@
-import load_mcmc_config
-
 import gapgenerator as gg
 import pyFLR
 import alwaves
@@ -28,7 +26,6 @@ from scipy import signal
 
 # Plot modules
 import myplots
-import seaborn as sns
 from matplotlib import pyplot as plt
 
 def compute_periodogram(x, fs=1.0, wind='tukey'):
@@ -161,6 +158,7 @@ def compute_psd_map(chain_psd, logp_psd, fs, N):
 
 if __name__ == '__main__':
 
+    import load_mcmc_config
     import resanalysis
     # # For antenna gaps and f0 = 1e-4 Hz
     # base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/1e-4Hz/"
