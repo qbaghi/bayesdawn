@@ -329,7 +329,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             fi.close()
 
 
-class ExtendedNestedSampler(dynesty.NestedSampler):
+class ExtendedNestedSampler(dynesty.DynamicSampler):
 
     def __init__(self, *args, **kwargs):
 
@@ -342,4 +342,19 @@ class ExtendedNestedSampler(dynesty.NestedSampler):
 
     def update_log_prior(self, log_prior, log_prior_args):
         pass
+
+    def run(self, n_it, n_update, n_thin, n_save, callback, pos0=None, save_path='./'):
+
+        # The main nested sampling loop.
+        for it, res in enumerate(self.sample(dlogz=0.5)):
+            pass
+
+        # Adding the final set of live points.
+        for it_final, res in enumerate(self.add_live_points()):
+
+            pass
+
+
+
+
 
