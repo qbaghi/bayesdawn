@@ -332,7 +332,7 @@ class FullModel(object):
         fh5.close()
         self.psd_save += 1
 
-    def run(self, n_it=100000, n_update=1000, n_thin=5):
+    def run(self, n_it=100000, n_update=1000, n_thin=5, n_save=1000, save_path='./chains.hdf5'):
         """Metropolis-Hastings within Gibbs sampler using `PTMCMCSampler`
 
         The parameters are bounded in the finite interval described by ``lo`` and
@@ -374,7 +374,7 @@ class FullModel(object):
         # # Initialization of auxiliary parameters
         # self.initialize_aux(p0, n_psd)
 
-        self.sampler_cls.run(n_it, n_update, n_thin, self.update_aux)
+        self.sampler_cls.run(n_it, n_update, n_thin, n_save, self.update_aux, pos0=None, save_path=save_path)
 
 
 
