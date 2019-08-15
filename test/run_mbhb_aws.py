@@ -192,12 +192,11 @@ if __name__ == '__main__':
     prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
     out_dir = '/home/centos/data/mcmc/results_mbhb/'
     print("start sampling...")
-    das.run(n_it=100000, n_update=100, n_thin=1, n_save=100, save_path=out_dir + 'chains_temp.hdf5')
+    das.run(n_it=100000, n_update=10, n_thin=1, n_save=100, save_path=out_dir + prefix + 'chains_temp.hdf5')
     print("done.")
     # res = das.run(n_it=100000, n_update=1000, n_psd=10)
     # Or:
     # das.sampler_cls.run_nested(maxiter=100000)
-
 
     fh5 = h5py.File(out_dir + prefix + 'chains.hdf5', 'w')
     fh5.create_dataset("chains/chain", data=das.sampler_cls.chain)
