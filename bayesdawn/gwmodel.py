@@ -34,7 +34,8 @@ class GWModel(object):
                  fmin=1e-5,
                  fmax=0.5e-1,
                  nsources=1,
-                 order=None):
+                 order=None,
+                 t_end=None):
         """
 
         Parameters
@@ -94,8 +95,11 @@ class GWModel(object):
         self.N = np.int(tobs/del_t)
 
         # Starting and end times of waveform model:
-        self.T1 = 0
-        self.T2 = self.tobs
+        self.t_start = 0
+        if t_end is None:
+            self.t_end = self.tobs
+        else:
+            self.t_end = t_end
         # Waveform model
         self.smodel = smodel
 
@@ -141,13 +145,13 @@ class GWModel(object):
     
         """
 
-        return self.smodel.design_matrix_freq(f, params, self.ts, self.T1, self.T2, channel=self.channels)
+        return self.smodel.design_matrix_freq(f, params, self.ts, self.t_start, self.t_end, channel=self.channels)
 
     def compute_frequency_signal(self, params):
 
         y_gw_fft = np.zeros(self.N, dtype=np.complex128)
 
-        y_gw_fft[self.inds_pos] = self.smodel.compute_signal_freq(self.f_pos, params, self.ts, self.tobs,
+        y_gw_fft[self.inds_pos] = self.smodel.compute_signal_freq(self.f_pos, params, self.ts, self.t_end,
                                                                   channel=self.channels)
         y_gw_fft[self.inds_neg] = np.conj(y_gw_fft[self.inds_pos])
 
@@ -264,7 +268,7 @@ class GWModel(object):
         # z_fft_inds = y_fft[self.inds_pos] - self.draw_frequency_signal_onBW(params_phys, S, y_fft)
         # In the case of full parameter vector
         z_fft_inds = self.concatenate_data_pos(y_fft) - self.concatenate_model(self.smodel.compute_signal_freq(
-            self.f_pos, params, self.ts, self.tobs, channel=self.channels))
+            self.f_pos, params, self.ts, self.t_end, channel=self.channels))
 
         # Compute periodogram for relevant frequencies
         per_inds = np.abs(z_fft_inds)**2/self.N

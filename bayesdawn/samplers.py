@@ -367,8 +367,7 @@ class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
         print("Adding the final set of live points")
         for it_final, res in enumerate(self.add_live_points()):
             if (it_final % n_save == 0) & (it_final != 0):
-                print("Final iteration " + str(it) + " reached.")
-            pass
+                print("Final iteration " + str(it_final) + " reached.")
 
 _SAMPLERS = dynesty.dynesty._SAMPLERS
 _SAMPLERS['extended'] = ExtendedNestedSampler

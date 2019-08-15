@@ -491,7 +491,7 @@ class MBHBWaveform(GWwaveform):
 
         return a_mat
 
-    def design_matrix_freq(self, f, params_intr, del_t, t1, t2, channel='TDIAET', complex=False):
+    def design_matrix_freq(self, f, params_intr, del_t, t1, t2, channel='TDIAET', complex=False, tref=0):
         """
         Compute design matrix such that the TDI variable (fist generation)
         can be written as
@@ -553,8 +553,8 @@ class MBHBWaveform(GWwaveform):
         # 2. 1.e-21, 0.5*np.pi, 0.25*np.pi, 0.0
 
         # Calculate the response on required grid
-        tdi_response_plus = self.compute_signal_freq(f, params_1, del_t, tobs, channel=channel)
-        tdi_response_cros = self.compute_signal_freq(f, params_2, del_t, tobs, channel=channel)
+        tdi_response_plus = self.compute_signal_freq(f, params_1, del_t, tobs, channel=channel, tref=tref)
+        tdi_response_cros = self.compute_signal_freq(f, params_2, del_t, tobs, channel=channel, tref=tref)
 
         if not complex:
 
