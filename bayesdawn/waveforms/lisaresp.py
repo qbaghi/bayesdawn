@@ -407,7 +407,7 @@ class MBHBWaveform(GWwaveform):
 
         return xf*np.exp(-2j*np.pi*f*delay)
 
-    def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET', ldc=False):
+    def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET', ldc=False, tref=0):
         """
         Compute LISA's response to the incoming MBHB GW in the frequency domain
 
@@ -423,9 +423,10 @@ class MBHBWaveform(GWwaveform):
             sampling cadence
         channel : string
             tdi channel among {'X1','X2','X3'}
-        real_imag : boolean
-            if True, returns real and imaginary parts of the signal in distinct arrays. Otherwise, one single complex
-            array is returned.
+        ldc : boolean
+            whether to use LDC or Lisabeta waveform
+        tref : float
+            starting time of the waveform
 
         Returns
         -------
@@ -465,9 +466,10 @@ class MBHBWaveform(GWwaveform):
                 ch_interp = t / del_t
 
         else:
-            # fstartobs22 = pytools.funcNewtonianfoft(m1, m2, tobs * LC.YRSID_SI)
-            # TDI response on native grid
-            wftdi = lisa.GenerateLISATDI(params, tobs=tobs, approximant='IMRPhenomD', TDItag='TDIAET')
+            # TDI response
+            wftdi = lisa.GenerateLISATDI(params, tobs=tobs, minf=1e-5, maxf=1., tref=tref, torb=0., TDItag='TDIAET',
+                                         acc=1e-4, order_fresnel_stencil=0, approximant='IMRPhenomD',
+                                         responseapprox='full', frozenLISA=False, TDIrescaled=False)
             signal_freq = lisa.GenerateLISASignal(wftdi, f)
             ch_interp = [self.shift_time(f, signal_freq['ch1'],  tobs).conj() / del_t,
                          self.shift_time(f, signal_freq['ch2'],  tobs).conj() / del_t,

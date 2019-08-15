@@ -10,6 +10,9 @@ from functools import reduce
 import ptemcee
 import h5py
 import dynesty
+from dynesty import NestedSampler
+
+
 
 def clipcov(X, nit = 3, n_sig = 5):
     """
@@ -307,7 +310,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
         self.position = pos[:]
 
         with h5py.File(save_path, "a") as fi:
-            dset = fi.create_dataset('chain', (self.ntemps, self.nwalkers, n_update, pos.shape[2]),
+            dset = fi.create_dataset('chain', (self.ntemps, self.nwalkers, n_save, pos.shape[2]),
                                      maxshape=(self.ntemps, self.nwalkers, n_it, pos.shape[2]),
                                      dtype=pos.dtype,
                                      chunks=(self.ntemps, self.nwalkers, n_save, pos.shape[2]))
@@ -329,7 +332,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             fi.close()
 
 
-class ExtendedNestedSampler(dynesty.dynamicsampler.DynamicSampler):
+class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
 
     def __init__(self, *args, **kwargs):
 
@@ -345,16 +348,56 @@ class ExtendedNestedSampler(dynesty.dynamicsampler.DynamicSampler):
 
     def run(self, n_it, n_update, n_thin, n_save, callback, pos0=None, save_path='./'):
 
-        # The main nested sampling loop.
-        for it, res in enumerate(self.sample(dlogz=0.5)):
-            pass
+        with h5py.File(save_path, "a") as fi:
+            dset = fi.create_dataset('chain', (self.npdim, n_save),
+                                     maxshape=(self.npdim, n_it),
+                                     dtype=np.float,
+                                     chunks=(self.npdim, n_save))
 
-        # Adding the final set of live points.
+        print("The main nested sampling loop begins...")
+        for it, res in enumerate(self.sample(maxiter=n_it)):
+                if it % n_update == 0:
+                    print("Update of auxiliary parameters at iteration " + str(it))
+                    # callback(self.saved_v[0, :])
+                    callback(self.results.samples[0, :])
+                if (it % n_save == 0) & (it != 0):
+                    print("Save data at iteration " + str(it))
+                    dset[-n_save:, :] = self.results.samples[-n_save:, :]
+
+        print("Adding the final set of live points")
         for it_final, res in enumerate(self.add_live_points()):
-
+            if (it_final % n_save == 0) & (it_final != 0):
+                print("Final iteration " + str(it) + " reached.")
             pass
 
+_SAMPLERS = dynesty.dynesty._SAMPLERS
+_SAMPLERS['extended'] = ExtendedNestedSampler
 
 
+def extended_nested_sampler(loglikelihood, prior_transform, ndim, nlive=500, sample='auto', periodic=None,
+                  update_interval=None, first_update=None,
+                  npdim=None, rstate=None, queue_size=None, pool=None,
+                  use_pool=None, live_points=None,
+                  logl_args=None, logl_kwargs=None,
+                  ptform_args=None, ptform_kwargs=None,
+                  gradient=None, grad_args=None, grad_kwargs=None,
+                  compute_jac=False,
+                  enlarge=None, bootstrap=0, vol_dec=0.5, vol_check=2.0,
+                  walks=25, facc=0.5, slices=5, fmove=0.9, max_move=100,
+                  **kwargs):
 
+    sampler = NestedSampler(loglikelihood, prior_transform, ndim, nlive=nlive,
+                  bound='extended', sample=sample, periodic=periodic,
+                  update_interval=update_interval, first_update=first_update,
+                  npdim=npdim, rstate=rstate, queue_size=queue_size, pool=pool,
+                  use_pool=use_pool, live_points=live_points,
+                  logl_args=logl_args, logl_kwargs=logl_kwargs,
+                  ptform_args=ptform_args, ptform_kwargs=ptform_kwargs,
+                  gradient=gradient, grad_args=grad_args, grad_kwargs=grad_kwargs,
+                  compute_jac=compute_jac,
+                  enlarge=enlarge, bootstrap=bootstrap, vol_dec=vol_dec, vol_check=vol_check,
+                  walks=walks, facc=facc, slices=slices, fmove=fmove, max_move=max_move,
+                  **kwargs)
+
+    return sampler
 
