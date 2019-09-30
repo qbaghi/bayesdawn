@@ -9,6 +9,7 @@ from scipy import interpolate
 from scipy import optimize
 import patsy
 import copy
+import tdi
 
 # FTT modules
 import pyfftw
@@ -228,8 +229,12 @@ class PSD(object):
 
         if fmin is None:
             self.fmin = fs / N
+        else:
+            self.fmin = fmin
         if fmax is None:
             self.fmax = fs / 2
+        else:
+            self.fmax = fmax
 
         # Flexible interpolation of the estimated PSD
         self.logPSD_fn = None
@@ -316,14 +321,17 @@ class PSD(object):
 # ==============================================================================
 class PSDSpline(PSD):
 
-    def __init__(self, N, fs, J=30, D=3, fmin=None, fmax=None):
+    def __init__(self, N, fs, J=30, D=3, fmin=None, fmax=None, f_knots=None):
 
         PSD.__init__(self, N, fs, fmin=fmin, fmax=fmax)
 
         # Number of knots for the log-PSD spline model
         self.J = J
         # Set the knot grid
-        self.f_knots = self.choose_knots(J, self.fmin, self.fmax)
+        if f_knots is None:
+            self.f_knots = self.choose_knots(J, self.fmin, self.fmax)
+        else:
+            self.f_knots = f_knots
         self.logf_knots = np.log(self.f_knots)
         # Spline order
         self.D = D
@@ -382,16 +390,18 @@ class PSDSpline(PSD):
 
         """
 
-        ns = - np.log(fmax)/np.log(10)
-        n0 = - np.log(fmin)/np.log(10)
+        base = 10
+        # base = np.exp(1)
+        ns = - np.log(fmax)/np.log(base)
+        n0 = - np.log(fmin)/np.log(base)
         jvect = np.arange(0, J)
         alpha_guess = 0.8
 
-        targetfunc = lambda x : n0 - (1-x**(J))/(1-x) - ns
+        targetfunc = lambda x: n0 - (1-x**(J))/(1-x) - ns
         result = optimize.fsolve(targetfunc, alpha_guess)
         alpha = result[0]
         n_knots = n0 - (1-alpha**jvect)/(1-alpha)
-        f_knots = 10**(-n_knots)
+        f_knots = base**(-n_knots)
 
         return f_knots
 
@@ -533,4 +543,39 @@ def log_normal_distribution(mu_X, var_X):
 
     return mu_Y, var_Y
 
+
+def theoretical_spectrum_func(f_sampling, channel, scale=1.0):
+
+    if channel == 'A':
+        PSD_fn = lambda x: tdi.noisepsd_AE(x, model='SciRDv1') * f_sampling / 2 / scale**2
+    elif channel == 'E':
+        PSD_fn = lambda x: tdi.noisepsd_AE(x, model='SciRDv1') * f_sampling / 2 / scale**2
+    elif channel == 'T':
+        PSD_fn = lambda x: tdi.noisepsd_T(x, model='SciRDv1') * f_sampling / 2 / scale**2
+
+    return PSD_fn
+
+
+class PSDTheoretical(object):
+
+    def __init__(self, N, fs, fmin=None, fmax=None, channels=['A'], scale=1.0):
+        self.channels = channels
+        self.psd_list = [PSD(N, fs, fmin=fmin, fmax=fmax) for ch in channels]
+
+        for i in range(len(channels)):
+            self.psd_list[i].PSD_fn = theoretical_spectrum_func(fs, channels[i], scale=scale)
+            self.psd_list[i].logPSD_fn = lambda x: np.log(self.psd_list[i].PSD_fn(np.exp(x)))
+
+    def calculate(self, arg):
+        return [psd.calculate(arg) for psd in self.psd_list]
+
+    def set_periodogram(self, z_fft, K2):
+        [psd.set_periodogram(z_fft, K2) for psd in self.psd_list]
+
+    def sample(self, npsd):
+        sampling_result = [psd.sample_psd(npsd) for psd in self.psd_list]
+        sample_list = [samp[0] for samp in sampling_result]
+        logp_values_list = [samp[1] for samp in sampling_result]
+
+        return sample_list, logp_values_list
 
