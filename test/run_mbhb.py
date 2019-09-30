@@ -163,28 +163,28 @@ if __name__ == '__main__':
     # ==================================================================================================================
     # Run the sampling
     # ==================================================================================================================
-    # now = datetime.datetime.now()
-    # prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
-    # out_dir = config["OutputData"]["DirectoryPath"]
-    # print("start sampling...")
-    #
-    # # sampler_cls0 = NestedSampler(das.log_likelihood, model_cls.ptform, model_cls.ndim_tot, nlive=nlive, logl_args=(das.spectrum, das.y_fft))
-    # # sampler_cls0.run_nested(maxiter=int(config['Sampler']['MaximumIterationNumber']))
-    # # das.sampler_cls = sampler_cls0
-    #
-    # das.run(n_it=int(config['Sampler']['MaximumIterationNumber']),
-    #         n_update=int(config['Sampler']['AuxiliaryParameterUpdateNumber']),
-    #         n_thin=int(config['Sampler']['ThinningNumber']),
-    #         n_save=int(config['Sampler']['SavingNumber']),
-    #         save_path=out_dir + prefix + 'chains_temp.hdf5')
-    #
-    # print("done.")
-    #
-    # fh5 = h5py.File(out_dir + prefix + config["OutputData"]["FileSuffix"], 'w')
-    # fh5.create_dataset("chains/chain", data=das.sampler_cls.chain)
-    # if config["Sampler"]["Type"] == 'ptemcee':
-    #     fh5.create_dataset("temperatures/beta_hist", data=das.sampler_cls._beta_history)
-    # fh5.close()
+    now = datetime.datetime.now()
+    prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
+    out_dir = config["OutputData"]["DirectoryPath"]
+    print("start sampling...")
+
+    # sampler_cls0 = NestedSampler(das.log_likelihood, model_cls.ptform, model_cls.ndim_tot, nlive=nlive, logl_args=(das.spectrum, das.y_fft))
+    # sampler_cls0.run_nested(maxiter=int(config['Sampler']['MaximumIterationNumber']))
+    # das.sampler_cls = sampler_cls0
+
+    das.run(n_it=int(config['Sampler']['MaximumIterationNumber']),
+            n_update=int(config['Sampler']['AuxiliaryParameterUpdateNumber']),
+            n_thin=int(config['Sampler']['ThinningNumber']),
+            n_save=int(config['Sampler']['SavingNumber']),
+            save_path=out_dir + prefix + 'chains_temp.hdf5')
+
+    print("done.")
+
+    fh5 = h5py.File(out_dir + prefix + config["OutputData"]["FileSuffix"], 'w')
+    fh5.create_dataset("chains/chain", data=das.sampler_cls.chain)
+    if config["Sampler"]["Type"] == 'ptemcee':
+        fh5.create_dataset("temperatures/beta_hist", data=das.sampler_cls._beta_history)
+    fh5.close()
 
 
 
