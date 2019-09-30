@@ -12,7 +12,7 @@ from pyfftw.interfaces.numpy_fft import fft, ifft
 class FullModel(object):
 
     def __init__(self, signal_cls, psd_cls, dat_cls, sampler_cls, outdir='./', n_wind=500, n_wind_psd=500000,
-                 prefix='samples', n_psd=10, imputation=False, psd_estimation=False, normalized=False):
+                 prefix='samples', n_psd=10, imputation=False, psd_estimation=False, normalized=False, rescaled=True):
         """
 
         Parameters
@@ -42,7 +42,10 @@ class FullModel(object):
             flag telling whether to perform imputation of missiong data
         pse_estimation: boolean
             flag telling whether to perform PSD estimation
-
+        normalized : bool
+            if True, the log-likelihood is properly normalized (likelihood integral equals 1)
+        rescaled : bool
+            if True, the parameter ranges are all linearly rescaled to unit intervals [0, 1]
 
 
         """
@@ -82,17 +85,21 @@ class FullModel(object):
         self.y_fft = self.dat_cls.dft(self.dat_cls.y, self.w)
         # Spectrum value (can be a numpy array or a list)
         self.spectrum = self.psd_cls.calculate(self.dat_cls.N)
-        # Normalizing constant of the likelihood
-        self.log_norm = self.compute_log_norm()
         self.psd_samples = []
         self.psd_logpvals = []
         self.psd_save = 1
         # Number of psd draws for each update
         self.n_psd = n_psd
-
+        # Imputation flag
         self.imputation = imputation
+        # PSD estimation flag
         self.psd_estimation = psd_estimation
+        # Log-likelihood normalization flag
         self.normalized = normalized
+        # Normalizing constant of the likelihood
+        self.log_norm = self.compute_log_norm()
+        # Rescaling of parameters flag
+        self.rescaled = rescaled
 
         if signal_cls.order is None:
             self.logp = self.signal_cls.logp
@@ -101,35 +108,53 @@ class FullModel(object):
             self.logp = self.signal_cls.logpo
             self.logpargs = [self.signal_cls.lo, self.signal_cls.hi, signal_cls.order[0], signal_cls.order[1]]
 
-        if not normalized:
+        if not rescaled:
             self.uniform2params = lambda u: u
             self.params2uniform = lambda x: x
         else:
             self.uniform2params = lambda u: self.signal_cls.formtp(u)
             self.params2uniform = lambda x: self.signal_cls.ptform(x)
 
-        # Adds the normalization to the likelihood
-        self.log_likelihood = lambda x, *args: \
-            self.signal_cls.log_likelihood(self.uniform2params(x), *args) + self.log_norm
         # Reset log-likelihood with proper normalization and auxiliary variables
         self.sampler_cls.update_log_likelihood(self.log_likelihood, (self.spectrum, self.y_fft))
         # Reset log-prior with proper normalization
         self.sampler_cls.update_log_prior(self.signal_cls.logp, (self.params2uniform(self.signal_cls.lo),
                                                                  self.params2uniform(self.signal_cls.hi)))
 
+    def log_likelihood(self, x, *args):
+        """
+        Log-likelihood including proper PSD normalization and conversion from unitless to physical parameters
+
+        Parameters
+        ----------
+        x
+        args
+
+        Returns
+        -------
+
+        """
+        # Adds the normalization to the likelihood
+        #self.log_likelihood = lambda x, *args: \
+            #self.signal_cls.log_likelihood(self.uniform2params(x), *args) + self.log_norm
+        return self.signal_cls.log_likelihood(self.uniform2params(x), *args) + self.log_norm
+
     def compute_log_norm(self):
 
-        if type(self.spectrum) == np.array:
-            # Normalization constant (calculated once and for all)
-            log_norm = np.real(-0.5 * (np.sum(np.log(self.spectrum)) + self.signal_cls.N * np.log(2 * np.pi)))
-        elif type(self.spectrum) == list:
-            # If the noise spectrum is a list of spectra corresponding to each TDI channel, concatenate the spectra
-            # in a single array
-            # Restricted spectrum
-            # spectrum_arr = np.concatenate([spect[self.signal_cls.inds_pos] for spect in self.spectrum])
-            spectrum_arr = np.concatenate([spect for spect in self.spectrum])
-            log_norm = np.real(-0.5 * (np.sum(np.log(spectrum_arr)))
-                               + len(self.y_fft) * self.signal_cls.N * np.log(2 * np.pi))
+        if self.normalized:
+            if type(self.spectrum) == np.array:
+                # Normalization constant (calculated once and for all)
+                log_norm = np.real(-0.5 * (np.sum(np.log(self.spectrum)) + self.signal_cls.N * np.log(2 * np.pi)))
+            elif type(self.spectrum) == list:
+                # If the noise spectrum is a list of spectra corresponding to each TDI channel, concatenate the spectra
+                # in a single array
+                # Restricted spectrum
+                # spectrum_arr = np.concatenate([spect[self.signal_cls.inds_pos] for spect in self.spectrum])
+                spectrum_arr = np.concatenate([spect for spect in self.spectrum])
+                log_norm = np.real(-0.5 * (np.sum(np.log(spectrum_arr)))
+                                   + len(self.y_fft) * self.signal_cls.N * np.log(2 * np.pi))
+        else:
+            log_norm = 0
 
         return log_norm
 
@@ -373,9 +398,12 @@ class FullModel(object):
 
         # # Initialization of auxiliary parameters
         # self.initialize_aux(p0, n_psd)
+        if self.imputation | self.psd_estimation:
+            callback = self.update_aux
+        else:
+            callback = None
 
-        self.sampler_cls.run(n_it, n_update, n_thin, n_save, self.update_aux, pos0=None, save_path=save_path)
-
+        self.sampler_cls.run(n_it, n_update, n_thin, n_save, callback=callback, pos0=None, save_path=save_path)
 
 
 class fullSampler(FullModel):

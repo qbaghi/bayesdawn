@@ -11,7 +11,7 @@ import copy
 import numpy as np
 import LISAConstants as LC
 import tdi
-from scipy import special
+from scipy import special, linalg
 from .coeffs import k_coeffs
 # from lisabeta.lisa import lisa
 import lisabeta.lisa.lisa as lisa
@@ -349,7 +349,7 @@ class MBHBWaveform(GWwaveform):
 
     """
 
-    def __init__(self, Phi_rot=0, armlength=2.5e9):
+    def __init__(self, Phi_rot=0, armlength=2.5e9, reduced=False):
         """
 
 
@@ -437,7 +437,17 @@ class MBHBWaveform(GWwaveform):
         """
 
         # phi0, m1, m2, a1, a2, dist, inc, lam, beta, psi, tc = params
-        m1, m2, xi1, xi2, tc, dist, inc, phi0, lam, beta, psi = params
+        m1 = params[0]
+        m2 = params[1]
+        xi1 = params[2]
+        xi2 = params[3]
+        tc = params[4]
+        dist = params[5]
+        inc = params[6]
+        phi0 = params[7]
+        lam = params[8]
+        beta = params[9]
+        psi = params[10]
 
         if ldc:
             # TDI response on native grid
@@ -491,7 +501,7 @@ class MBHBWaveform(GWwaveform):
 
         return a_mat
 
-    def design_matrix_freq(self, f, params_intr, del_t, t1, t2, channel='TDIAET', complex=False, tref=0):
+    def design_matrix_freq(self, f, params_intr, del_t, tobs, channel='TDIAET', complex=False, tref=0):
         """
         Compute design matrix such that the TDI variable (fist generation)
         can be written as
@@ -506,12 +516,16 @@ class MBHBWaveform(GWwaveform):
             frequencies where to compute the matrix
         params_intr : array_like
             vector of intrinsinc parameters
-        Tobs : scalar float
-            Observation Duration
-        ts : scalar float
+        del_t : scalar float
             sampling cadence
         tdi : string
             tdi channel among {'X1','X2','X3'}
+        tobs : float
+            observation time
+        channel: str
+            TDI channels to consider
+        complex : bool
+            whether to used complex-valued or real-valued design matrices
 
 
         Returns
@@ -524,8 +538,6 @@ class MBHBWaveform(GWwaveform):
 
         # LISABETA
         # m1, m2, chi1, chi2, tc, dist, inc, phi, lambd, beta, psi = params
-        tobs = t2 - t1
-
         params_1 = np.zeros(11)
         params_2 = np.zeros(11)
 

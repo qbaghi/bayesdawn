@@ -17,55 +17,44 @@ import pyfftw
 pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
 
-class PSDTheoretical(object):
 
-    def __init__(self, N, fs, fmin=None, fmax=None, channels=['A'], scale=1.0):
-        self.channels = channels
-        self.psd_list = [psdmodel.PSD(N, fs, fmin=fmin, fmax=fmax) for ch in channels]
+if __name__ == '__main__':
 
-        for i in range(len(channels)):
-            self.psd_list[i].PSD_fn = theoretical_spectrum_func(fs, channels[i], scale=scale)
-            self.psd_list[i].logPSD_fn = lambda x: np.log(self.psd_list[i].PSD_fn(np.exp(x)))
+    import configparser
+    from optparse import OptionParser
 
-    def calculate(self, arg):
-        return [psd.calculate(arg) for psd in self.psd_list]
+    # ==================================================================================================================
+    parser = OptionParser(usage="usage: %prog [options] YYY.txt", version="08.02.2018, Quentin Baghi")
+    # ### Options  ###
+    # parser.add_option("-o", "--out_dir",
+    #                   type="string", dest="out_dir", default="",
+    #                   help="Path to the directory where the results are written [default ]")
+    #
+    # parser.add_option("-i", "--in_dir",
+    #                   type="string", dest="in_dir", default="",
+    #                   help="Path to the directory where the simulation file is stored [default ]")
 
-    def set_periodogram(self, z_fft, K2):
-        [psd.set_periodogram(z_fft, K2) for psd in self.psd_list]
-
-    def sample(self, npsd):
-        sampling_result = [psd.sample_psd(npsd) for psd in self.psd_list]
-        sample_list = [samp[0] for samp in sampling_result]
-        logp_values_list = [samp[1] for samp in sampling_result]
-
-        return sample_list, logp_values_list
-
-
-def theoretical_spectrum_func(f_sampling, channel, scale=1.0):
-
-    if channel == 'A':
-        PSD_fn = lambda x: tdi.noisepsd_AE(x, model='SciRDv1') * f_sampling / 2 / scale**2
-    elif channel == 'E':
-        PSD_fn = lambda x: tdi.noisepsd_AE(x, model='SciRDv1') * f_sampling / 2 / scale**2
-    elif channel == 'T':
-        PSD_fn = lambda x: tdi.noisepsd_T(x, model='SciRDv1') * f_sampling / 2 / scale**2
-
-    return PSD_fn
-
-
-def run_analysis(config):
-
+    (options, args) = parser.parse_args()
+    if args == []:
+        config_file = "../configs/config_dynesty.ini"
+    else:
+        config_file = args[0]
+    # ==================================================================================================================
+    config = configparser.ConfigParser()
+    # config.read("../configs/config_dynesty.ini")
+    config.read(config_file)
+    # ==================================================================================================================
     # Input file name
     hdf5_name = config["InputData"]["FilePath"]
     # Load simulation data
     time_vect, signal_list, noise_list, params = loadings.load_simulation(hdf5_name)
-    # i1 = np.int(216160 - 2**17)
-    # i2 = 216160
     t_sig = time_vect[:]
     del_t = t_sig[1] - t_sig[0]
     scale = 1.0
-    i1 = np.int(np.float(config["InputData"]["StartTime"]) / del_t)
-    i2 = np.int(np.float(config["InputData"]["EndTime"]) / del_t)
+    # i1 = np.int(np.float(config["InputData"]["StartTime"]) / del_t)
+    # i2 = np.int(np.float(config["InputData"]["EndTime"]) / del_t)
+    i1 = 0
+    i2 = signal_list[0].shape[0]
     y_list = [(signal_list[j][i1:i2] + noise_list[j][i1:i2])/scale for j in range(len(signal_list))]
     y_fft_list = [fft(y0) for y0 in y_list]
     n = len(y_list[0])
@@ -81,12 +70,17 @@ def run_analysis(config):
 
     # ==================================================================================================================
     # # Create data analysis GW model with instrinsic parameters only
-    # names = ['m1', 'm2', 'xi1', 'xi2', 'tc', 'lam', 'beta']
-    # bounds = [[0.1e6, 1e7], [0.1e6, 1e7], [0, 1], [0, 1], [2000000.0, 25000000.0], [0, np.pi], [0, 2*np.pi]]
-    # Create data analysis GW model with the full parameter vector
-    names = ['m1', 'm2', 'xi1', 'xi2', 'tc', 'dist', 'inc', 'phi0', 'lam', 'beta', 'psi']
-    bounds = [[0.5e6, 5e6], [0.5e6, 5e6], [0, 1], [0, 1], [2000000.0, 2162000.0], [100000, 500000],
-              [0, np.pi], [0, 2*np.pi], [0, np.pi], [0, 2 * np.pi], [0, 2 * np.pi]]
+    if config['Model'].getboolean('reduced'):
+        names = ['m1', 'm2', 'xi1', 'xi2', 'tc', 'lam', 'beta']
+        bounds = [[0.1e6, 1e7], [0.1e6, 1e7], [0, 1], [0, 1], [2000000.0, 25000000.0], [0, np.pi], [0, 2*np.pi]]
+        params0 = np.array(params)[signal_cls.i_intr]
+    else:
+        # Create data analysis GW model with the full parameter vector
+        names = ['m1', 'm2', 'xi1', 'xi2', 'tc', 'dist', 'inc', 'phi0', 'lam', 'beta', 'psi']
+        bounds = [[0.5e6, 5e6], [0.5e6, 5e6], [0, 1], [0, 1], [2000000.0, 2162000.0], [100000, 500000],
+                  [0, np.pi], [0, 2*np.pi], [0, np.pi], [0, 2 * np.pi], [0, 2 * np.pi]]
+        params0 = np.array(params)
+
     distribs = ['uniform' for name in names]
     channels = ['A', 'E', 'T']
     # Instantiate data analysis model class
@@ -100,12 +94,12 @@ def run_analysis(config):
                                 fmin=float(config['Model']['MinimumFrequency']),
                                 fmax=float(config['Model']['MaximumFrequency']),
                                 nsources=1,
-                                t_end=float(config["InputData"]["EndTime"]))
+                                reduced=config['Model'].getboolean('reduced'))
 
     # ==================================================================================================================
     # Creation of PSD class
     # ==================================================================================================================
-    psd_cls = PSDTheoretical(n, fs, channels=channels, scale=scale)
+    psd_cls = psdmodel.PSDTheoretical(n, fs, channels=channels, scale=scale)
     spectrum_list = psd_cls.calculate(n)
 
     # ==================================================================================================================
@@ -118,7 +112,7 @@ def run_analysis(config):
     # ==================================================================================================================
     print("Chosen sampler: " + config["Sampler"]["Type"])
     if config["Sampler"]["Type"] == 'dynesty':
-        nlive = model_cls.ndim_tot * (model_cls.ndim_tot + 1) // 2
+        nlive = int(config["Sampler"]["WalkerNumber"]) # model_cls.ndim_tot * (model_cls.ndim_tot + 1) // 2
         sampler_cls = samplers.extended_nested_sampler(model_cls.log_likelihood,
                                                        model_cls.ptform,
                                                        model_cls.ndim_tot,
@@ -135,7 +129,8 @@ def run_analysis(config):
 
 
     # ==================================================================================================================
-    # Creation of sampling class instance
+    # Creation of data augmentation sampling class instance
+    # ==================================================================================================================
     das = dasampler.FullModel(model_cls, psd_cls, dat_cls, sampler_cls,
                               outdir=config["OutputData"]["DirectoryPath"],
                               prefix='samples',
@@ -143,18 +138,19 @@ def run_analysis(config):
                               n_wind_psd=50000,
                               imputation=config['Sampler'].getboolean('MissingDataImputation'),
                               psd_estimation=config['Sampler'].getboolean('PSDEstimation'),
-                              normalized=False)
+                              normalized=config['Sampler'].getboolean('normalized'),
+                              rescaled=config['Sampler'].getboolean('rescaled'))
 
     # ==================================================================================================================
     # Test of likelihood calculation
     # ==================================================================================================================
     # Full parameter vector
     t1 = time.time()
-    # model_cls.log_likelihood(params, psd_ae, sig_fft)
-    test1 = das.log_likelihood(das.params2uniform(params), spectrum_list, y_fft_list)
+    test0 = model_cls.log_likelihood(params0, spectrum_list, y_fft_list)
+    test1 = das.log_likelihood(das.params2uniform(params0), spectrum_list, y_fft_list)
     t2 = time.time()
     print("Test with set of parameters 1")
-    print("loglike value: " + str(test1))
+    print("loglike value: " + str(test1) + " should be equal to " + str(test0))
     print("Likelihood computation time: " + str(t2 - t1))
     params2 = np.array(model_cls.lo)
     t1 = time.time()
@@ -167,57 +163,28 @@ def run_analysis(config):
     # ==================================================================================================================
     # Run the sampling
     # ==================================================================================================================
-    now = datetime.datetime.now()
-    prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
-    out_dir = config["OutputData"]["DirectoryPath"]
-    print("start sampling...")
-    # if config['Sampler']['Type'] == 'dynesty':
-    #     sampler_cls0 = NestedSampler(das.log_likelihood, model_cls.ptform, model_cls.ndim_tot, nlive=nlive,
-    #                                  logl_args=(das.spectrum, das.y_fft))
-    #     sampler_cls0.run_nested(maxiter=int(config['Sampler']['MaximumIterationNumber']))
-    #     das.sampler_cls = sampler_cls0
+    # now = datetime.datetime.now()
+    # prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
+    # out_dir = config["OutputData"]["DirectoryPath"]
+    # print("start sampling...")
     #
-    # else:
-    das.run(n_it=int(config['Sampler']['MaximumIterationNumber']),
-            n_update=int(config['Sampler']['AuxiliaryParameterUpdateNumber']),
-            n_thin=int(config['Sampler']['ThinningNumber']),
-            n_save=int(config['Sampler']['SavingNumber']),
-            save_path=out_dir + prefix + 'chains_temp.hdf5')
-
-    print("done.")
-
-    fh5 = h5py.File(out_dir + prefix + config["OutputData"]["FileSuffix"], 'w')
-    fh5.create_dataset("chains/chain", data=das.sampler_cls.chain)
-    if config["Sampler"]["Type"] == 'ptemcee':
-        fh5.create_dataset("temperatures/beta_hist", data=das.sampler_cls._beta_history)
-    fh5.close()
-
-    return das
-
-
-if __name__ == '__main__':
-
-    import configparser
-    from optparse import OptionParser
-
-    parser = OptionParser(usage="usage: %prog [options] YYY.txt", version="08.02.2018, Quentin Baghi")
-    # ### Options  ###
-    # parser.add_option("-o", "--out_dir",
-    #                   type="string", dest="out_dir", default="",
-    #                   help="Path to the directory where the results are written [default ]")
+    # # sampler_cls0 = NestedSampler(das.log_likelihood, model_cls.ptform, model_cls.ndim_tot, nlive=nlive, logl_args=(das.spectrum, das.y_fft))
+    # # sampler_cls0.run_nested(maxiter=int(config['Sampler']['MaximumIterationNumber']))
+    # # das.sampler_cls = sampler_cls0
     #
-    # parser.add_option("-i", "--in_dir",
-    #                   type="string", dest="in_dir", default="",
-    #                   help="Path to the directory where the simulation file is stored [default ]")
-
-    (options, args) = parser.parse_args()
-    config_file = args[0]
-    # ==================================================================================================================
-    config = configparser.ConfigParser()
-    # config.read("../configs/config_dynesty.ini")
-    config.read(config_file)
-    # ==================================================================================================================
-    das = run_analysis(config)
+    # das.run(n_it=int(config['Sampler']['MaximumIterationNumber']),
+    #         n_update=int(config['Sampler']['AuxiliaryParameterUpdateNumber']),
+    #         n_thin=int(config['Sampler']['ThinningNumber']),
+    #         n_save=int(config['Sampler']['SavingNumber']),
+    #         save_path=out_dir + prefix + 'chains_temp.hdf5')
+    #
+    # print("done.")
+    #
+    # fh5 = h5py.File(out_dir + prefix + config["OutputData"]["FileSuffix"], 'w')
+    # fh5.create_dataset("chains/chain", data=das.sampler_cls.chain)
+    # if config["Sampler"]["Type"] == 'ptemcee':
+    #     fh5.create_dataset("temperatures/beta_hist", data=das.sampler_cls._beta_history)
+    # fh5.close()
 
 
 

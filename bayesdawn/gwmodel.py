@@ -15,6 +15,31 @@ import pyfftw
 pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
 
+
+def gls(mat_fft, psd, y_fft):
+    """
+    Generalized least-squares estimate
+    Parameters
+    ----------
+    mat_fft : bytearray
+        design matrix in frequency domain
+    psd : bytearray
+        noise spectrum
+    y_fft : bytearray
+        discrete-fourier transformed data
+
+    Returns
+    -------
+    amp : complex
+        estimated parameter vector
+
+    """
+
+    mat_fft_weighed = mat_fft / np.array([psd]).T
+
+    return LA.pinv(mat_fft_weighed.conj().T.dot(mat_fft)).dot(mat_fft_weighed.conj().T.dot(y_fft))
+
+
 class GWModel(object):
     """
 
@@ -35,7 +60,7 @@ class GWModel(object):
                  fmax=0.5e-1,
                  nsources=1,
                  order=None,
-                 t_end=None):
+                 reduced=False):
         """
 
         Parameters
@@ -61,6 +86,8 @@ class GWModel(object):
         order : list
             list of integers that specify an inequality constraint on the parameters, that will be reflected in the
             log-prior distribution.
+        reduced : bool
+            whether to use the full or the reduced likelihood model
         """
 
 
@@ -85,6 +112,8 @@ class GWModel(object):
         self.distribs = distribs
         # Type of TDI channel
         self.channels = channels
+        # Type of likelihood model
+        self.reduced = reduced
 
         # ======================================================================
         # Parameters for waveform computation
@@ -93,13 +122,6 @@ class GWModel(object):
         self.fs = 1/self.ts
         self.tobs = tobs
         self.N = np.int(tobs/del_t)
-
-        # Starting and end times of waveform model:
-        self.t_start = 0
-        if t_end is None:
-            self.t_end = self.tobs
-        else:
-            self.t_end = t_end
         # Waveform model
         self.smodel = smodel
 
@@ -127,31 +149,31 @@ class GWModel(object):
         else:
             raise ValueError("Please indicate at least one channel")
 
-    def matrix_model(self, f, params):
+    def matrix_model(self, params):
         """
     
         function of frequency f, source model parameters params describing the features of the analyzed data
     
         Parameters
         ----------
-        model_type : string
-            type of linear matrix model A(f) in the frequency domain such that the
-            response writes s(f) = A(f)*b
-    
+        params : bytearray
+            vector of waveform parameters
         Returns
         -------
-        A_matrix_func : callable
+        mat : bytearray
+            design matrix in frequency domain
 
     
         """
 
-        return self.smodel.design_matrix_freq(f, params, self.ts, self.t_start, self.t_end, channel=self.channels)
+        return self.smodel.design_matrix_freq(self.f_pos, params, self.ts, self.tobs, channel=self.channels, complex=True)
+
 
     def compute_frequency_signal(self, params):
 
         y_gw_fft = np.zeros(self.N, dtype=np.complex128)
 
-        y_gw_fft[self.inds_pos] = self.smodel.compute_signal_freq(self.f_pos, params, self.ts, self.t_end,
+        y_gw_fft[self.inds_pos] = self.smodel.compute_signal_freq(self.f_pos, params, self.ts, self.tobs,
                                                                   channel=self.channels)
         y_gw_fft[self.inds_neg] = np.conj(y_gw_fft[self.inds_pos])
 
@@ -235,14 +257,12 @@ class GWModel(object):
 
     def log_likelihood(self, params, spectrum, y_fft):
         """
-        Logarithm of the likelihood, optimized for FREQUENCY domain computations,
-        and reduced to 2 parameters only.
+        Logarithm of the likelihood, optimized for FREQUENCY domain computations, depending on all parameters
 
         Parameters
         ----------
         params : array_like
-            vector of parameters in the orders of
-            names=['theta,'phi','f_0','f_dot']
+            vector of parameters
         spectrum : array_like
             noise spectrum, equal to fs * PSD / 2
         y_fft : array_like
@@ -256,65 +276,76 @@ class GWModel(object):
 
         """
 
-        # # Update design matrix and derived quantities
-        # A_freq,A_freq_w,ZI = self.compute_matrices(params, S)
-        # # Data with real and imaginary part separated
-        # yr = np.concatenate((y_fft[self.inds_pos].real, y_fft[self.inds_pos].imag))
-        # N_bar = A_freq_w.conj().T.dot(yr)
-        #
-        # return np.real(N_bar.conj().T.dot(ZI.dot(N_bar)))
-
         # Update the frequency domain residuals in the case of intrinsic parameters
-        # z_fft_inds = y_fft[self.inds_pos] - self.draw_frequency_signal_onBW(params_phys, S, y_fft)
-        # In the case of full parameter vector
-        z_fft_inds = self.concatenate_data_pos(y_fft) - self.concatenate_model(self.smodel.compute_signal_freq(
-            self.f_pos, params, self.ts, self.t_end, channel=self.channels))
+        # Stack the channel data DFTs
+        y_fft_stack = self.concatenate_data_pos(y_fft)
+        # For a full likelihood model
+        if not self.reduced:
+            # Stack the computed waveform DFTs
+            s_fft_stack = self.concatenate_model(self.smodel.compute_signal_freq(self.f_pos, params, self.ts, self.tobs,
+                                                                                 channel='TDIAET', ldc=False, tref=0))
+        # For a reduced likelihood model
+        else:
+            # Compute design matrices
+            mat_list = self.matrix_model(params)
+
+            # Compute extrinsinc amplitudes for each channel
+            amplitudes = [gls(mat_list[i], spectrum[i][self.inds_pos], y_fft[i][self.inds_pos])
+                          for i in range(len(mat_list))]
+
+            # Stack the modeled signals
+            s_fft_stack = self.concatenate_model([mat_list[i].dot(amplitudes[i]) for i in range(len(mat_list))])
+            # # Data with real and imaginary part separated
+            # yr = np.concatenate((y_fft[self.inds_pos].real, y_fft[self.inds_pos].imag))
+            # N_bar = mat_freq_w.conj().T.dot(yr)
+            #
+            # return np.real(N_bar.conj().T.dot(ZI.dot(N_bar)))
 
         # Compute periodogram for relevant frequencies
-        per_inds = np.abs(z_fft_inds)**2/self.N
+        per_inds = np.abs(y_fft_stack - s_fft_stack)**2/self.N
 
         # Update reduced likelihood
         # return np.real(-0.5*np.sum(np.log(S[self.inds_pos]) + I_inds/S[self.inds_pos]))
         return np.real(-0.5 * np.sum(per_inds / self.concatenate_data_pos(spectrum)))
 
-    def draw_single_freq_signal_onBW(self, params, S, y_fft):
+    def draw_single_freq_signal_onBW(self, params, psd, y_fft):
         """
         Compute deterministic signal model on the restricted bandwidth,
         for one single source only
         """
         # Update design matrix and derived quantities
-        a_freq, a_freq_w, zi = self.compute_matrices(params, S)
+        a_freq, a_freq_w, zi = self.compute_matrices(params, psd)
 
-        #ZI = alfastfreq.compute_inverse_normal(A_freq,ApS)
+        #ZI = alfastfreq.compute_inverse_normal(mat_freq,ApS)
         beta = self.draw_beta(zi, a_freq_w, y_fft)
 
         # Return the frequency domain GW signal
-        #return np.dot(A_freq,beta)   
+        #return np.dot(mat_freq,beta)   
         y_gw_fft_2 = np.dot(a_freq, beta)
 
         return y_gw_fft_2[0:self.npos] + 1j*y_gw_fft_2[self.npos:]
 
-    def draw_frequency_signal_onBW(self, params, S, y_fft):
+    def draw_frequency_signal_onBW(self, params, psd, y_fft):
         """
         Compute deterministic signal model on the restricted bandwidth only
         """
 
         if self.nsources > 0:
-            y_gw_fft = self.draw_single_freq_signal_onBW(params, S, y_fft)
+            y_gw_fft = self.draw_single_freq_signal_onBW(params, psd, y_fft)
         else:
             y_gw_fft = np.zeros(self.npos, dtype=np.complex128)
                 
         # Return the frequency domain GW signal
         return y_gw_fft     
 
-    def draw_frequency_signal(self, params, s, y_fft):
+    def draw_frequency_signal(self, params, psd, y_fft):
         """
         Compute deterministic signal model on the full Fourier grid
         """
 
         y_gw_fft = np.zeros(self.N, dtype=np.complex128)
 
-        y_gw_fft[self.inds_pos] = self.draw_frequency_signal_onBW(params, s, y_fft)
+        y_gw_fft[self.inds_pos] = self.draw_frequency_signal_onBW(params, psd, y_fft)
         y_gw_fft[self.inds_neg] = np.conj(y_gw_fft[self.inds_pos])
 
         return y_gw_fft
@@ -329,23 +360,22 @@ class GWModel(object):
         if self.nsources == 1:
             # Update frequency model of the waveform
             #A_computed = self.matmodel(self.f[self.inds_pos],params,self)
-            #A_freq = np.vstack((A_computed,np.conj(A_computed)))
-            A_freq = self.matrix_model(self.f[self.inds_pos], params)
+            #mat_freq = np.vstack((A_computed,np.conj(A_computed)))
+            mat_freq = self.matrix_model(params)
 
         elif self.nsources > 1:
             
-            A_freq = np.hstack([self.matrix_model(self.f[self.inds_pos],
-                                              params[i*self.ndim:(i+1)*self.ndim]) for i in range(self.nsources)])
+            mat_freq = np.hstack([self.matrix_model(params[i*self.ndim:(i+1)*self.ndim]) for i in range(self.nsources)])
         
         # Weight matrix columns by the inverse of the PSD
-        #A_freq_w = np.array([A_freq[:,j]/S[self.inds] for j in range(A_freq.shape[1])]).T
+        #mat_freq_w = np.array([mat_freq[:,j]/S[self.inds] for j in range(mat_freq.shape[1])]).T
         s2 = np.concatenate((s[self.inds_pos], s[self.inds_pos]))
-        A_freq_w = np.array([A_freq[:, j]/s2 for j in range(A_freq.shape[1])]).T
+        mat_freq_w = np.array([mat_freq[:, j]/s2 for j in range(mat_freq.shape[1])]).T
         
         # Inverse normal matrix
-        ZI = LA.pinv(np.dot(np.transpose(A_freq).conj(), A_freq_w))
+        ZI = LA.pinv(np.dot(np.transpose(mat_freq).conj(), mat_freq_w))
 
-        return A_freq, A_freq_w, ZI
+        return mat_freq, mat_freq_w, ZI
 
     def ls_estimate_beta(self, ZI, ApS, data_fft):
         """
