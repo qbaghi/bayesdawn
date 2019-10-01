@@ -298,7 +298,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             print("Update of auxiliary parameters at iteration " + str(it))
             callback(self.position[0, 0, :])
 
-    def run(self, n_it, n_update, n_thin, n_save, callback, pos0=None, save_path='./'):
+    def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None, save_path='./'):
 
         # Initialization of parameter values
         if pos0 is None:
@@ -320,7 +320,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             i = 0
             for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
 
-                if i % n_update == 0:
+                if (i % n_update == 0) & (callback is not None):
                     print("Update of auxiliary parameters at iteration " + str(i))
                     callback(pos[0, 0, :])
                 if (i % n_save == 0) & (i != 0):
@@ -346,7 +346,7 @@ class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
     def update_log_prior(self, log_prior, log_prior_args):
         pass
 
-    def run(self, n_it, n_update, n_thin, n_save, callback, pos0=None, save_path='./'):
+    def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None, save_path='./'):
 
         with h5py.File(save_path, "a") as fi:
             dset = fi.create_dataset('chain', (self.npdim, n_save),
@@ -354,20 +354,22 @@ class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
                                      dtype=np.float,
                                      chunks=(self.npdim, n_save))
 
-        print("The main nested sampling loop begins...")
-        for it, res in enumerate(self.sample(maxiter=n_it)):
-                if it % n_update == 0:
-                    print("Update of auxiliary parameters at iteration " + str(it))
-                    # callback(self.saved_v[0, :])
-                    callback(self.results.samples[0, :])
-                if (it % n_save == 0) & (it != 0):
-                    print("Save data at iteration " + str(it))
-                    dset[-n_save:, :] = self.results.samples[-n_save:, :]
+            print("The main nested sampling loop begins...")
+            for it, res in enumerate(self.sample(maxiter=n_it)):
+                    if (it % n_update == 0) & (callback is not None):
+                        print("Update of auxiliary parameters at iteration " + str(it))
+                        # callback(self.saved_v[0, :])
+                        callback(self.results.samples[0, :])
+                    if (it % n_save == 0) & (it != 0):
+                        print("Save data at iteration " + str(it))
+                        dset[-n_save:, :] = self.results.samples[-n_save:, :]
 
-        print("Adding the final set of live points")
-        for it_final, res in enumerate(self.add_live_points()):
-            if (it_final % n_save == 0) & (it_final != 0):
-                print("Final iteration " + str(it_final) + " reached.")
+            print("Adding the final set of live points")
+            for it_final, res in enumerate(self.add_live_points()):
+                if (it_final % n_save == 0) & (it_final != 0):
+                    print("Final iteration " + str(it_final) + " reached.")
+
+            fi.close()
 
 _SAMPLERS = dynesty.dynesty._SAMPLERS
 _SAMPLERS['extended'] = ExtendedNestedSampler
