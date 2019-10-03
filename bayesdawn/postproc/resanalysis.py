@@ -10,25 +10,16 @@ import h5py
 import numpy as np
 import corner
 from ptemcee import util
-import time
-from scipy.interpolate import UnivariateSpline
 from scipy.integrate import simps
 
 import load_mcmc_config
 from LISAhdf5 import LISAhdf5
-
 from bayesdawn import psdsampler
 
 from matplotlib import pyplot as plt
 from matplotlib import rcParams
-import matplotlib.lines as mlines
 import matplotlib as mpl
 import healpy as hp
-import pickle
-# import ligo
-import json
-
-from matplotlib.ticker import ScalarFormatter, FormatStrFormatter, StrMethodFormatter
 import pandas
 
 # from ligo.skymap import Clustered2Plus1DSkyKDE, Clustered2DSkyKDE

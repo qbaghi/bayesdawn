@@ -280,6 +280,18 @@ class ExtendedPTMCMC(ptemcee.Sampler):
 
         self.position=[]
 
+    def get_log_likelihood(self):
+
+        return self._likeprior.logl
+
+    def get_log_likelihood_args(self):
+
+        return self._likeprior.loglargs
+
+    def get_chain(self):
+
+        return self.chain
+
     def update_log_likelihood(self, log_likelihood, loglike_args):
 
         self._likeprior.logl = log_likelihood
@@ -315,21 +327,24 @@ class ExtendedPTMCMC(ptemcee.Sampler):
                                      dtype=pos.dtype,
                                      chunks=(self.ntemps, self.nwalkers, n_save, pos.shape[2]))
 
-            # Initialization of iteration counter
-            # [self.single_sample(i, n_it, n_update, n_thin, callback) for i in range(n_it)]
-            i = 0
-            for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
-
-                if (i % n_update == 0) & (callback is not None):
-                    print("Update of auxiliary parameters at iteration " + str(i))
-                    callback(pos[0, 0, :])
-                if (i % n_save == 0) & (i != 0):
-                    print("Save data at iteration " + str(i))
-                    dset[:, :, -n_save:, :] = self.chain[:, :, -n_save:, :]
-
-                i += 1
-
             fi.close()
+
+        # Initialization of iteration counter
+        # [self.single_sample(i, n_it, n_update, n_thin, callback) for i in range(n_it)]
+        i = 0
+        for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
+
+            if (i % n_update == 0) & (callback is not None):
+                print("Update of auxiliary parameters at iteration " + str(i))
+                callback(pos[0, 0, :])
+            if (i % n_save == 0) & (i != 0):
+                print("Save data at iteration " + str(i))
+                fi = h5py.File(save_path, "a")
+                dset = fi['chain'][()]
+                dset[:, :, -n_save:, :] = self.chain[:, :, -n_save:, :]
+                fi.close()
+
+            i += 1
 
 
 class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
@@ -337,6 +352,10 @@ class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
     def __init__(self, *args, **kwargs):
 
         super(ExtendedNestedSampler, self).__init__(*args, **kwargs)
+
+    def get_chain(self):
+
+        return self.results.samples
 
     def update_log_likelihood(self, log_likelihood, loglike_args):
 
@@ -349,27 +368,30 @@ class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
     def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None, save_path='./'):
 
         with h5py.File(save_path, "a") as fi:
-            dset = fi.create_dataset('chain', (self.npdim, n_save),
-                                     maxshape=(self.npdim, n_it),
+            dset = fi.create_dataset('chain', (n_save, self.npdim),
+                                     maxshape=(n_it, self.npdim),
                                      dtype=np.float,
-                                     chunks=(self.npdim, n_save))
-
-            print("The main nested sampling loop begins...")
-            for it, res in enumerate(self.sample(maxiter=n_it)):
-                    if (it % n_update == 0) & (callback is not None):
-                        print("Update of auxiliary parameters at iteration " + str(it))
-                        # callback(self.saved_v[0, :])
-                        callback(self.results.samples[0, :])
-                    if (it % n_save == 0) & (it != 0):
-                        print("Save data at iteration " + str(it))
-                        dset[-n_save:, :] = self.results.samples[-n_save:, :]
-
-            print("Adding the final set of live points")
-            for it_final, res in enumerate(self.add_live_points()):
-                if (it_final % n_save == 0) & (it_final != 0):
-                    print("Final iteration " + str(it_final) + " reached.")
-
+                                     chunks=(n_save, self.npdim))
             fi.close()
+
+        print("The main nested sampling loop begins...")
+        for it, res in enumerate(self.sample(maxiter=n_it)):
+                if (it % n_update == 0) & (callback is not None):
+                    print("Update of auxiliary parameters at iteration " + str(it))
+                    # callback(self.saved_v[0, :])
+                    callback(self.results.samples[0, :])
+                if (it % n_save == 0) & (it != 0):
+                    print("Save data at iteration " + str(it))
+                    fi = h5py.File(save_path, "a")
+                    dset = fi['chain'][()]
+                    dset[-n_save:, :] = self.results.samples[-n_save:, :]
+                    fi.close()
+
+        print("Adding the final set of live points")
+        for it_final, res in enumerate(self.add_live_points()):
+            if (it_final % n_save == 0) & (it_final != 0):
+                print("Final iteration " + str(it_final) + " reached.")
+
 
 _SAMPLERS = dynesty.dynesty._SAMPLERS
 _SAMPLERS['extended'] = ExtendedNestedSampler

@@ -53,8 +53,6 @@ class GWModel(object):
                  tobs,
                  del_t,
                  names=['theta', 'phi', 'f_0', 'f_dot'],
-                 bounds=[[0, np.pi], [0, 2*np.pi], [1e-4, 1e-3], [1e-15, 1e-10]],
-                 distribs = ['uniform', 'uniform', 'symbeta', 'uniform'],
                  channels=['X1'],
                  fmin=1e-5,
                  fmax=0.5e-1,
@@ -69,10 +67,6 @@ class GWModel(object):
             GW LISA response model class
         names : list of strings
             parameter names
-        bounds : list of lists
-            parameter boundaries
-        distribs : list of string
-            parameter prior distribution
         timevect : numpy array
             time vector
         channels : list of strings
@@ -98,18 +92,12 @@ class GWModel(object):
         self.nsources = nsources
         # Names of parameters
         self.names = names
-        # Boundaries of parameters
-        self.bounds = bounds
-        self.lo = np.array([bound[0] for bound in self.bounds])
-        self.hi = np.array([bound[1] for bound in self.bounds])
         # Possible inequality constraint
         self.order = order
         # Total number of parameters
         self.ndim_tot = len(names)
         # Number of parameters per source
         self.ndim = np.int(self.ndim_tot/nsources)
-        # Type of prior distribution for each parameter
-        self.distribs = distribs
         # Type of TDI channel
         self.channels = channels
         # Type of likelihood model
@@ -184,76 +172,6 @@ class GWModel(object):
         y_gw_fft = self.compute_frequency_signal(params)
 
         return np.real(ifft(y_gw_fft))
-
-    def logp(self, x, lo, hi):
-
-        return np.where(((x >= lo) & (x <= hi)).all(-1), 0.0, -np.inf)
-    
-    def logpo(self, x, lo, hi, i1, i2):
-        
-        return np.where(((x >= lo) & (x <= hi)).all(-1) & (x[i1] <= x[i2]), 0.0, -np.inf)
-
-    def log_prior(self, params):
-        """
-        Logarithm of the prior probabilitiy of parameters f_0 and f_dot
-
-        Parameters
-        ----------
-        params : array_like
-            vector of parameters in the orders of
-            names=['f_0','f_dot']
-
-        Returns
-        -------
-        logP : scalar float
-            logarithm of the prior probability
-
-
-        """
-
-        #prior probability for f_0 and f_dot
-        logs = [samplers.logprob(params[i], self.distribs[i], self.bounds[i]) for i in range(len(params))]
-
-        return np.sum(np.array(logs))
-
-    def ptform(self, u):
-        """
-
-        Convert numbers drawn from uniform distribution to physical parameter values
-
-        Parameters
-        ----------
-        u : numpy array
-            arrays of floats in interval [0, 1]
-
-        Returns
-        -------
-        x : numpy array
-            arrays of floats in interval [lo, hi]
-
-        """
-
-        return (self.hi - self.lo) * u + self.lo
-
-    def formtp(self, x):
-        """
-
-        Convert physical parameter values to numbers in the interval [0, 1]
-
-        Parameters
-        ----------
-        x : numpy array
-            arrays of floats in interval [lo, hi]
-
-
-        Returns
-        -------
-        u : numpy array
-            arrays of floats in interval [0, 1]
-
-        """
-
-        return (x - self.lo) / (self.hi - self.lo)
 
     def log_likelihood(self, params, spectrum, y_fft):
         """
@@ -434,28 +352,5 @@ class GWModel(object):
 
         return np.real(ifft(y_gw_fft))
 
-    def log_prob(self, params, params_aux):
-        """
-        Logarithm of the posterior probability function, optimized for
-        FREQUENCY domain computations, reduced by Bessel decomposition to
-        only 2 parameters : frequency and frequency derivative
-
-        Parameters
-        ----------
-        params : array_like
-            vector of parameters in the orders of
-            names=['f_0','f_dot']
-
-        Returns
-        -------
-        logp : scalar float
-            logarithm of the posterior distribution
-
-        """
-
-        lp = self.log_prior(params)
-        if not np.isfinite(lp):
-            return -np.inf
-        return lp + self.log_likelihood(params, params_aux)
 
 
