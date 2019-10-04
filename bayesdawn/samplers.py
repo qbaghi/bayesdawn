@@ -9,9 +9,9 @@ import copy
 from functools import reduce
 import ptemcee
 import h5py
+import pandas as pd
 import dynesty
 from dynesty import NestedSampler
-
 
 
 def clipcov(X, nit = 3, n_sig = 5):
@@ -310,7 +310,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             print("Update of auxiliary parameters at iteration " + str(it))
             callback(self.position[0, 0, :])
 
-    def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None, save_path='./'):
+    def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None, save_path='./', param_names=None):
 
         # Initialization of parameter values
         if pos0 is None:
@@ -321,16 +321,6 @@ class ExtendedPTMCMC(ptemcee.Sampler):
 
         self.position = pos[:]
 
-        with h5py.File(save_path, "a") as fi:
-            dset = fi.create_dataset('chain', (self.ntemps, self.nwalkers, n_save, pos.shape[2]),
-                                     maxshape=(self.ntemps, self.nwalkers, n_it, pos.shape[2]),
-                                     dtype=pos.dtype,
-                                     chunks=(self.ntemps, self.nwalkers, n_save, pos.shape[2]))
-
-            fi.close()
-
-        # Initialization of iteration counter
-        # [self.single_sample(i, n_it, n_update, n_thin, callback) for i in range(n_it)]
         i = 0
         for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
 
@@ -339,13 +329,15 @@ class ExtendedPTMCMC(ptemcee.Sampler):
                 callback(pos[0, 0, :])
             if (i % n_save == 0) & (i != 0):
                 print("Save data at iteration " + str(i))
-                fi = h5py.File(save_path, "a")
-                dset = fi['chain'][()]
-                dset[:, :, -n_save:, :] = self.chain[:, :, -n_save:, :]
-                fi.close()
+                # Transform the chain into data frame
+                df = pd.DataFrame(self.chain[0, :, i-n_save:i, :].reshape((-1, self.chain.shape[3])),
+                                  columns=param_names)
+                df.to_hdf(save_path, 'chain', append=True, mode='a', format='table')
+                # df = pd.DataFrame(self.chain[0, :, 0:i, :].reshape((-1, self.chain.shape[3])), columns=param_names)
+                # df.to_hdf(save_path, 'chain', append=False, mode='w', format='fixed')
+                print("Data saved.")
 
             i += 1
-
 
 class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
 

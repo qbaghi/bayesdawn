@@ -11,8 +11,9 @@ from pyfftw.interfaces.numpy_fft import fft, ifft
 
 class FullModel(object):
 
-    def __init__(self, posterior_cls, psd_cls, dat_cls, sampler_cls, outdir='./', n_wind=500, n_wind_psd=500000,
-                 prefix='samples', n_psd=10, imputation=False, psd_estimation=False, normalized=False):
+    def __init__(self, posterior_cls, psd_cls, dat_cls, sampler_cls, outdir='./', window='modified_hann',
+                 n_wind=500, n_wind_psd=500000, prefix='samples', n_psd=10, imputation=False, psd_estimation=False,
+                 normalized=False):
         """
 
         Parameters
@@ -26,8 +27,11 @@ class FullModel(object):
             class defining the way to perform missing data imputation
         sampler_cls : instance of sampler PTEMCEE, NestedSampler, etc.
             class charaterizing the monte-carlo sampler to sample the posterior distribution
-        outdir : string
+        outdir : str
             where to store the psd results and other things
+        window : string
+            Type of time windowing applied to the signal to prevent noise leakage for the GW parameter estimation.
+            Default is "modified_hann", i.e. Tukey window
         n_wind : scalar integer
             smoothing parameter of the Tukey window applied to the signal to
             prevent noise leakage for the GW parameter estimation
@@ -61,6 +65,8 @@ class FullModel(object):
         # Output directory path
         self.outdir = outdir
         self.psd_file_name = prefix + '_psd.hdf5'
+        # Type of time windowing
+        self.window = window
         # Windowing smoothing parameter (optimized for signal estimation)
         self.n_wind = n_wind
         self.w = gaps.gapgenerator.modified_hann(self.dat_cls.N, n_wind=self.n_wind)
@@ -71,7 +77,7 @@ class FullModel(object):
         # If there are missing data, then the window for PSD does not have gaps
         if any(dat_cls.mask == 0):
             nd, nf = gaps.gapgenerator.findEnds(dat_cls.mask)
-            self.w_psd = gaps.gapgenerator.windowing(nd, nf, self.dat_cls.N, window='modified_hann',
+            self.w_psd = gaps.gapgenerator.windowing(nd, nf, self.dat_cls.N, window=window,
                                                      n_wind=self.n_wind_psd)
         else:
             self.w_psd = gaps.gapgenerator.modified_hann(self.dat_cls.N, n_wind=self.n_wind_psd)
@@ -343,203 +349,7 @@ class FullModel(object):
         else:
             callback = None
 
-        self.sampler_cls.run(n_it, n_update, n_thin, n_save, callback=callback, pos0=None, save_path=save_path)
-
-
-class fullSampler(FullModel):
-
-    def __init__(self, posterior_cls, psd_cls, dat_cls, outdir='./', prefix='samples', order=None,
-                 nwalkers=12, ntemps=10, n_wind=500, n_wind_psd=500000, imputation=False, psd_estimation=False):
-        """
-        
-        Class to sample GW signal parameters, noise parameters and missing data
-        
-        Parameters
-        ---------- 
-        y : array_like
-            data in the time domain, possiby masked by a binary mask (missing
-            values are indicated by zeros)
-        mask : array_like
-            binary mask vector with entries 0 if data is missing and 1 if data
-            is observed.
-        p0_aux : list of array_like
-            initial guess for the auxiliary data (S,y_fft). We assume that 
-            y_fft is properly normalized so that it takes into account any 
-            possible windowing or masking applied to the time series
-        posterior_cls : instance of GibbsModel
-            the class providing the log likelihood function and auxiliary parameters
-            update functions.
-        psd_cls : instance of PSDSpline class
-            class defining the noise model and methods necessary to update its parameters
-        dat_cls : instance of the approximp class
-            class defining the way to perform missing data imputation
-        outdir : string
-            where to store the psd results and other things
-        nwalkers : scalar integer
-            number of chains to use
-        ntemps : scalar integer
-            number of temperature in the parallel-tempering scheme
-        n_wind : scalar integer
-            smoothing parameter of the Tukey window applied to the signal to 
-            prevent noise leakage for the GW parameter estimation
-        n_wind_psd : scalar integer
-            smoothing parameter of the Tukey window applied to the residuals to
-            prevent leakage for noise PSD estimation
-        imputation : boolean
-            flag telling whether to perform imputation of missiong data
-        pse_estimation: boolean
-            flag telling whether to perform PSD estimation
-            
-
-
-            
-        Returns
-        -------
-        noise_params_new : array_like
-            updated PSD parameters
-            
-            
-            
-            
-        """
-
-        FullModel.__init__(self, posterior_cls, psd_cls, dat_cls, outdir=outdir, n_wind=n_wind, n_wind_psd=n_wind_psd,
-                           prefix=prefix)
-
-        self.imputation = imputation
-        self.psd_estimation = psd_estimation
-
-        if any(dat_cls.mask == 0):
-            nd, nf = gaps.gapgenerator.findEnds(dat_cls.mask)
-            self.w_psd = gaps.gapgenerator.windowing(nd, nf, self.dat_cls.N, window='modified_hann',
-                                                     n_wind=self.n_wind_psd)
-
-        if order is None:
-            self.logp = self.posterior_cls.logp
-            self.logpargs = [self.posterior_cls.lo, self.posterior_cls.hi]
-        else:
-            self.logp = self.posterior_cls.logpo
-            self.logpargs = [self.posterior_cls.lo, self.posterior_cls.hi, order[0], order[1]]
-
-        # ---------------------------------------------------------------------
-        # Instantiate the GW parameter sampler
-        # ---------------------------------------------------------------------
-        # Parallel-tempered MCMC with several chains and affine invariant
-        # swaps
-        self.sampler = ptemcee.Sampler(nwalkers, self.posterior_cls.ndim_tot, posterior_cls.log_likelihood,
-                                       self.logp, ntemps=ntemps,
-                                       loglargs=(self.spectrum, self.y_fft), logpargs=self.logpargs)
-        # Define the sampling function
-        self.sample = self.sampler.sample
-
-    def set_loglargs(self, loglargs):
-        """
-        Update auxiliary parameters of the MCMC sampler
-        
-        """
-        self.sampler._likeprior.loglargs = loglargs
-
-    def get_loglargs(self):
-        """
-        Get auxiliary parameters of the MCMC sampler
-        
-        """
-
-        return self.sampler._likeprior.loglargs
-
-    def update_aux(self, pos0, npsd):
-        """
-
-        Update all auxiliary parameters at once
-
-        Parameters
-        ----------
-        pos0 : array_like
-            vector of current parameter values
-        npsd : integer
-            number of draws during one MCMC psd update
-
-        Returns
-        -------
-
-        """
-
-        # Missing data imputation step
-        if self.imputation:
-            self.update_miss(pos0)
-        # PSD parameter posterior step
-        if self.psd_estimation:
-            self.update_psd(pos0, npsd)
-
-    def run(self, p0, nit=100000, nupdate=1000, npsd=10, thin=10):
-        """Metropolis-Hastings within Gibbs sampler using `PTMCMCSampler`
-    
-        The parameters are bounded in the finite interval described by ``lo`` and
-        ``hi`` (including ``-np.inf`` and ``np.inf`` for half-infinite or infinite
-        domains).
-    
-        If run in an interactive terminal, live progress is shown including the
-        current sample number, the total required number of samples, time elapsed
-        and estimated time remaining, acceptance fraction, and autocorrelation
-        length.
-    
-        Sampling terminates when all chains have accumulated the requested number
-        of independent samples.
-    
-        Parameters
-        ----------
-        nit : int, optional
-            Minimum number of independent samples.
-        ntemps : int, optional
-            Number of temperatures.
-        nupdate : int, optional
-            Cadence at which updating the auxiliary parameters
-        npsd : int,optional
-            number of Metropolis-Hastings steps to update the PSD
-
-            
-            
-        Returns
-        -------
-        chain : `numpy.ndarray`
-            The thinned and flattened posterior sample chain,
-            with at least ``nindep`` * ``nwalkers`` rows
-            and exactly ``ndim`` columns.
-    
-        Other parameters
-        ----------------
-        kwargs :
-            Extra keyword arguments for `ptemcee.Sampler`.
-            *Tip:* Consider setting the `pool` or `vectorized` keyword arguments in
-            order to speed up likelihood evaluations.
-
-        """
-
-        # Initialization of auxiliary parameters
-        self.initialize_aux(p0[0, 0, :], npsd)
-
-        # Initialization of parameter values
-        pos = np.copy(p0)
-
-        # Initialization of iteration counter
-        i = 0
-                
-        for pos, lnlike0, lnprob0 in self.sample(pos, nit, thin=thin, storechain=True):
-            
-            if i % nupdate == 0:
-                
-                print("Update of auxiliary parameters at iteration " + str(i))
-                self.update_aux(pos[0, 0, :], npsd)
-                self.set_loglargs((self.spectrum, self.y_fft))
-
-            i = i+1           
-
-        fullchain = self.sampler.chain[:]
-
-        return fullchain
-
-
-
-
+        self.sampler_cls.run(n_it, n_update, n_thin, n_save, callback=callback, pos0=None, save_path=save_path,
+                             param_names=self.posterior_cls.signal_cls.names)
 
 

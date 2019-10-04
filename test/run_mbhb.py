@@ -74,12 +74,12 @@ if __name__ == '__main__':
     if config['Model'].getboolean('reduced'):
         # Create data analysis GW model with instrinsic parameters only
         names = ['m1', 'm2', 'xi1', 'xi2', 'tc', 'lam', 'beta']
-        bounds = [[0.1e6, 1e7], [0.1e6, 1e7], [0, 1], [0, 1], [2000000.0, 25000000.0], [0, np.pi], [0, 2*np.pi]]
+        bounds = [[0.1e6, 1e7], [0.1e6, 1e7], [0, 1], [0, 1], [2000000.0, 2162000.0], [0, np.pi], [0, 2*np.pi]]
         params0 = np.array(params)[signal_cls.i_intr]
     else:
         # Create data analysis GW model with the full parameter vector
         names = ['m1', 'm2', 'xi1', 'xi2', 'tc', 'dist', 'inc', 'phi0', 'lam', 'beta', 'psi']
-        bounds = [[0.5e6, 5e6], [0.5e6, 5e6], [0, 1], [0, 1], [2000000.0, 2162000.0], [100000, 500000],
+        bounds = [[0.1e6, 1e7], [0.1e6, 1e7], [0, 1], [0, 1], [2000000.0, 2162000.0], [100000, 500000],
                   [0, np.pi], [0, 2*np.pi], [0, np.pi], [0, 2 * np.pi], [0, 2 * np.pi]]
         params0 = np.array(params)
 
@@ -198,6 +198,8 @@ if __name__ == '__main__':
         fh5.create_dataset("temperatures/beta_hist", data=das.sampler_cls._beta_history)
     fh5.close()
 
+    with open(out_dir + prefix + 'config.ini', 'w') as configfile:
+        config.write(configfile)
 
 
 

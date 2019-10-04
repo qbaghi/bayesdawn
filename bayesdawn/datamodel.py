@@ -10,7 +10,7 @@ Gaussian conditional model
 """
 
 
-from .gaps import gapgenerator
+from bayesdawn.gaps import gapgenerator
 from numpy import ndarray
 import numpy as np
 from scipy import signal
@@ -49,6 +49,8 @@ class NdTimeSeries(ndarray):
         self.tobs = self.n * del_t
         self.t = np.arange(0, self.n) * del_t
         self.f = np.fft.fftfreq(self.n) * self.fs
+        # Time windowing
+        self.w = 1
 
     def set_sampling_time(self, del_t):
 
@@ -59,7 +61,7 @@ class NdTimeSeries(ndarray):
         self.t = np.arange(0, self.n) * del_t
         self.f = np.fft.fftfreq(self.n) * self.fs
 
-    def compute_window(self, wind='tukey'):
+    def compute_window(self, wind='tukey', n_wind=500):
 
         if wind == 'tukey':
             w = signal.tukey(self.n)
@@ -67,21 +69,23 @@ class NdTimeSeries(ndarray):
             w = np.hanning(self.n)
         elif wind == 'blackman':
             w = np.blackman(self.n)
+        elif wind == 'modified_hann':
+            w = gapgenerator.modified_hann(self.n, n_wind=n_wind)
         elif (wind == 'rectangular') | (wind == 'rect'):
             w = np.ones(self.n)
 
         return w
 
-    def dft(self, wind='tukey', normalized=True):
+    def dft(self, wind='tukey', n_wind=500, normalized=True):
 
-        w = self.compute_window(wind=wind)
+        self.w = self.compute_window(wind=wind, n_wind=n_wind)
 
         if normalized:
-            norm = np.sum(w) / (self.del_t * 2)
+            norm = np.sum(self.w) / (self.del_t * 2)
         else:
             norm = 1.0
 
-        return fft(self * w) / norm
+        return fft(self * self.w) / norm
 
     def periodogram(self, wind='tukey'):
         """
