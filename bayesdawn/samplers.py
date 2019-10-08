@@ -329,10 +329,13 @@ class ExtendedPTMCMC(ptemcee.Sampler):
                 callback(pos[0, 0, :])
             if (i % n_save == 0) & (i != 0):
                 print("Save data at iteration " + str(i))
-                # Transform the chain into data frame
-                df = pd.DataFrame(self.chain[0, :, i-n_save:i, :].reshape((-1, self.chain.shape[3])),
-                                  columns=param_names)
-                df.to_hdf(save_path, 'chain', append=True, mode='a', format='table')
+                # Make a list of data frames
+                # df = pd.DataFrame(self.chain[0, :, i-n_save:i, :].reshape((-1, self.chain.shape[3])),
+                #                   columns=param_names)
+                df = [pd.DataFrame(self.chain[0, j, i-n_save:i, :], columns=param_names)
+                           for j in range(self.chain.shape[1])]
+                [df[j].to_hdf(save_path, 'chain_' + str(j), append=True, mode='a', format='table')
+                 for j in range(self.chain.shape[1])]
                 # df = pd.DataFrame(self.chain[0, :, 0:i, :].reshape((-1, self.chain.shape[3])), columns=param_names)
                 # df.to_hdf(save_path, 'chain', append=False, mode='w', format='fixed')
                 print("Data saved.")

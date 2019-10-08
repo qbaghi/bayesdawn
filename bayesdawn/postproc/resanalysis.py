@@ -86,7 +86,10 @@ def cornerplot(s_list, truths_vect, offset, rscales, labels, colors=['k', 'gray'
 
     """
 
-    truths_res = (truths_vect[0:sample_list[0].shape[1]]-offset)*rscales
+    if truths_vect is not None:
+        truths_res = (truths_vect[0:s_list[0].shape[1]]-offset)*rscales
+    else:
+        truths_res = None
     # truths_res = (truths[sample_list[0].shape[1]:] - offset) * rscales
     ndim = s_list[0].shape[1]
 
