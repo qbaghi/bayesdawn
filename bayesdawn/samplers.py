@@ -118,10 +118,6 @@ def logprob(x,distrib_name,pars,constant = False):
     return out
 
 
-
-
-
-
 def metropolisHastings(target,proposal,xinit, Nsamples,proposalProb = []):
     """
     Metropolis-Hastings algorithm
@@ -342,6 +338,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
 
             i += 1
 
+
 class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
 
     def __init__(self, *args, **kwargs):
@@ -360,27 +357,18 @@ class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
     def update_log_prior(self, log_prior, log_prior_args):
         pass
 
-    def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None, save_path='./'):
-
-        with h5py.File(save_path, "a") as fi:
-            dset = fi.create_dataset('chain', (n_save, self.npdim),
-                                     maxshape=(n_it, self.npdim),
-                                     dtype=np.float,
-                                     chunks=(n_save, self.npdim))
-            fi.close()
+    def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None, save_path='./', param_names=None):
 
         print("The main nested sampling loop begins...")
         for it, res in enumerate(self.sample(maxiter=n_it)):
-                if (it % n_update == 0) & (callback is not None):
-                    print("Update of auxiliary parameters at iteration " + str(it))
-                    # callback(self.saved_v[0, :])
-                    callback(self.results.samples[0, :])
-                if (it % n_save == 0) & (it != 0):
-                    print("Save data at iteration " + str(it))
-                    fi = h5py.File(save_path, "a")
-                    dset = fi['chain'][()]
-                    dset[-n_save:, :] = self.results.samples[-n_save:, :]
-                    fi.close()
+            if (it % n_update == 0) & (callback is not None):
+                print("Update of auxiliary parameters at iteration " + str(it))
+                # callback(self.saved_v[0, :])
+                callback(self.results.samples[0, :])
+            if (it % n_save == 0) & (it != 0):
+                print("Save data at iteration " + str(it))
+                df = pd.DataFrame(self.results.samples[-n_save:, :], columns=param_names)
+                df.to_hdf(save_path, 'chain', append=True, mode='a', format='table')
 
         print("Adding the final set of live points")
         for it_final, res in enumerate(self.add_live_points()):
