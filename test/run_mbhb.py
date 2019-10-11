@@ -78,9 +78,12 @@ if __name__ == '__main__':
         params0 = np.array(params)[signal_cls.i_intr]
     else:
         # Create data analysis GW model with the full parameter vector
-        names = ['m1', 'm2', 'xi1', 'xi2', 'tc', 'dist', 'inc', 'phi0', 'lam', 'beta', 'psi']
-        bounds = [[0.1e6, 1e7], [0.1e6, 1e7], [0, 1], [0, 1], [2000000.0, 2162000.0], [100000, 500000],
-                  [0, np.pi], [0, 2*np.pi], [0, np.pi], [0, 2 * np.pi], [0, 2 * np.pi]]
+        names = [key for key in config['ParametersLowerBounds']]
+        # names = ['m1', 'm2', 'xi1', 'xi2', 'tc', 'dist', 'inc', 'phi0', 'lam', 'beta', 'psi']
+        # bounds = [[0.1e6, 1e7], [0.1e6, 1e7], [0, 1], [0, 1], [2000000.0, 2162000.0], [100000, 500000],
+        #           [0, np.pi], [0, 2*np.pi], [0, np.pi], [0, 2 * np.pi], [0, 2 * np.pi]]
+        bounds = [[float(config['ParametersLowerBounds'][name]), float(config['ParametersUpperBounds'][name])]
+                  for name in names]
         params0 = np.array(params)
 
     distribs = ['uniform' for name in names]
@@ -142,8 +145,8 @@ if __name__ == '__main__':
     das = dasampler.FullModel(posterior_cls, psd_cls, dat_cls, sampler_cls,
                               outdir=config["OutputData"]["DirectoryPath"],
                               prefix='samples',
-                              n_wind=config["TimeWindowing"]["DecayNumber"],
-                              n_wind_psd=config["TimeWindowing"]["DecayNumberPSD"],
+                              n_wind=int(config["TimeWindowing"]["DecayNumber"]),
+                              n_wind_psd=int(config["TimeWindowing"]["DecayNumberPSD"]),
                               imputation=config['Sampler'].getboolean('MissingDataImputation'),
                               psd_estimation=config['Sampler'].getboolean('PSDEstimation'),
                               normalized=config['Model'].getboolean('normalized'))
