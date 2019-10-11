@@ -36,7 +36,7 @@ if __name__ == '__main__':
 
     (options, args) = parser.parse_args()
     if args == []:
-        config_file = "../configs/config_ptemcee.ini"
+        config_file = "../configs/config_dynesty.ini"
     else:
         config_file = args[0]
     # ==================================================================================================================
@@ -142,8 +142,8 @@ if __name__ == '__main__':
     das = dasampler.FullModel(posterior_cls, psd_cls, dat_cls, sampler_cls,
                               outdir=config["OutputData"]["DirectoryPath"],
                               prefix='samples',
-                              n_wind=500,
-                              n_wind_psd=50000,
+                              n_wind=config["TimeWindowing"]["DecayNumber"],
+                              n_wind_psd=config["TimeWindowing"]["DecayNumberPSD"],
                               imputation=config['Sampler'].getboolean('MissingDataImputation'),
                               psd_estimation=config['Sampler'].getboolean('PSDEstimation'),
                               normalized=config['Model'].getboolean('normalized'))
@@ -162,13 +162,6 @@ if __name__ == '__main__':
     print("Test with set of parameters 1")
     print("loglike value: " + str(test1) + " should be equal to " + str(test0))
     print("Likelihood computation time: " + str(t2 - t1))
-    # params2 = np.array(posterior_cls.lo)
-    # t1 = time.time()
-    # test2 = posterior_cls.log_likelihood(posterior_cls.param2uniform(params2), spectrum_list, y_fft_list)
-    # t2 = time.time()
-    # print("Test with set of parameters 2")
-    # print("loglike value: " + str(test2))
-    # print("Likelihood computation time: " + str(t2 - t1))
 
     # ==================================================================================================================
     # Run the sampling
@@ -184,6 +177,11 @@ if __name__ == '__main__':
     # sampler_cls0.run_nested(maxiter=int(config['Sampler']['MaximumIterationNumber']))
     # # das.sampler_cls = sampler_cls0
 
+    # Save the configuration file in the output directory
+    with open(out_dir + prefix + 'config.ini', 'w') as configfile:
+        config.write(configfile)
+
+    # Run the sampling
     das.run(n_it=int(config['Sampler']['MaximumIterationNumber']),
             n_update=int(config['Sampler']['AuxiliaryParameterUpdateNumber']),
             n_thin=int(config['Sampler']['ThinningNumber']),
@@ -198,8 +196,7 @@ if __name__ == '__main__':
         fh5.create_dataset("temperatures/beta_hist", data=das.sampler_cls._beta_history)
     fh5.close()
 
-    with open(out_dir + prefix + 'config.ini', 'w') as configfile:
-        config.write(configfile)
+
 
 
 

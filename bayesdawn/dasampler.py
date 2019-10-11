@@ -69,7 +69,10 @@ class FullModel(object):
         self.window = window
         # Windowing smoothing parameter (optimized for signal estimation)
         self.n_wind = n_wind
-        self.w = gaps.gapgenerator.modified_hann(self.dat_cls.N, n_wind=self.n_wind)
+        if n_wind > 0:
+            self.w = gaps.gapgenerator.modified_hann(self.dat_cls.N, n_wind=self.n_wind)
+        else:
+            self.w = np.ones(self.dat_cls.N)
         # Normalization constant for signal amplitude
         self.K1 = np.sum(self.w)
         # Windowing smoothing parameter (optimized for noise psd estimation)
