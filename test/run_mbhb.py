@@ -236,6 +236,10 @@ if __name__ == '__main__':
     fh5 = h5py.File(out_dir + prefix + config["OutputData"]["FileSuffix"], 'w')
     if config["Sampler"]["Type"] == 'dynesty':
         fh5.create_dataset("chains/chain", data=sampler.results.samples)
+        fh5.create_dataset("chains/logl", data=sampler.results.logl)
+        fh5.create_dataset("chains/logwt", data=sampler.results.logwt)
+        fh5.create_dataset("chains/logvol", data=sampler.results.logvol)
+        fh5.create_dataset("chains/logz", data=sampler.results.logz)
     elif config["Sampler"]["Type"] == 'ptemcee':
         fh5.create_dataset("chains/chain", data=sampler.chain)
         fh5.create_dataset("temperatures/beta_hist", data=sampler._beta_history)
