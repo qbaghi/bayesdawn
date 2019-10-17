@@ -427,7 +427,7 @@ class PSDSpline(PSD):
         # Compute the spline parameter vector for the log-PSD model
         self.estimate_from_I(I)
 
-    def estimate_from_freq(self, y_fft, K2=None):
+    def estimate_from_freq(self, y_fft, k2=None):
         """
 
         Estimate the log-PSD using spline model by least-square method from the
@@ -439,14 +439,13 @@ class PSDSpline(PSD):
         
         # If there is only one periodogram
         if type(y_fft) == np.ndarray:
-            I = self.periodogram(y_fft, K2=K2)
+            I = self.periodogram(y_fft, K2=k2)
             #self.beta = self.spline_lsqr(I)
         # Otherwise calculate the periodogram for each data set:
         elif (type(y_fft) == list):
-            I = [self.periodogram(y_fft[i], K2=K2[i]) for i in range(len(y_fft))]
+            I = [self.periodogram(y_fft[i], K2=k2[i]) for i in range(len(y_fft))]
              
         self.estimate_from_I(I)
-   
 
     def estimate_from_I(self, I):
         """
@@ -557,6 +556,9 @@ def theoretical_spectrum_func(f_sampling, channel, scale=1.0):
 
 
 class PSDTheoretical(object):
+    """
+    Power spectral density class providing methods to compute the theoretical PSD of TDI data streams
+    """
 
     def __init__(self, N, fs, fmin=None, fmax=None, channels=['A'], scale=1.0):
         self.channels = channels
@@ -567,10 +569,24 @@ class PSDTheoretical(object):
             self.psd_list[i].logPSD_fn = lambda x: np.log(self.psd_list[i].PSD_fn(np.exp(x)))
 
     def calculate(self, arg):
+        """
+
+        Parameters
+        ----------
+        arg : int or ndarray
+            size of Fourier grid or vector of frequencies
+
+        Returns
+        -------
+        spectrum : list of ndarrays
+            list of psd estimates for all channels
+
+        """
         return [psd.calculate(arg) for psd in self.psd_list]
 
-    def set_periodogram(self, z_fft, K2):
-        [psd.set_periodogram(z_fft, K2) for psd in self.psd_list]
+    # def set_periodogram(self, z_fft, K2):
+    #
+    #     [psd.set_periodogram(z_fft, K2) for psd in self.psd_list]
 
     def sample(self, npsd):
         sampling_result = [psd.sample_psd(npsd) for psd in self.psd_list]

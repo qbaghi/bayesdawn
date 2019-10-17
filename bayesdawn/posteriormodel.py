@@ -2,6 +2,52 @@ from bayesdawn import samplers
 import numpy as np
 
 
+def unwrap(u, lo, hi):
+    """
+
+    Convert numbers drawn from uniform distribution to physical parameter values
+
+    Parameters
+    ----------
+    u : numpy array
+        arrays of floats in interval [0, 1]
+
+    Returns
+    -------
+    x : numpy array
+        arrays of floats in interval [lo, hi]
+
+    """
+
+    return (hi - lo) * u + lo
+
+
+def wrap(x, lo, hi):
+    """
+
+    Convert physical parameter values to numbers in the interval [0, 1]
+
+    Parameters
+    ----------
+    x : numpy array
+        arrays of floats in interval [lo, hi]
+
+
+    Returns
+    -------
+    u : numpy array
+        arrays of floats in interval [0, 1]
+
+    """
+
+    return (x - lo) / (hi - lo)
+
+
+def logp(x, lo, hi):
+
+    return np.where(((x >= lo) & (x <= hi)).all(-1), 0.0, -np.inf)
+
+
 class PosteriorModel(object):
 
     def __init__(self, signal_cls, bounds, rescaled=False):
