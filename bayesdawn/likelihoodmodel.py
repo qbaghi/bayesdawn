@@ -437,12 +437,13 @@ class LikelihoodModel(object):
         self.counter += 1
         # If it is a multiple of n_update, update auxiliary parameters
         if (self.counter % self.n_update == 0) & (self.counter != 0):
-            print("Update the auxiliary parameters if necessary at iteration " + str(self.counter))
             # Missing data imputation step
             if self.imputation:
+                print("Update missing data at likelihood evaluation number " + str(self.counter))
                 self.update_missing_data(params)
             # PSD parameter posterior step
             if self.psd_estimation:
+                print("Update PSD estimate at likelihood evaluation number " + str(self.counter))
                 self.update_psd(params)
                 self.log_norm = self.compute_log_norm()
 

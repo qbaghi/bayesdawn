@@ -4,6 +4,7 @@ import pandas as pd
 # import myplots
 import time
 import h5py
+import pickle
 # from scipy import signal
 from bayesdawn.waveforms import lisaresp
 from bayesdawn import likelihoodmodel, dasampler, datamodel, psdmodel, posteriormodel
@@ -11,6 +12,7 @@ from bayesdawn.utils import loadings
 from bayesdawn import samplers
 import tdi
 import dynesty
+from dynesty.dynamicsampler import stopping_function, weight_function
 import ptemcee
 # FTT modules
 import pyfftw
@@ -172,16 +174,46 @@ if __name__ == '__main__':
                                                bound='multi',
                                                sample='slice',
                                                periodic=periodic)
-        # Run the sampler
-        sampler.run_nested(nlive_init=int(config["Sampler"]["WalkerNumber"]), maxiter_init=None, maxcall_init=None,
-                           dlogz_init=0.01, nlive_batch=500, wt_function=None, wt_kwargs={'pfrac': 1.0},
-                           stop_kwargs={'pfrac': 1.0}, maxiter_batch=None, maxcall_batch=None,
-                           maxiter=int(config["Sampler"]["MaximumIterationNumber"]),
-                           print_progress=config['Sampler'].getboolean('printProgress'))
+
+        # Instantiate the sampler
+        # # Run the sampler
+        # sampler.run_nested(nlive_init=int(config["Sampler"]["WalkerNumber"]), maxiter_init=None, maxcall_init=None,
+        #                    dlogz_init=0.01, nlive_batch=500, wt_function=None, wt_kwargs={'pfrac': 1.0},
+        #                    stop_kwargs={'pfrac': 1.0}, maxiter_batch=None, maxcall_batch=None,
+        #                    maxiter=int(config["Sampler"]["MaximumIterationNumber"]),
+        #                    print_progress=config['Sampler'].getboolean('printProgress'))
+
+        # Baseline run.
+        it = 0
+        it_max = int(int(config["Sampler"]["MaximumIterationNumber"])/2)
+        print("Initial sampling begins")
+        for results in sampler.sample_initial(nlive=500):
+
+            if (it % n_save == 0) & (n_save != 0):
+                print("Saving results at iteration " + str(it))
+                pickle.dump(sampler.results, open(out_dir + prefix + "initial_save.p", "wb"))
+
+            it += 1
+
+        # Add batches until we hit the stopping criterion.
+        it = 0
+        print("Batch sampling begins")
+        while True:
+            stop = stopping_function(sampler.results)  # evaluate stop
+            if not stop:
+                logl_bounds = weight_function(sampler.results)  # derive bounds
+                for results in sampler.sample_batch(logl_bounds=logl_bounds, maxiter=it_max):
+                    if (it % n_save == 0) & (n_save != 0):
+                        print("Saving results at iteration " + str(it))
+                        pickle.dump(sampler.results, open(out_dir + prefix + "batch_save.p", "wb"))
+                    it += 1
+
+                sampler.combine_runs()  # add new samples to previous results
+            else:
+                break
 
         # # The main nested sampling loop.
-        # for it, res in enumerate(sampler.sample(nlive_init=int(config["Sampler"]["WalkerNumber"]),
-        #                                         maxiter_init=None, maxcall_init=None,
+        # for it, res in enumerate(sampler.sample(maxiter_init=None, maxcall_init=None,
         #                                         dlogz_init=0.01, nlive_batch=500, wt_function=None,
         #                                         wt_kwargs={'pfrac': 1.0},
         #                                         stop_kwargs={'pfrac': 1.0}, maxiter_batch=None, maxcall_batch=None,
@@ -190,6 +222,7 @@ if __name__ == '__main__':
         #
         #     # If it is a multiple of n_save, run the callback function
         #     if (it % n_save == 0) & (n_save != 0):
+        #         pickle.dump(sampler.results, open(out_dir + prefix + "save.p", "wb"))
         #         print("Samples saved at iteration " + str(it))
         #
         # # Adding the final set of live points.
@@ -213,26 +246,6 @@ if __name__ == '__main__':
     # ==================================================================================================================
     # Saving the data finally
     # ==================================================================================================================
-
-    # sampler_cls0 = NestedSampler(posterior_cls.log_likelihood, posterior_cls.uniform2param,
-    #                              model_cls.ndim_tot, nlive=np.int(config["Sampler"]["WalkerNumber"]),
-    #                              logl_args=(spectrum_list, y_fft_list))
-    # sampler_cls0.run_nested(maxiter=int(config['Sampler']['MaximumIterationNumber']))
-    # # das.sampler_cls = sampler_cls0
-
-    # # Save the configuration file in the output directory
-    # with open(out_dir + prefix + 'config.ini', 'w') as configfile:
-    #     config.write(configfile)
-    #
-    # # Run the sampling
-    # das.run(n_it=int(config['Sampler']['MaximumIterationNumber']),
-    #         n_update=int(config['Sampler']['AuxiliaryParameterUpdateNumber']),
-    #         n_thin=int(config['Sampler']['ThinningNumber']),
-    #         n_save=int(config['Sampler']['SavingNumber']),
-    #         save_path=out_dir + prefix + 'chains_temp.hdf5')
-    #
-    # print("done.")
-    #
     fh5 = h5py.File(out_dir + prefix + config["OutputData"]["FileSuffix"], 'w')
     if config["Sampler"]["Type"] == 'dynesty':
         fh5.create_dataset("chains/chain", data=sampler.results.samples)
@@ -240,6 +253,8 @@ if __name__ == '__main__':
         fh5.create_dataset("chains/logwt", data=sampler.results.logwt)
         fh5.create_dataset("chains/logvol", data=sampler.results.logvol)
         fh5.create_dataset("chains/logz", data=sampler.results.logz)
+        pickle.dump(sampler.results, open(out_dir + prefix + "save.p", "wb"))
+
     elif config["Sampler"]["Type"] == 'ptemcee':
         fh5.create_dataset("chains/chain", data=sampler.chain)
         fh5.create_dataset("temperatures/beta_hist", data=sampler._beta_history)

@@ -29,8 +29,7 @@ we then filter to obtain a stationary colored noise:
 
 ```python
   # Import mecm and other useful packages
-  from bayesdawn import imputation
-  from bayesdawn.psd import psdspline
+  from bayesdawn import datamodel, psdmodel
   import numpy as np
   import random
   from scipy import signal
@@ -81,7 +80,7 @@ Therefore, we do not observe the data y but its masked version, mask*y:
 
 ```python
   y = s + n
-  y = mask * y
+  y_masked = mask * y
 ```
 
 3. Missing data imputation
@@ -106,9 +105,9 @@ Then, from the observed data and their model, we can reconstruct the missing dat
 ```python
 
     # instantiate imputation class
-    imp_cls = imputation.nearestNeighboor(mask, Na=50, Nb=50)
+    imp_cls = datamodel.GaussianStationaryProcess(y_masked, mask, Na=50, Nb=50)
     # Imputation of missing data
-    y_rec = imp_cls.draw_missing_data(y_mask, s, psd_cls)
+    y_rec = imp_cls.draw_missing_data(s, psd_cls)
 
 
 ```
