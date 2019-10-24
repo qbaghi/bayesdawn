@@ -175,6 +175,9 @@ if __name__ == '__main__':
                                                sample='slice',
                                                periodic=periodic)
 
+        sampler = dynesty.NestedSampler(model_cls.log_likelihood, uniform2param, model_cls.ndim_tot,
+                                        bound='multi', sample='slice', nlive=int(config["Sampler"]["WalkerNumber"]))
+
         # Instantiate the sampler
         # # Run the sampler
         # sampler.run_nested(nlive_init=int(config["Sampler"]["WalkerNumber"]), maxiter_init=None, maxcall_init=None,
@@ -183,51 +186,60 @@ if __name__ == '__main__':
         #                    maxiter=int(config["Sampler"]["MaximumIterationNumber"]),
         #                    print_progress=config['Sampler'].getboolean('printProgress'))
 
-        # Baseline run.
-        it = 0
-        it_max = int(int(config["Sampler"]["MaximumIterationNumber"])/2)
-        print("Initial sampling begins")
-        for results in sampler.sample_initial(nlive=500):
+        # # Baseline run.
+        # it = 0
+        # it_max = int(int(config["Sampler"]["MaximumIterationNumber"])/2)
+        # print("Initial sampling begins")
+        # for results in sampler.sample_initial(nlive=500):
+        #
+        #     if (it % n_save == 0) & (n_save != 0):
+        #         print("Saving results at iteration " + str(it))
+        #         file_object = open(out_dir + prefix + "initial_save.p", "wb")
+        #         pickle.dump(sampler.results, file_object)
+        #         file_object.close()
+        #
+        #     it += 1
+        #
+        # # Add batches until we hit the stopping criterion.
+        # it = 0
+        # print("Batch sampling begins")
+        # while True:
+        #     stop = stopping_function(sampler.results)  # evaluate stop
+        #     if not stop:
+        #         logl_bounds = weight_function(sampler.results)  # derive bounds
+        #         for results in sampler.sample_batch(logl_bounds=logl_bounds, maxiter=it_max):
+        #             if (it % n_save == 0) & (n_save != 0):
+        #                 print("Saving results at iteration " + str(it))
+        #                 file_object = open(out_dir + prefix + "batch_save.p", "wb")
+        #                 pickle.dump(sampler.results, file_object)
+        #             it += 1
+        #
+        #         sampler.combine_runs()  # add new samples to previous results
+        #     else:
+        #         break
 
+        # The main nested sampling loop.
+        print("Main nested sampling loop starts...")
+        for it, res in enumerate(sampler.sample(maxiter=int(config["Sampler"]["MaximumIterationNumber"]),
+                                                save_samples=True)):
+            # If it is a multiple of n_save, run the callback function
             if (it % n_save == 0) & (n_save != 0):
                 print("Saving results at iteration " + str(it))
-                pickle.dump(sampler.results, open(out_dir + prefix + "initial_save.p", "wb"))
-
-            it += 1
-
-        # Add batches until we hit the stopping criterion.
-        it = 0
-        print("Batch sampling begins")
-        while True:
-            stop = stopping_function(sampler.results)  # evaluate stop
-            if not stop:
-                logl_bounds = weight_function(sampler.results)  # derive bounds
-                for results in sampler.sample_batch(logl_bounds=logl_bounds, maxiter=it_max):
-                    if (it % n_save == 0) & (n_save != 0):
-                        print("Saving results at iteration " + str(it))
-                        pickle.dump(sampler.results, open(out_dir + prefix + "batch_save.p", "wb"))
-                    it += 1
-
-                sampler.combine_runs()  # add new samples to previous results
+                file_object = open(out_dir + prefix + "initial_save.p", "wb")
+                pickle.dump(sampler.results, file_object)
+                file_object.close()
             else:
-                break
+                pass
 
-        # # The main nested sampling loop.
-        # for it, res in enumerate(sampler.sample(maxiter_init=None, maxcall_init=None,
-        #                                         dlogz_init=0.01, nlive_batch=500, wt_function=None,
-        #                                         wt_kwargs={'pfrac': 1.0},
-        #                                         stop_kwargs={'pfrac': 1.0}, maxiter_batch=None, maxcall_batch=None,
-        #                                         maxiter=int(config["Sampler"]["MaximumIterationNumber"]),
-        #                                         print_progress=config['Sampler'].getboolean('printProgress'))):
-        #
-        #     # If it is a multiple of n_save, run the callback function
-        #     if (it % n_save == 0) & (n_save != 0):
-        #         pickle.dump(sampler.results, open(out_dir + prefix + "save.p", "wb"))
-        #         print("Samples saved at iteration " + str(it))
-        #
-        # # Adding the final set of live points.
-        # for it_final, res in enumerate(sampler.add_live_points()):
-        #     pass
+        # Adding the final set of live points.
+        print("Adding the final set of live points...")
+        for it_final, res in enumerate(sampler.add_live_points()):
+            if (it_final % n_save == 0) & (n_save != 0):
+                file_object = open(out_dir + prefix + "final_save.p", "wb")
+                pickle.dump(sampler.results, file_object)
+                file_object.close()
+            else:
+                pass
 
     elif config["Sampler"]["Type"] == 'ptemcee':
         sampler = ptemcee.Sampler(int(config["Sampler"]["WalkerNumber"]),
