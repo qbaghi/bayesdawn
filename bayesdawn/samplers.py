@@ -12,6 +12,7 @@ import h5py
 import pandas as pd
 import dynesty
 from dynesty import NestedSampler, DynamicNestedSampler
+import pickle
 
 
 def clipcov(X, nit = 3, n_sig = 5):
@@ -306,7 +307,30 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             print("Update of auxiliary parameters at iteration " + str(it))
             callback(self.position[0, 0, :])
 
-    def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None, save_path='./', param_names=None):
+    def run(self, n_it, n_save, n_thin, callback=None, pos0=None, save_path='./', param_names=None):
+        """
+
+        Parameters
+        ----------
+        n_it : int
+            maximum number of iterations
+        n_save : int
+            request to save chains to file every n_save iteration
+        n_thin : int
+            thinning number
+        callback : callable
+            external function to call at each iteration
+        pos0 : array_like
+            initial values for parameters
+        save_path : str
+            path to save the data
+        param_names : list
+            list of parameter names (optional)
+
+        Returns
+        -------
+
+        """
 
         # Initialization of parameter values
         if pos0 is None:
@@ -315,28 +339,44 @@ class ExtendedPTMCMC(ptemcee.Sampler):
         else:
             pos = pos0[:]
 
+        # # If no callback function specified, set it to do nothing
+        # if callback is None:
+        #     def callback(p):
+        #         pass
+
         self.position = pos[:]
 
-        i = 0
+        it = 0
+
         for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
 
-            if (i % n_update == 0) & (callback is not None):
-                print("Update of auxiliary parameters at iteration " + str(i))
-                callback(pos[0, 0, :])
-            if (i % n_save == 0) & (i != 0):
-                print("Save data at iteration " + str(i))
+            # print("Iteration " + str(it) + " done.")
+            # if (it % n_update == 0) & (callback is not None):
+            #     print("Update of auxiliary parameters at iteration " + str(i))
+            #     callback(pos[0, 0, :])
+            if (it % n_save == 0) & (it != 0):
+                print("Save data at iteration " + str(it) + "...")
                 # Make a list of data frames
                 # df = pd.DataFrame(self.chain[0, :, i-n_save:i, :].reshape((-1, self.chain.shape[3])),
                 #                   columns=param_names)
-                df = [pd.DataFrame(self.chain[0, j, i-n_save:i, :], columns=param_names)
-                           for j in range(self.chain.shape[1])]
-                [df[j].to_hdf(save_path, 'chain_' + str(j), append=True, mode='a', format='table')
-                 for j in range(self.chain.shape[1])]
+                # df = [pd.DataFrame(self.chain[0, j, i-n_save:i, :], columns=param_names)
+                #            for j in range(self.chain.shape[1])]
+                # [df[j].to_hdf(save_path, 'chain_' + str(j), append=True, mode='a', format='table')
+                #  for j in range(self.chain.shape[1])]
                 # df = pd.DataFrame(self.chain[0, :, 0:i, :].reshape((-1, self.chain.shape[3])), columns=param_names)
                 # df.to_hdf(save_path, 'chain', append=False, mode='w', format='fixed')
+                file_object = open(save_path + 'chain.p', "wb")
+                pickle.dump(self.chain, file_object)
+                file_object.close()
+                file_object = open(save_path + 'lnprob.p', "wb")
+                pickle.dump(self.logprobability, file_object)
+                file_object.close()
                 print("Data saved.")
+            else:
+                pass
+            it += 1
 
-            i += 1
+        return pos, lnlike0, lnprob0
 
 
 class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):

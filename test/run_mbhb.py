@@ -39,7 +39,7 @@ if __name__ == '__main__':
 
     (options, args) = parser.parse_args()
     if args == []:
-        config_file = "../configs/config_dynesty.ini"
+        config_file = "../configs/config_ptemcee.ini"
     else:
         config_file = args[0]
     # ==================================================================================================================
@@ -168,12 +168,12 @@ if __name__ == '__main__':
             return posteriormodel.unwrap(u, lo, hi)
 
         # Instantiate the sampler
-        sampler = dynesty.DynamicNestedSampler(model_cls.log_likelihood,
-                                               uniform2param,
-                                               model_cls.ndim_tot,
-                                               bound='multi',
-                                               sample='slice',
-                                               periodic=periodic)
+        # sampler = dynesty.DynamicNestedSampler(model_cls.log_likelihood,
+        #                                        uniform2param,
+        #                                        model_cls.ndim_tot,
+        #                                        bound='multi',
+        #                                        sample='slice',
+        #                                        periodic=periodic)
 
         sampler = dynesty.NestedSampler(model_cls.log_likelihood, uniform2param, model_cls.ndim_tot,
                                         bound='multi', sample='slice', nlive=int(config["Sampler"]["WalkerNumber"]))
@@ -242,19 +242,29 @@ if __name__ == '__main__':
                 pass
 
     elif config["Sampler"]["Type"] == 'ptemcee':
-        sampler = ptemcee.Sampler(int(config["Sampler"]["WalkerNumber"]),
-                                  model_cls.ndim_tot,
-                                  model_cls.log_likelihood,
-                                  posteriormodel.logp,
-                                  ntemps=int(config["Sampler"]["TemperatureNumber"]),
-                                  loglargs=(spectrum_list, y_fft_list),
-                                  logpargs=(lo, hi))
 
+        # sampler = ptemcee.Sampler(int(config["Sampler"]["WalkerNumber"]),
+        #                           model_cls.ndim_tot,
+        #                           model_cls.log_likelihood,
+        #                           posteriormodel.logp,
+        #                           ntemps=int(config["Sampler"]["TemperatureNumber"]),
+        #                           loglargs=(spectrum_list, y_fft_list),
+        #                           logpargs=(lo, hi))
+        sampler = samplers.ExtendedPTMCMC(int(config["Sampler"]["WalkerNumber"]),
+                                          model_cls.ndim_tot,
+                                          model_cls.log_likelihood,
+                                          posteriormodel.logp,
+                                          ntemps=int(config["Sampler"]["TemperatureNumber"]),
+                                          logpargs=(lo, hi))
+
+        result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]), n_save,
+                             int(config["Sampler"]["thinningNumber"]), callback=None, pos0=None,
+                             save_path=out_dir + prefix)
         # Run the sampler
-        result = sampler.run_mcmc(p0=None, iterations=int(config["Sampler"]["MaximumIterationNumber"]),
-                                  thin=int(config["Sampler"]["thinningNumber"]),
-                                  storechain=True, adapt=False, swap_ratios=False)
-
+        # result = sampler.run_mcmc(p0=None, iterations=int(config["Sampler"]["MaximumIterationNumber"]),
+        #                           thin=int(config["Sampler"]["thinningNumber"]),
+        #                           storechain=True, adapt=False, swap_ratios=False)
+    # pos, lnlike0, lnprob0
     # ==================================================================================================================
     # Saving the data finally
     # ==================================================================================================================
@@ -269,7 +279,10 @@ if __name__ == '__main__':
 
     elif config["Sampler"]["Type"] == 'ptemcee':
         fh5.create_dataset("chains/chain", data=sampler.chain)
+        fh5.create_dataset("chains/lnlike", data=result[1])
+        fh5.create_dataset("chains/lnprob", data=result[2])
         fh5.create_dataset("temperatures/beta_hist", data=sampler._beta_history)
+
     fh5.close()
 
 
