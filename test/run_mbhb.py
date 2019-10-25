@@ -146,12 +146,15 @@ if __name__ == '__main__':
     print("Chosen sampler: " + config["Sampler"]["Type"])
     np.random.seed(int(config["Sampler"]["RandomSeed"]))
     n_save = int(config['Sampler']['SavingNumber'])
-
+    # Append current date and prefix to file names
     now = datetime.datetime.now()
     prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
     out_dir = config["OutputData"]["DirectoryPath"]
-    print("start sampling...")
+    # Save the configuration file used for the run
+    with open(out_dir + prefix + "_config.ini", 'w') as configfile:
+        config.write(configfile)
 
+    print("start sampling...")
     def stop_and_save(results, args=None, rstate=None, M=None, return_vals=False):
 
         print("Save data after reaching " + str(results.samples.shape[0]) + " samples.")
