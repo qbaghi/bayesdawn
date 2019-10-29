@@ -19,9 +19,14 @@ import dynesty
 
 import lisabeta.lisa.lisa as lisa
 import lisabeta.lisa.ldctools as ldctools
+import lisabeta.lisa.pyresponse as pyresponse
+import lisabeta.pyconstants as pyconstants
+import lisabeta.tools.pytools as pytools
+import lisabeta.tools.pyspline as pyspline
+from scipy.interpolate import interp1d
 
 
-def GetParams(p_gw):
+def get_params(p_gw):
     """
     returns array of parameters from hdf5 structure
     Parameters
@@ -105,95 +110,6 @@ def SimpleLogLik(data, template, Sn, df, tdi='XYZ'):
         return (llA, llE)
 
 
-def ComputeMBHBtemplate(p, Tobs, dt, fmin):
-    """
-
-    Parameters
-    ----------
-    p
-    Tobs
-    dt
-    fmin
-
-    Returns
-    -------
-
-    """
-    MfCUT_PhenomD = 0.2 - 1e-7  ### for IMRPhenomD
-    Mc, q, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL, m1, m2 = p
-
-    # print ("check 1", Mc, q, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL, m1, m2)
-
-    m1_SI = m1 * LC.MsunKG
-    m2_SI = m2 * LC.MsunKG
-    Ms = (m1 + m2) * LC.MTsun  # *solar mass in sec
-    df = 1.0 / Tobs
-    eta = m1 * m2 / (m1 + m2) ** 2
-
-    f0 = FD_Resp.funcNewtonianfoft(Mc, Tobs / LC.YRSID_SI)
-    if (f0 < fmin):
-        f0 = fmin
-
-    fRef = 0.0  # hardcodded  and defines the waveform in the source frame
-    maxf = 0.5 / dt
-    fmax = min(MfCUT_PhenomD / Ms, maxf)
-
-    acc_sampling = 1.e-5  ## hardcoded tolerance for the interpolation
-    freq_PhD = 1 / Ms * FD_Resp.WaveformFrequencyGridGeom(eta, Ms * f0, Ms * fmax, acc=acc_sampling)
-
-    phiRef = 0.0  # hardcoded
-    wf_PhD_class = pyIMRPhenomD.IMRPhenomDh22AmpPhase(freq_PhD, phiRef, fRef, m1_SI, m2_SI, chi1, chi2, dist)
-    wf_PhD = wf_PhD_class.GetWaveform()
-
-    frS = np.array(wf_PhD[0])
-    phS = np.array(wf_PhD[2])
-    ampS = np.array(wf_PhD[1])
-
-    tfspline = spline(frS, 1 / (2. * np.pi) * (phS - phS[0])).derivative()
-    tf = tfspline(frS)
-    Shift = tf[-1] - tc
-    tf = tf - Shift
-
-    index_cuttf = 0
-    tfdiff = np.diff(tf)
-    while index_cuttf < len(tfdiff) - 1 and tfdiff[index_cuttf] > 0:
-        index_cuttf += 1
-    tfr = tf[:index_cuttf + 1]
-    # print ("cutoff:", index_cuttf, len(tf), tf[index_cuttf], tf[-1])
-    frS_r = frS[:index_cuttf + 1]
-    frspl = spline(tfr, frS_r)
-    ind = index_cuttf
-
-    if (tf[0] < 0.0):
-        f0 = frspl(0.0)
-        freq_PhD = 1 / Ms * FD_Resp.WaveformFrequencyGridGeom(eta, Ms * f0, Ms * fmax, acc=acc_sampling)
-
-        # wf_PhD_class = pyIMRPhenomD.IMRPhenomDh22AmpPhase(freq_PhD, phi0, fRef, m1_SI, m2_SI, chi1, chi2, dist)
-        wf_PhD_class = pyIMRPhenomD.IMRPhenomDh22AmpPhase(freq_PhD, phiRef, fRef, m1_SI, m2_SI, chi1, chi2, dist)
-        wf_PhD = wf_PhD_class.GetWaveform()
-
-        frS = np.array(wf_PhD[0])
-        phS = np.array(wf_PhD[2])
-        ampS = np.array(wf_PhD[1])
-
-        tfspline = spline(frS, 1 / (2. * np.pi) * (phS - phS[0])).derivative()
-        Shift = tf[-1] - tc
-
-        # plt.plot(tf, frS)
-        # plt.show()
-
-    freq_response = FD_Resp.ResponseFrequencyGrid([frS, ampS, phS])
-    tm_response = tfspline(freq_response) - Shift
-
-    order = 0
-    epsTfvec = None
-    Tfvec = None
-    wfTDI = GenTDIFD.JustLISAFDresponseTDI(freq_response, tm_response, Tfvec, epsTfvec, incl, lam, bet, psi, phi0,
-                                           t0=0.0, order_fresnel_stencil=order)
-
-    return frS, ampS, phS, freq_response, wfTDI
-
-
 def compute_masses(mc, q):
 
     ma = (q / ((q + 1.) ** 2)) ** (-3.0 / 5.0)
@@ -205,86 +121,52 @@ def compute_masses(mc, q):
     return m1, m2
 
 
-def MBHBtmplFine(par, freq, tobs, tdi='XYZ'):
+def generate_lisa_signal(wftdi, freq=None, channels=None):
     """
-    ### computes MBHB template for the given frequency array
-    ### used for slow (conventional) likelihood evaluation
+
     Parameters
     ----------
-    par
-    freq
-    tdi
+    wftdi : dict
+        dictionary output from GenerateLISATDI
+    freq : ndarray
+        numpy array of freqs on which to sample waveform (or None)
 
     Returns
     -------
+    dictionary with output TDI channel data yielding numpy complex data arrays
 
     """
-    #        0   1   2   3     4     5     6     7    8    9    10   11  12  13
-    # parS = Mc, q, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL, m1, m2
-    Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0 = par
-    DL = 10.0 ** logDL
-    dist = DL * 1.e6 * LC.pc
-    m1 = 0.5 * Mc * ((q / ((q + 1.) ** 2)) ** (-3.0 / 5.0) + (
-                (q / ((q + 1.) ** 2)) ** (-6.0 / 5.0) - 4.0 * (q / ((q + 1.) ** 2)) ** (-1.0 / 5.0)) ** (0.5))
-    m2 = 0.5 * Mc * ((q / ((q + 1.) ** 2)) ** (-3.0 / 5.0) - (
-                (q / ((q + 1.) ** 2)) ** (-6.0 / 5.0) - 4.0 * (q / ((q + 1.) ** 2)) ** (-1.0 / 5.0)) ** (0.5))
-    incl = np.arccos(ci)
-    bet = np.arcsin(sb)
-    par_w = Mc, q, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL, m1, m2
 
-    ### Compute the waveform' ingedients on the coarse grid
-    frW, ampW, phW, fr_resp, wfTDI = ComputeMBHBtemplate(par_w, tobs, del_t, fmin=2.e-5)
+    if channels is None:
+        channels = [1, 2]
 
-    fmin = max(freq[0], frW[0], fr_resp[0])
-    fmax = min(freq[-1], frW[-1], fr_resp[-1])
-    # print ('fmax= ', fmax, "and", freq[-1], frW[-1], fr_resp[-1])
-    ind_in = np.argwhere(freq > fmin)[0][0]
-    ind_en = np.argwhere(freq > fmax)[0][0] - 1
 
-    ### interpolating on a regular grid and building the waveform
-    amp_spl = spline(frW, ampW)
-    ph_spl = spline(frW, phW)
-    phRspl = spline(fr_resp, wfTDI['phaseRdelay'])
+    fs = wftdi['freq']
+    amp = wftdi['amp']
+    phase = wftdi['phase']
+    print("Length of initial frequency grid " + str(len(fs)))
 
-    phasetimeshift = 2. * np.pi * tc * freq[ind_in:ind_en]
+    tr = [wftdi['transferL' + str(np.int(i))] for i in channels]
 
-    ph = ph_spl(freq[ind_in:ind_en]) + phRspl(freq[ind_in:ind_en]) + phasetimeshift
-    amp = amp_spl(freq[ind_in:ind_en])
-
-    keytrs = ['transferL1', 'transferL2', 'transferL3']
-
-    Nf = len(freq)
-    X = np.zeros(Nf, dtype=np.complex128)
-    Y = np.zeros(Nf, dtype=np.complex128)
-    Z = np.zeros(Nf, dtype=np.complex128)
-    fast = amp * np.exp(1.j * ph)  # to agree with fft conventions
-    for I, ky in enumerate(keytrs):
-        transferLRespline = spline(fr_resp, np.real(wfTDI[ky]))
-        transferLImspline = spline(fr_resp, np.imag(wfTDI[ky]))
-        transferLRe = transferLRespline(freq[ind_in:ind_en])
-        transferLIm = transferLImspline(freq[ind_in:ind_en])
-        if (ky == 'transferL1'):
-            X[ind_in:ind_en] = fast * (transferLRe + 1j * transferLIm)
-        if (ky == 'transferL2'):
-            Y[ind_in:ind_en] = fast * (transferLRe + 1j * transferLIm)
-        if (ky == 'transferL3'):
-            Z[ind_in:ind_en] = fast * (transferLRe + 1j * transferLIm)
-
-    if (tdi == 'XYZ'):
-        return (np.conjugate(X), np.conjugate(Y), np.conjugate(Z))
+    if freq is not None:
+        amp = pyspline.resample(freq, fs, amp)
+        phase = pyspline.resample(freq, fs, phase)
+        tr_int = [pyspline.resample(freq, fs, tri) for tri in tr]
+        # amp = np.interp(freq, fs, amp)
+        # phase = np.interp(freq, fs, phase)
+        # tr_int = [np.interp(freq, fs, tri) for tri in tr]
     else:
-        A = (Z - X) / np.sqrt(2.0)
-        E = (X - 2.0 * Y + Z) / np.sqrt(6.0)
-        T = (X + Y + Z) / np.sqrt(3.0)
-        return (np.conjugate(A), np.conjugate(E), np.conjugate(T))
+        freq = fs
+
+    h = amp * np.exp(1j * phase)
+
+    signal = {'ch' + str(np.int(i)): h * tr_int[i - 1] for i in channels}
+    signal['freq'] = freq
+
+    return signal
 
 
-def shift_time(f, xf, delay):
-
-    return xf*np.exp(-2j*np.pi*f*delay)
-
-
-def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657):
+def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657, channels=None):
     """
 
     Parameters
@@ -300,20 +182,20 @@ def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657):
 
     """
 
+    if channels is None:
+        channels = [1, 2, 3]
+
     # TDI response
     wftdi = lisa.GenerateLISATDI(params, tobs=tobs, minf=1e-5, maxf=1., tref=tref, torb=0., TDItag='TDIAET',
                                  acc=1e-4, order_fresnel_stencil=0, approximant='IMRPhenomD',
                                  responseapprox='full', frozenLISA=False, TDIrescaled=False)
-    signal_freq = lisa.GenerateLISASignal(wftdi, freq)
-    # Get coalescence time
-    ch_interp = [shift_time(freq, signal_freq['ch1'], t_offset).conj(),
-                 shift_time(freq, signal_freq['ch2'], t_offset).conj(),
-                 shift_time(freq, signal_freq['ch3'], t_offset).conj()]
-    # ch_interp = [shift_time(freq, signal_freq['ch1'], tobs - toffset).conj(),
-    #              shift_time(freq, signal_freq['ch2'], tobs - toffset).conj(),
-    #              shift_time(freq, signal_freq['ch3'], tobs - toffset).conj()]
 
-    # ch_interp = [signal_freq['ch1'], signal_freq['ch2'], signal_freq['ch3']]
+    signal_freq = generate_lisa_signal(wftdi, freq, channels)
+
+    # Phasor for the time shift
+    z = np.exp(-2j * np.pi * freq * t_offset)
+    # Get coalescence time
+    ch_interp = [(signal_freq['ch' + str(np.int(i))] * z).conj() for i in channels]
 
     return ch_interp
 
@@ -488,7 +370,7 @@ class LogLike(object):
         params = like_to_waveform(par)
 
         # Compute waveform template
-        at, et, tt = lisabeta_template(params, self.freq, tobs, tref=0, t_offset=self.t_offset)
+        at, et = lisabeta_template(params, self.freq, tobs, tref=0, t_offset=self.t_offset, channels=[1, 2])
 
         # (h | y)
         sna = np.sum(np.real(self.data[0]*np.conjugate(at)) / self.sn)
@@ -522,31 +404,25 @@ if __name__ == '__main__':
     import datetime
     import pickle
     from bayesdawn import samplers, posteriormodel
-
     # For parallel computing
     # from multiprocessing import Pool, Queue
-
     # Plotting modules
     import matplotlib.pyplot as plt
     import matplotlib as mpl
-
     # FTT modules
     import fftwisdom
     import pyfftw
     pyfftw.interfaces.cache.enable()
     from pyfftw.interfaces.numpy_fft import fft, ifft
-
     import configparser
     from optparse import OptionParser
-
-    from dynesty.dynamicsampler import stopping_function, weight_function
 
     # ==================================================================================================================
     # Load configuration file
     # ==================================================================================================================
     parser = OptionParser(usage="usage: %prog [options] YYY.txt", version="10.28.2018, Quentin Baghi")
     (options, args) = parser.parse_args()
-    if args == []:
+    if not args:
         config_file = "../configs/config_ldc.ini"
     else:
         config_file = args[0]
@@ -573,20 +449,17 @@ if __name__ == '__main__':
     print("Cadence = ", del_t, "Observation time=", tobs)
     print("Data loaded.")
 
-
-
     # ==================================================================================================================
     # Get the parameters
     # ==================================================================================================================
     # Get parameters as an array from the hdf5 structure (table)
-    m1, m2, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL = GetParams(p)
+    m1, m2, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL = get_params(p)
     Mc = FD_Resp.funcMchirpofm1m2(m1, m2)
     q = m1 / m2
     parS = Mc, q, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL, m1, m2
 
     # transforming into sampling parameters
     pS_sampl = np.array([Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0])
-
 
     # ==================================================================================================================
     # Pre-processing data: anti-aliasing and filtering
@@ -643,7 +516,7 @@ if __name__ == '__main__':
 
     params = ldctools.get_params_from_LDC(p)
     t1 = time.time()
-    Aft, Eft, Tft = lisabeta_template(params, freqD[inds], tobs, tref=0, t_offset=t_offset)
+    Aft, Eft, Tft = lisabeta_template(params, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
     t2 = time.time()
     print("=================================================================")
     print("LISABeta template computation time: " + str(t2 - t1))
@@ -713,71 +586,71 @@ if __name__ == '__main__':
           + str(np.all(np.array([lower_bounds[i] <= par_ll[i] <= upper_bounds[i] for i in range(len(par_ll))]))))
     print('random param loglik = ' + str(ll_cls.log_likelihood(par_ll)))
 
-    # ==================================================================================================================
-    # Prepare data to save during sampling
-    # ==================================================================================================================
-    # Append current date and prefix to file names
-    now = datetime.datetime.now()
-    prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
-    out_dir = config["OutputData"]["DirectoryPath"]
-    # Save the configuration file used for the run
-    with open(out_dir + prefix + "config.ini", 'w') as configfile:
-        config.write(configfile)
-
-    # ==================================================================================================================
-    # Start sampling
-    # ==================================================================================================================
-    # Set seed
-    np.random.seed(int(config["Sampler"]["RandomSeed"]))
-    # Multiprocessing pool
-    # pool = Pool(4)
-
-    if config["Sampler"]["Type"] == 'dynesty':
-        # Instantiate sampler
-        dsampl = dynesty.DynamicNestedSampler(ll_cls.log_likelihood, prior_transform, ndim=len(names),
-                                              bound='multi', sample='slice', periodic=[8, 9, 10],
-                                              ptform_args=(lower_bounds, upper_bounds), ptform_kwargs=None)
-                                              # pool=pool, queue_size=4)
-        # # Start run
-        # dsampl.run_nested(dlogz_init=0.01, nlive_init=config["Sampler"].getint("WalkerNumber"),
-        # nlive_batch=500, wt_kwargs={'pfrac': 1.0},
-        #                   stop_kwargs={'pfrac': 1.0})
-
-        print("n_live_init = " + config["Sampler"]["WalkerNumber"])
-        print("Save samples every " + config['Sampler']['SavingNumber'] + " iterations.")
-
-        samplers.run_and_save(dsampl, nlive=config["Sampler"].getint("WalkerNumber"),
-                              n_save=config['Sampler'].getint('SavingNumber'),
-                              file_path=out_dir + prefix)
-
-    elif config["Sampler"]["Type"] == 'ptemcee':
-
-        sampler = samplers.ExtendedPTMCMC(int(config["Sampler"]["WalkerNumber"]),
-                                          len(names),
-                                          ll_cls.log_likelihood,
-                                          posteriormodel.logp,
-                                          ntemps=int(config["Sampler"]["TemperatureNumber"]),
-                                          logpargs=(lower_bounds, upper_bounds))
-
-        result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
-                             config['Sampler'].getint('SavingNumber'),
-                             int(config["Sampler"]["thinningNumber"]),
-                             callback=None, pos0=None,
-                             save_path=out_dir + prefix)
-
     # # ==================================================================================================================
-    # # Plotting
+    # # Prepare data to save during sampling
     # # ==================================================================================================================
-    # fig1, ax = plt.subplots(nrows=2, sharex=True, sharey=True)
-    # ax[0].semilogx(freqD, np.real(ADf))
-    # ax[0].semilogx(freqD[inds], np.real(Aft), '--')
-    # ax[1].semilogx(freqD, np.imag(ADf))
-    # ax[1].semilogx(freqD[inds], np.imag(Aft), '--')
-    # # ax[0].semilogx(freqD, np.real(XDf))
-    # # ax[0].semilogx(freqD, np.real(Xft), '--')
-    # # ax[1].semilogx(freqD, np.imag(XDf))
-    # # ax[1].semilogx(freqD, np.imag(Xft), '--')
-    # # plt.xlim([6.955e-3, 6.957e-3])
-    # # plt.ylim([-1e-18, 1e-18])
-    # plt.show()
+    # # Append current date and prefix to file names
+    # now = datetime.datetime.now()
+    # prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
+    # out_dir = config["OutputData"]["DirectoryPath"]
+    # # Save the configuration file used for the run
+    # with open(out_dir + prefix + "config.ini", 'w') as configfile:
+    #     config.write(configfile)
+    #
+    # # ==================================================================================================================
+    # # Start sampling
+    # # ==================================================================================================================
+    # # Set seed
+    # np.random.seed(int(config["Sampler"]["RandomSeed"]))
+    # # Multiprocessing pool
+    # # pool = Pool(4)
+    #
+    # if config["Sampler"]["Type"] == 'dynesty':
+    #     # Instantiate sampler
+    #     dsampl = dynesty.DynamicNestedSampler(ll_cls.log_likelihood, prior_transform, ndim=len(names),
+    #                                           bound='multi', sample='slice', periodic=[8, 9, 10],
+    #                                           ptform_args=(lower_bounds, upper_bounds), ptform_kwargs=None)
+    #                                           # pool=pool, queue_size=4)
+    #     # # Start run
+    #     # dsampl.run_nested(dlogz_init=0.01, nlive_init=config["Sampler"].getint("WalkerNumber"),
+    #     # nlive_batch=500, wt_kwargs={'pfrac': 1.0},
+    #     #                   stop_kwargs={'pfrac': 1.0})
+    #
+    #     print("n_live_init = " + config["Sampler"]["WalkerNumber"])
+    #     print("Save samples every " + config['Sampler']['SavingNumber'] + " iterations.")
+    #
+    #     samplers.run_and_save(dsampl, nlive=config["Sampler"].getint("WalkerNumber"),
+    #                           n_save=config['Sampler'].getint('SavingNumber'),
+    #                           file_path=out_dir + prefix)
+    #
+    # elif config["Sampler"]["Type"] == 'ptemcee':
+    #
+    #     sampler = samplers.ExtendedPTMCMC(int(config["Sampler"]["WalkerNumber"]),
+    #                                       len(names),
+    #                                       ll_cls.log_likelihood,
+    #                                       posteriormodel.logp,
+    #                                       ntemps=int(config["Sampler"]["TemperatureNumber"]),
+    #                                       logpargs=(lower_bounds, upper_bounds))
+    #
+    #     result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
+    #                          config['Sampler'].getint('SavingNumber'),
+    #                          int(config["Sampler"]["thinningNumber"]),
+    #                          callback=None, pos0=None,
+    #                          save_path=out_dir + prefix)
+
+    # ==================================================================================================================
+    # Plotting
+    # ==================================================================================================================
+    fig1, ax = plt.subplots(nrows=2, sharex=True, sharey=True)
+    ax[0].semilogx(freqD, np.real(ADf))
+    ax[0].semilogx(freqD[inds], np.real(Aft), '--')
+    ax[1].semilogx(freqD, np.imag(ADf))
+    ax[1].semilogx(freqD[inds], np.imag(Aft), '--')
+    # ax[0].semilogx(freqD, np.real(XDf))
+    # ax[0].semilogx(freqD, np.real(Xft), '--')
+    # ax[1].semilogx(freqD, np.imag(XDf))
+    # ax[1].semilogx(freqD, np.imag(Xft), '--')
+    # plt.xlim([6.955e-3, 6.957e-3])
+    # plt.ylim([-1e-18, 1e-18])
+    plt.show()
 
