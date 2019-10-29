@@ -754,7 +754,8 @@ if __name__ == '__main__':
             pickle.dump(dsampl.results, file_object)
             file_object.close()
         else:
-            print("Iteration " + str(it) + " completed.")
+            # print("Iteration " + str(it) + " completed.")
+            pass
 
     # Save initial results
     file_object = open(out_dir + prefix + "initial_save.p", "wb")
