@@ -11,23 +11,14 @@ from LISAhdf5 import LISAhdf5, ParsUnits
 import LISAConstants as LC
 
 from scipy.interpolate import InterpolatedUnivariateSpline as spline
-from scipy import interpolate
 import Cosmology
 import GenerateFD_SignalTDIs as GenTDIFD
 import pyIMRPhenomD
 import pyFDresponse as FD_Resp
-
-
-import corner
 import dynesty
-
-# Plotting modules
-import matplotlib.pyplot as plt
-import matplotlib as mpl
 
 import lisabeta.lisa.lisa as lisa
 import lisabeta.lisa.ldctools as ldctools
-
 
 
 def GetParams(p_gw):
@@ -530,6 +521,10 @@ if __name__ == '__main__':
     from scipy import signal
     import datetime
     import pickle
+
+    # Plotting modules
+    import matplotlib.pyplot as plt
+    import matplotlib as mpl
 
     # FTT modules
     import fftwisdom
