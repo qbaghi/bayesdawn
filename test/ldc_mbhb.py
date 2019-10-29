@@ -521,6 +521,10 @@ if __name__ == '__main__':
     from scipy import signal
     import datetime
     import pickle
+    from bayesdawn import samplers, posteriormodel
+
+    # For parallel computing
+    # from multiprocessing import Pool, Queue
 
     # Plotting modules
     import matplotlib.pyplot as plt
@@ -709,7 +713,6 @@ if __name__ == '__main__':
           + str(np.all(np.array([lower_bounds[i] <= par_ll[i] <= upper_bounds[i] for i in range(len(par_ll))]))))
     print('random param loglik = ' + str(ll_cls.log_likelihood(par_ll)))
 
-
     # ==================================================================================================================
     # Prepare data to save during sampling
     # ==================================================================================================================
@@ -726,61 +729,41 @@ if __name__ == '__main__':
     # ==================================================================================================================
     # Set seed
     np.random.seed(int(config["Sampler"]["RandomSeed"]))
-    # Instantiate sampler
-    dsampl = dynesty.DynamicNestedSampler(ll_cls.log_likelihood, prior_transform, ndim=len(names),
-                                          bound='multi', sample='slice', periodic=[8, 9, 10],
-                                          ptform_args=(lower_bounds, upper_bounds), ptform_kwargs=None)
-    # # Start run
-    # dsampl.run_nested(dlogz_init=0.01, nlive_init=config["Sampler"].getint("WalkerNumber"),
-    # nlive_batch=500, wt_kwargs={'pfrac': 1.0},
-    #                   stop_kwargs={'pfrac': 1.0})
+    # Multiprocessing pool
+    # pool = Pool(4)
 
-    print("n_live_init = " + config["Sampler"]["WalkerNumber"])
-    print("Save samples every " + config['Sampler']['SavingNumber'] + " iterations.")
+    if config["Sampler"]["Type"] == 'dynesty':
+        # Instantiate sampler
+        dsampl = dynesty.DynamicNestedSampler(ll_cls.log_likelihood, prior_transform, ndim=len(names),
+                                              bound='multi', sample='slice', periodic=[8, 9, 10],
+                                              ptform_args=(lower_bounds, upper_bounds), ptform_kwargs=None)
+                                              # pool=pool, queue_size=4)
+        # # Start run
+        # dsampl.run_nested(dlogz_init=0.01, nlive_init=config["Sampler"].getint("WalkerNumber"),
+        # nlive_batch=500, wt_kwargs={'pfrac': 1.0},
+        #                   stop_kwargs={'pfrac': 1.0})
 
-    # Baseline run.
-    it = 0
-    for results in dsampl.sample_initial(nlive=config["Sampler"].getint("WalkerNumber")):
-        it += 1
-        # If it is a multiple of n_save, save data
-        if it % config['Sampler'].getint('SavingNumber') == 0:
-            print("Saving results at iteration " + str(it))
-            file_object = open(out_dir + prefix + "initial_save.p", "wb")
-            pickle.dump(dsampl.results, file_object)
-            file_object.close()
-        else:
-            # print("Iteration " + str(it) + " completed.")
-            pass
+        print("n_live_init = " + config["Sampler"]["WalkerNumber"])
+        print("Save samples every " + config['Sampler']['SavingNumber'] + " iterations.")
 
-    # Save initial results
-    file_object = open(out_dir + prefix + "initial_save.p", "wb")
-    pickle.dump(dsampl.results, file_object)
-    file_object.close()
+        samplers.run_and_save(dsampl, nlive=config["Sampler"].getint("WalkerNumber"),
+                              n_save=config['Sampler'].getint('SavingNumber'),
+                              file_path=out_dir + prefix)
 
-    # Add batches until we hit the stopping criterion.
-    it = 0
-    while True:
-        stop = stopping_function(dsampl.results, stop_kwargs={'pfrac': 1.0})  # evaluate stop
-        if not stop:
-            logl_bounds = weight_function(dsampl.results, wt_kwargs={'pfrac': 1.0})  # derive bounds
-            for results in dsampl.sample_batch(logl_bounds=logl_bounds):
-                it += 1
-                # If it is a multiple of n_save, save data
-                if it % config['Sampler'].getint('SavingNumber') == 0:
-                    print("Saving results at iteration " + str(it))
-                    file_object = open(out_dir + prefix + "batch_save.p", "wb")
-                    pickle.dump(dsampl.results, file_object)
-                    file_object.close()
-                else:
-                    pass
-            dsampl.combine_runs()  # add new samples to previous results
-        else:
-            break
+    elif config["Sampler"]["Type"] == 'ptemcee':
 
-    # Save new results
-    file_object = open(out_dir + prefix + "batch_save.p", "wb")
-    pickle.dump(dsampl.results, file_object)
-    file_object.close()
+        sampler = samplers.ExtendedPTMCMC(int(config["Sampler"]["WalkerNumber"]),
+                                          len(names),
+                                          ll_cls.log_likelihood,
+                                          posteriormodel.logp,
+                                          ntemps=int(config["Sampler"]["TemperatureNumber"]),
+                                          logpargs=(lower_bounds, upper_bounds))
+
+        result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
+                             config['Sampler'].getint('SavingNumber'),
+                             int(config["Sampler"]["thinningNumber"]),
+                             callback=None, pos0=None,
+                             save_path=out_dir + prefix)
 
     # # ==================================================================================================================
     # # Plotting

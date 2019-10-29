@@ -13,6 +13,7 @@ import pandas as pd
 import dynesty
 from dynesty import NestedSampler, DynamicNestedSampler
 import pickle
+from dynesty.dynamicsampler import stopping_function, weight_function
 
 
 def clipcov(X, nit = 3, n_sig = 5):
@@ -472,3 +473,68 @@ def extended_dynamic_nested_sampler(*args, **kwargs):
 #                          walks=25, facc=0.5,
 #                          slices=5, fmove=0.9, max_move=100,
 #                          **kwargs)
+
+
+def run_and_save(dsampl, nlive=50, n_save=1000, file_path="initial_save.p"):
+    """
+    External function allowing us to run a Dynamic Nested Sampler from Dynesty while regularly saving the results
+
+    Parameters
+    ----------
+    dsampl : DynamicNestedSampler instance
+        dynamic nested sampler
+    nlive : int
+        number of live points for the initial run
+    n_save : int
+        canence of result saving, expressed in number of iterations
+    file_path : str
+        directory path (+ suffix) where so save the results
+
+    Returns
+    -------
+
+    """
+
+    # Baseline run.
+    it = 0
+    for results in dsampl.sample_initial(nlive=nlive):
+        it += 1
+        # If it is a multiple of n_save, save data
+        if it % n_save == 0:
+            print("Saving results at iteration " + str(it))
+            file_object = open(file_path + "initial_save.p", "wb")
+            pickle.dump(dsampl.results, file_object)
+            file_object.close()
+        else:
+            # print("Iteration " + str(it) + " completed.")
+            pass
+
+    # Save initial results
+    file_object = open(file_path + "initial_save.p", "wb")
+    pickle.dump(dsampl.results, file_object)
+    file_object.close()
+
+    # Add batches until we hit the stopping criterion.
+    it = 0
+    while True:
+        stop = stopping_function(dsampl.results, stop_kwargs={'pfrac': 1.0})  # evaluate stop
+        if not stop:
+            logl_bounds = weight_function(dsampl.results, wt_kwargs={'pfrac': 1.0})  # derive bounds
+            for results in dsampl.sample_batch(logl_bounds=logl_bounds):
+                it += 1
+                # If it is a multiple of n_save, save data
+                if it % n_save == 0:
+                    print("Saving results at iteration " + str(it))
+                    file_object = open(file_path + "batch_save.p", "wb")
+                    pickle.dump(dsampl.results, file_object)
+                    file_object.close()
+                else:
+                    pass
+            dsampl.combine_runs()  # add new samples to previous results
+        else:
+            break
+
+    # Save new results
+    file_object = open(file_path + "batch_save.p", "wb")
+    pickle.dump(dsampl.results, file_object)
+    file_object.close()
