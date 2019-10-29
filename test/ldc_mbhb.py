@@ -49,7 +49,7 @@ def GetParams(p_gw):
     print ("DL = ", DL*1.e-3, "Gpc")
     print ("Compare DL:", p_gw.getConvert('Distance', LC.convDistance, 'mpc'))
 
-    bet, lam, incl, psi = GenTDIFD.GetSkyAndOrientation(p_gw)
+    bet, lam, incl, psi = ldctools.GetSkyAndOrientation(p_gw)
 
     return m1, m2, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL
 
