@@ -2,6 +2,44 @@
 # Author: Quentin Baghi 2018
 import h5py
 import configparser
+import os
+import pickle
+
+
+def load_samples(hdf5_name):
+    """
+
+    Parameters
+    ----------
+    hdf5_name : str
+        path of sampling result file
+
+    Returns
+    -------
+    chain : ndarray
+        numpy array containing the posterior samples
+
+    """
+
+    # Extract prefix
+    filename, file_extension = os.path.splitext(hdf5_name)
+    prefix = os.path.basename(filename)[0:19] # 2019-10-24_17h28-32
+    # Get info from config file
+    config = configparser.ConfigParser()
+    config_file = os.path.dirname(hdf5_name) + '/' + prefix + '_config.ini'
+    config.read(config_file)
+
+
+    # Load data
+    # chain = pd.read_hdf(hdf5_name, key='chain', mode='r').to_numpy()
+    # chain_eff = chain[chain != 0]
+    # Load data
+    chain_file = open(hdf5_name, 'rb')
+    chain = pickle.load(chain_file)
+    chain_file.close()
+
+    return chain, config
+
 
 def load_simulation(hdf5_name,
                     param_keylist=['m1', 'm2', 'xi1', 'xi2', 'tc', 'dist', 'inc', 'phi0', 'lam', 'beta', 'psi'],
