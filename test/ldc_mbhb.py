@@ -19,11 +19,10 @@ import dynesty
 
 import lisabeta.lisa.lisa as lisa
 import lisabeta.lisa.ldctools as ldctools
-import lisabeta.lisa.pyresponse as pyresponse
-import lisabeta.pyconstants as pyconstants
-import lisabeta.tools.pytools as pytools
 import lisabeta.tools.pyspline as pyspline
-from scipy.interpolate import interp1d
+from bayesdawn.utils import physics
+from bayesdawn.waveforms import lisaresp
+from scipy import linalg
 
 
 def get_params(p_gw):
@@ -110,96 +109,6 @@ def SimpleLogLik(data, template, Sn, df, tdi='XYZ'):
         return (llA, llE)
 
 
-def compute_masses(mc, q):
-
-    ma = (q / ((q + 1.) ** 2)) ** (-3.0 / 5.0)
-    mb = ((q / ((q + 1.) ** 2)) ** (-6.0 / 5.0) - 4.0 * (q / ((q + 1.) ** 2)) ** (-1.0 / 5.0)) ** 0.5
-
-    m1 = 0.5 * mc * (ma + mb)
-    m2 = 0.5 * mc * (ma - mb)
-
-    return m1, m2
-
-
-def generate_lisa_signal(wftdi, freq=None, channels=None):
-    """
-
-    Parameters
-    ----------
-    wftdi : dict
-        dictionary output from GenerateLISATDI
-    freq : ndarray
-        numpy array of freqs on which to sample waveform (or None)
-
-    Returns
-    -------
-    dictionary with output TDI channel data yielding numpy complex data arrays
-
-    """
-
-    if channels is None:
-        channels = [1, 2]
-
-
-    fs = wftdi['freq']
-    amp = wftdi['amp']
-    phase = wftdi['phase']
-    print("Length of initial frequency grid " + str(len(fs)))
-
-    tr = [wftdi['transferL' + str(np.int(i))] for i in channels]
-
-    if freq is not None:
-        amp = pyspline.resample(freq, fs, amp)
-        phase = pyspline.resample(freq, fs, phase)
-        tr_int = [pyspline.resample(freq, fs, tri) for tri in tr]
-        # amp = np.interp(freq, fs, amp)
-        # phase = np.interp(freq, fs, phase)
-        # tr_int = [np.interp(freq, fs, tri) for tri in tr]
-    else:
-        freq = fs
-
-    h = amp * np.exp(1j * phase)
-
-    signal = {'ch' + str(np.int(i)): h * tr_int[i - 1] for i in channels}
-    signal['freq'] = freq
-
-    return signal
-
-
-def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657, channels=None):
-    """
-
-    Parameters
-    ----------
-    params
-    freq
-    tobs
-    tref
-    toffset
-
-    Returns
-    -------
-
-    """
-
-    if channels is None:
-        channels = [1, 2, 3]
-
-    # TDI response
-    wftdi = lisa.GenerateLISATDI(params, tobs=tobs, minf=1e-5, maxf=1., tref=tref, torb=0., TDItag='TDIAET',
-                                 acc=1e-4, order_fresnel_stencil=0, approximant='IMRPhenomD',
-                                 responseapprox='full', frozenLISA=False, TDIrescaled=False)
-
-    signal_freq = generate_lisa_signal(wftdi, freq, channels)
-
-    # Phasor for the time shift
-    z = np.exp(-2j * np.pi * freq * t_offset)
-    # Get coalescence time
-    ch_interp = [(signal_freq['ch' + str(np.int(i))] * z).conj() for i in channels]
-
-    return ch_interp
-
-
 def SimpleLogLik(data, template, Sn, df, tdi='XYZ'):
     """
 
@@ -263,41 +172,6 @@ def SimpleLogLik(data, template, Sn, df, tdi='XYZ'):
         return (llA, llE)
 
 
-def like_to_waveform(par):
-    """
-    Convert likelihood parameters into waveform-compatible parameters
-    Parameters
-    ----------
-    par : array_like
-        parameter vector for sampling the posterior:
-        Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0
-
-    Returns
-    -------
-    params : array_like
-       parameter vector for LISABeta waveform: m1, m2, chi1, chi2, del_t, dist, incl, phi0, lam, bet, psi
-
-    """
-
-    # Explicit the vector of paramters
-    mc, q, tc, chi1, chi2, logdl, ci, sb, lam, psi, phi0 = par
-
-    # Convert chirp mass into individual masses
-    m1, m2 = compute_masses(mc, q)
-
-    # Convert base-10 logarithmic luminosity distance into lum. dist. in Mega parsecs
-    dl = 10.0 ** logdl
-
-    # Convert inclination
-    incl = np.arccos(ci)
-    # Convert Source latitude in SSB-frame
-    bet = np.arcsin(sb)
-
-    params = m1, m2, chi1, chi2, tc, dl, incl, phi0, lam, bet, psi
-
-    return params
-
-
 class LogLike(object):
 
     def __init__(self, data, sn, freq, tobs, del_t, normalized=False, t_offset=52.657):
@@ -330,6 +204,12 @@ class LogLike(object):
             self.ll_norm = self.log_norm()
         else:
             self.ll_norm = 0
+
+        # The full set of parameters is m1, m2, chi1, chi2, tc, dist, incl, phi0, lam, bet, psi
+        # Indices of extrinsic parameters
+        self.i_ext = [5, 6, 7, 10]
+        # Indices of intrinsic parameters m1, m2, chi1, chi2, tc, bet, psi
+        self.i_intr = [0, 1, 2, 3, 4, 8, 9]
 
     def log_norm(self):
         """
@@ -367,10 +247,10 @@ class LogLike(object):
         """
 
         # Convert likelihood parameters into waveform-compatible parameters
-        params = like_to_waveform(par)
+        params = physics.like_to_waveform(par)
 
         # Compute waveform template
-        at, et = lisabeta_template(params, self.freq, tobs, tref=0, t_offset=self.t_offset, channels=[1, 2])
+        at, et = lisaresp.lisabeta_template(params, self.freq, tobs, tref=0, t_offset=self.t_offset, channels=[1, 2])
 
         # (h | y)
         sna = np.sum(np.real(self.data[0]*np.conjugate(at)) / self.sn)
@@ -385,6 +265,7 @@ class LogLike(object):
         llE = 4.0*(self.freq[1] - self.freq[0])*(sne - 0.5*ee)
 
         return llA + llE + self.ll_norm
+
 
 
 def prior_transform(theta_u, lower_bound, upper_bound):
@@ -497,9 +378,16 @@ if __name__ == '__main__':
     # Now we get extract the data and transform it to frequency domain
     # ==================================================================================================================
 
-    XDf = fft(Xd) * del_t * q
-    YDf = fft(Yd) * del_t * q
-    ZDf = fft(Zd) * del_t * q
+    # # FFT without any windowing
+    # XDf = fft(Xd) * del_t * q
+    # YDf = fft(Yd) * del_t * q
+    # ZDf = fft(Zd) * del_t * q
+    # FFT with windowing
+    wd = signal.tukey(Xd.shape[0], alpha=(config["InputData"].getfloat("EndTime") - tc)/tobs,  sym=True)
+    resc = Xd.shape[0]/np.sum(wd)
+    XDf = fft(wd * Xd) * del_t * q * resc
+    YDf = fft(wd * Yd) * del_t * q * resc
+    ZDf = fft(wd * Zd) * del_t * q * resc
 
     freqD = np.fft.fftfreq(len(tm), del_t * q)
     freqD = freqD[:int(len(freqD) / 2)]
@@ -515,15 +403,27 @@ if __name__ == '__main__':
                     & (freqD <= float(config['Model']['MaximumFrequency'])))[0]
 
     params = ldctools.get_params_from_LDC(p)
+
     t1 = time.time()
-    Aft, Eft, Tft = lisabeta_template(params, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
+    aft, eft, tft = lisaresp.lisabeta_template(params, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
     t2 = time.time()
     print("=================================================================")
     print("LISABeta template computation time: " + str(t2 - t1))
-    print("=================================================================")
+
+    # # Computation of the design matrix
+    # par_intr = np.array([Mc, q, tc, chi1, chi2, np.sin(bet), lam])
+    # t1 = time.time()
+    # mat_list = lisaresp.design_matrix(par_intr, freqD[inds], tobs, tref=0, t_offset=52.657, channels=[1, 2, 3])
+    # aet = [aft, eft, tft]
+    # amps = [linalg.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, aet[i]))
+    #         for i in range(len(aet))]
+    # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
+    # t2 = time.time()
+    # print("Reduced-model signal computation time: " + str(t2 - t1))
+    # print("=================================================================")
 
     # Verification of parameters compatibility m1, m2, chi1, chi2, Deltat, dist, inc, phi, lambd, beta, psi
-    params0 = like_to_waveform(pS_sampl)
+    params0 = physics.like_to_waveform(pS_sampl)
 
     # Convert Michelson TDI to A, E, T
     ADf, EDf, TDf = ldctools.convert_XYZ_to_AET(XDf, YDf, ZDf)
@@ -532,7 +432,6 @@ if __name__ == '__main__':
     # offsets = np.linspace(50.60, 53, 50)
     # results = [lisabeta_template(params, freqD, tobs, tref=0, toffset=toffset) for toffset in offsets]
     # rms = np.array([np.sum(np.abs(ADf - res[0])**2) for res in results])
-
     fftwisdom.save_wisdom()
 
     # ==================================================================================================================
@@ -542,7 +441,7 @@ if __name__ == '__main__':
     SA = tdi.noisepsd_AE(freqD[inds], model='Proposal', includewd=None)
     # Consider only A and E TDI data
     dataAE = [ADf[inds], EDf[inds]]
-    templateAE = [Aft, Eft]
+    templateAE = [aft, eft]
     llA1, llE1 = SimpleLogLik(dataAE, templateAE, SA, df, tdi='AET')
     llA2, llE2 = SimpleLogLik(dataAE, dataAE, SA, df, tdi='AET')
     llA3, llE3 = SimpleLogLik(templateAE, templateAE, SA, df, tdi='AET')
@@ -586,71 +485,78 @@ if __name__ == '__main__':
           + str(np.all(np.array([lower_bounds[i] <= par_ll[i] <= upper_bounds[i] for i in range(len(par_ll))]))))
     print('random param loglik = ' + str(ll_cls.log_likelihood(par_ll)))
 
-    # # ==================================================================================================================
-    # # Prepare data to save during sampling
-    # # ==================================================================================================================
-    # # Append current date and prefix to file names
-    # now = datetime.datetime.now()
-    # prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
-    # out_dir = config["OutputData"]["DirectoryPath"]
-    # # Save the configuration file used for the run
-    # with open(out_dir + prefix + "config.ini", 'w') as configfile:
-    #     config.write(configfile)
-    #
-    # # ==================================================================================================================
-    # # Start sampling
-    # # ==================================================================================================================
-    # # Set seed
-    # np.random.seed(int(config["Sampler"]["RandomSeed"]))
-    # # Multiprocessing pool
-    # # pool = Pool(4)
-    #
-    # if config["Sampler"]["Type"] == 'dynesty':
-    #     # Instantiate sampler
-    #     dsampl = dynesty.DynamicNestedSampler(ll_cls.log_likelihood, prior_transform, ndim=len(names),
-    #                                           bound='multi', sample='slice', periodic=[8, 9, 10],
-    #                                           ptform_args=(lower_bounds, upper_bounds), ptform_kwargs=None)
-    #                                           # pool=pool, queue_size=4)
-    #     # # Start run
-    #     # dsampl.run_nested(dlogz_init=0.01, nlive_init=config["Sampler"].getint("WalkerNumber"),
-    #     # nlive_batch=500, wt_kwargs={'pfrac': 1.0},
-    #     #                   stop_kwargs={'pfrac': 1.0})
-    #
-    #     print("n_live_init = " + config["Sampler"]["WalkerNumber"])
-    #     print("Save samples every " + config['Sampler']['SavingNumber'] + " iterations.")
-    #
-    #     samplers.run_and_save(dsampl, nlive=config["Sampler"].getint("WalkerNumber"),
-    #                           n_save=config['Sampler'].getint('SavingNumber'),
-    #                           file_path=out_dir + prefix)
-    #
-    # elif config["Sampler"]["Type"] == 'ptemcee':
-    #
-    #     sampler = samplers.ExtendedPTMCMC(int(config["Sampler"]["WalkerNumber"]),
-    #                                       len(names),
-    #                                       ll_cls.log_likelihood,
-    #                                       posteriormodel.logp,
-    #                                       ntemps=int(config["Sampler"]["TemperatureNumber"]),
-    #                                       logpargs=(lower_bounds, upper_bounds))
-    #
-    #     result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
-    #                          config['Sampler'].getint('SavingNumber'),
-    #                          int(config["Sampler"]["thinningNumber"]),
-    #                          callback=None, pos0=None,
-    #                          save_path=out_dir + prefix)
+    # ==================================================================================================================
+    # Prepare data to save during sampling
+    # ==================================================================================================================
+    # Append current date and prefix to file names
+    now = datetime.datetime.now()
+    prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
+    out_dir = config["OutputData"]["DirectoryPath"]
+    # Save the configuration file used for the run
+    with open(out_dir + prefix + "config.ini", 'w') as configfile:
+        config.write(configfile)
 
     # ==================================================================================================================
-    # Plotting
+    # Start sampling
     # ==================================================================================================================
-    fig1, ax = plt.subplots(nrows=2, sharex=True, sharey=True)
-    ax[0].semilogx(freqD, np.real(ADf))
-    ax[0].semilogx(freqD[inds], np.real(Aft), '--')
-    ax[1].semilogx(freqD, np.imag(ADf))
-    ax[1].semilogx(freqD[inds], np.imag(Aft), '--')
-    # ax[0].semilogx(freqD, np.real(XDf))
-    # ax[0].semilogx(freqD, np.real(Xft), '--')
-    # ax[1].semilogx(freqD, np.imag(XDf))
-    # ax[1].semilogx(freqD, np.imag(Xft), '--')
-    # plt.xlim([6.955e-3, 6.957e-3])
-    # plt.ylim([-1e-18, 1e-18])
-    plt.show()
+    # Set seed
+    np.random.seed(int(config["Sampler"]["RandomSeed"]))
+    # Multiprocessing pool
+    # pool = Pool(4)
+
+    if config["Sampler"]["Type"] == 'dynesty':
+        # # Instantiate sampler
+        # dsampl = dynesty.DynamicNestedSampler(ll_cls.log_likelihood, prior_transform, ndim=len(names),
+        #                                       bound='multi', sample='slice', periodic=[8, 9, 10],
+        #                                       ptform_args=(lower_bounds, upper_bounds), ptform_kwargs=None)
+        #                                       # pool=pool, queue_size=4)
+        # # Start run
+        # dsampl.run_nested(dlogz_init=0.01, nlive_init=config["Sampler"].getint("WalkerNumber"),
+        # nlive_batch=500, wt_kwargs={'pfrac': 1.0},
+        #                   stop_kwargs={'pfrac': 1.0})
+
+        # Instantiate sampler
+        sampler = dynesty.NestedSampler(ll_cls.log_likelihood, prior_transform, ndim=len(names),
+                                        bound='multi', sample='slice', periodic=[8, 9, 10],
+                                        ptform_args=(lower_bounds, upper_bounds),
+                                        nlive=int(config["Sampler"]["WalkerNumber"]))
+
+        print("n_live_init = " + config["Sampler"]["WalkerNumber"])
+        print("Save samples every " + config['Sampler']['SavingNumber'] + " iterations.")
+
+        samplers.run_and_save(sampler, nlive=config["Sampler"].getint("WalkerNumber"),
+                              n_save=config['Sampler'].getint('SavingNumber'),
+                              n_iter=config["Sampler"].getint("MaximumIterationNumber"),
+                              file_path=out_dir + prefix, dynamic=config['Sampler'].getboolean('dynamic'))
+
+    elif config["Sampler"]["Type"] == 'ptemcee':
+
+        sampler = samplers.ExtendedPTMCMC(int(config["Sampler"]["WalkerNumber"]),
+                                          len(names),
+                                          ll_cls.log_likelihood,
+                                          posteriormodel.logp,
+                                          ntemps=int(config["Sampler"]["TemperatureNumber"]),
+                                          logpargs=(lower_bounds, upper_bounds))
+
+        result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
+                             config['Sampler'].getint('SavingNumber'),
+                             int(config["Sampler"]["thinningNumber"]),
+                             callback=None, pos0=None,
+                             save_path=out_dir + prefix)
+
+    # # ==================================================================================================================
+    # # Plotting
+    # # ==================================================================================================================
+    # fig1, ax = plt.subplots(nrows=2, sharex=True, sharey=True)
+    # ax[0].semilogx(freqD, np.real(ADf))
+    # ax[0].semilogx(freqD[inds], np.real(aft), '--')
+    # ax[1].semilogx(freqD, np.imag(ADf))
+    # ax[1].semilogx(freqD[inds], np.imag(aft), '--')
+    # # ax[0].semilogx(freqD, np.real(XDf))
+    # # ax[0].semilogx(freqD, np.real(Xft), '--')
+    # # ax[1].semilogx(freqD, np.imag(XDf))
+    # # ax[1].semilogx(freqD, np.imag(Xft), '--')
+    # # plt.xlim([6.955e-3, 6.957e-3])
+    # # plt.ylim([-1e-18, 1e-18])
+    # plt.show()
 

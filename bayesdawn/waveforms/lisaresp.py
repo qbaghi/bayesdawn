@@ -15,11 +15,16 @@ from scipy import special, linalg
 from .coeffs import k_coeffs
 # from lisabeta.lisa import lisa
 import lisabeta.lisa.lisa as lisa
-import lisabeta.tools.pytools as pytools
 from scipy.interpolate import InterpolatedUnivariateSpline as spline
 
 # For MBHB only, use MLDC code
 import GenerateFD_SignalTDIs
+import lisabeta.waveforms.bbh.pyIMRPhenomD as pyIMRPhenomD
+import lisabeta.lisa.pyresponse as pyresponse
+import lisabeta.pyconstants as pyconstants
+import lisabeta.tools.pytools as pytools
+import lisabeta.tools.pyspline as pyspline
+from bayesdawn.utils import physics
 
 
 def optimal_order(theta, f_0):
@@ -598,3 +603,223 @@ class MBHBWaveform(GWwaveform):
 
         return mat_list
 
+
+def like_to_waveform_intr(par_intr):
+    """
+    Convert reduced-likelihood intrinsic parameters into waveform-compatible parameters
+    Parameters
+    ----------
+    par : array_like
+        intrinsic parameter vector for sampling the posterior:
+        Mc, q, tc, chi1, chi2, np.sin(bet), lam
+
+    Returns
+    -------
+    params_intr : array_like
+        instrinsic parameters m1, m2, chi1, chi2, tc, bet, psi
+
+    """
+
+    # Explicit the vector of paramters
+    mc, q, tc, chi1, chi2, sb, lam = par_intr
+
+    # Convert chirp mass into individual masses
+    m1, m2 = physics.compute_masses(mc, q)
+
+    # Convert Source latitude in SSB-frame
+    bet = np.arcsin(sb)
+
+    # Form the waveform-compatible intrinsic parameter vector
+    params_intr = m1, m2, chi1, chi2, tc, lam, bet
+
+    return params_intr
+
+
+def generate_lisa_signal(wftdi, freq=None, channels=None):
+    """
+
+    Parameters
+    ----------
+    wftdi : dict
+        dictionary output from GenerateLISATDI
+    freq : ndarray
+        numpy array of freqs on which to sample waveform (or None)
+
+    Returns
+    -------
+    dictionary with output TDI channel data yielding numpy complex data arrays
+
+    """
+
+    if channels is None:
+        channels = [1, 2]
+
+
+    fs = wftdi['freq']
+    amp = wftdi['amp']
+    phase = wftdi['phase']
+    # print("Length of initial frequency grid " + str(len(fs)))
+
+    tr = [wftdi['transferL' + str(np.int(i))] for i in channels]
+
+    if freq is not None:
+        amp = pyspline.resample(freq, fs, amp)
+        phase = pyspline.resample(freq, fs, phase)
+        tr_int = [pyspline.resample(freq, fs, tri) for tri in tr]
+        # amp = np.interp(freq, fs, amp)
+        # phase = np.interp(freq, fs, phase)
+        # tr_int = [np.interp(freq, fs, tri) for tri in tr]
+    else:
+        freq = fs
+        tr_int = tr
+
+    h = amp * np.exp(1j * phase)
+
+    signal = {'ch' + str(np.int(i)): h * tr_int[i - 1] for i in channels}
+    signal['freq'] = freq
+
+    return signal
+
+
+def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657, channels=None):
+    """
+
+    Parameters
+    ----------
+    params
+    freq
+    tobs
+    tref
+    toffset
+
+    Returns
+    -------
+
+    """
+
+    if channels is None:
+        channels = [1, 2, 3]
+
+    # TDI response
+    wftdi = lisa.GenerateLISATDI(params, tobs=tobs, minf=1e-5, maxf=1., tref=tref, torb=0., TDItag='TDIAET',
+                                 acc=1e-4, order_fresnel_stencil=0, approximant='IMRPhenomD',
+                                 responseapprox='full', frozenLISA=False, TDIrescaled=False)
+
+    signal_freq = generate_lisa_signal(wftdi, freq, channels)
+
+    # Phasor for the time shift
+    z = np.exp(-2j * np.pi * freq * t_offset)
+    # Get coalescence time
+    ch_interp = [(signal_freq['ch' + str(np.int(i))] * z).conj() for i in channels]
+
+    return ch_interp
+
+
+def design_matrix(par_intr, freq_data, tobs, tref=0, t_offset=52.657, channels=None, minf=1e-5, maxf=1., acc=1e-4,
+                  dist=1e3, torb=0, LISAconst=pyresponse.LISAconstProposal, responseapprox='full',
+                  frozenLISA=False, TDIrescaled=False):
+    """
+    Design matrix for reduced order likelihood
+    Parameters
+    ----------
+    params_intr : ndarray
+        instrinsic parameters
+    freq :
+    tobs
+    tref
+    t_offset
+    channels
+
+    Returns
+    -------
+
+    """
+
+    # Convert likelihood parameters into waveform-compatible parameters
+    params_intr = like_to_waveform_intr(par_intr)
+    # The full set of parameters is m1, m2, chi1, chi2, tc, dist, incl, phi0, lam, bet, psi
+    # Indices of intrinsic parameters m1, m2, chi1, chi2, tc, bet, psi
+    # Initial phase: same!
+    phi0 = 0
+    # Inclination: same!
+    inc = 0
+    # Polarization angle: 45 degree angle difference
+    psi_1 = 0.0
+    psi_2 = np.pi / 4
+    # TDI response
+    m1, m2, chi1, chi2, tc, lambd, beta = params_intr
+    # Units
+    q = m1 / m2
+    m1_SI = m1 * pyconstants.MSUN_SI
+    m2_SI = m2 * pyconstants.MSUN_SI
+    dist_SI = dist * 1e6 * pyconstants.PC_SI
+    M = m1 + m2
+    Ms = M * pyconstants.MTSUN_SI
+    if tobs is not None:
+        minf = np.fmax(minf, pytools.funcNewtonianfoft(m1, m2, tobs * pyconstants.YRSID_SI))
+    Mfmin = Ms * minf
+    Mfmax = Ms * maxf
+    Mfmax_model = 0.2
+    Mfmax = np.fmin(Mfmax, Mfmax_model)
+    maxf = Mfmax / Ms
+
+    # Combined frequency grid for the waveform
+    gridfreqClass = pytools.FrequencyGrid(minf, maxf, M, q, acc=acc)
+    gridfreq = gridfreqClass.get_freq()
+
+    # Generate IMRPhenomD waveform and add time shift
+    # Calling with fRef=0., phiRef=0. defines the source frame
+    phiRef = 0.
+    fRef = 0.
+    wfClass = pyIMRPhenomD.IMRPhenomDh22AmpPhase(gridfreq, phiRef, fRef, m1_SI, m2_SI, chi1, chi2, dist_SI)
+    freq, amp, phase = wfClass.get_waveform()
+    phase += 2 * np.pi * freq * tc
+
+    # Build spline for tf
+    phaseov2pisplineClass = pyspline.CubicSpline(freq, phase / (2*np.pi))
+    tfspline = phaseov2pisplineClass.get_spline_d()
+
+    # Global shift of phase to account for
+    phase += 2 * np.pi * freq * tref
+
+    # ==================================================================================================================
+    # Compute TDI response for the two polarizations
+    # ==================================================================================================================
+    l0 = 2
+    m0 = 2
+    tdi_class_1 = pyresponse.LISAFDresponseTDI3Chan(gridfreq, tfspline, torb, l0, m0, inc, phi0, lambd, beta, psi_1,
+                                                 TDI='TDIAET', LISAconst=LISAconst, responseapprox=responseapprox,
+                                                 frozenLISA=frozenLISA, TDIrescaled=TDIrescaled)
+    tdi_class_2 = pyresponse.LISAFDresponseTDI3Chan(gridfreq, tfspline, torb, l0, m0, inc, phi0, lambd, beta, psi_2,
+                                                 TDI='TDIAET', LISAconst=LISAconst, responseapprox=responseapprox,
+                                                 frozenLISA=frozenLISA, TDIrescaled=TDIrescaled)
+
+    transfer_list_1 = tdi_class_1.get_response()
+    transfer_list_2 = tdi_class_2.get_response()
+
+    # ==================================================================================================================
+    # Interpolation of the response
+    # ==================================================================================================================
+    if channels is None:
+        channels = [1, 2, 3]
+
+    if freq_data is not None:
+        amp = pyspline.resample(freq_data, freq, amp)
+        phase = pyspline.resample(freq_data, freq, phase)
+        tr_int_1 = [pyspline.resample(freq_data, freq, transfer_list_1[i]) for i in channels]
+        tr_int_2 = [pyspline.resample(freq_data, freq, transfer_list_2[i]) for i in channels]
+    else:
+        tr_int_1 = [transfer_list_1[i] for i in channels]
+        tr_int_2 = [transfer_list_2[i] for i in channels]
+
+    # GW strain
+    h = amp * np.exp(1j * phase)
+    # Phasor for the time shift
+    z = np.exp(-2j * np.pi * freq_data * t_offset)
+    # Compute response for all channels
+    ch_interp_1 = [np.conj(h * tr_int_1[i - 1] * z) for i in channels]
+    ch_interp_2 = [np.conj(h * tr_int_2[i - 1] * z) for i in channels]
+    # Build design matrix
+    mat_list = [np.array([ch_interp_1[i], ch_interp_2[i]]).T for i in range(len(ch_interp_1))]
+
+    return mat_list
