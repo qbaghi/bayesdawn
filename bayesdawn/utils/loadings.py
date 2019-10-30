@@ -21,15 +21,6 @@ def load_samples(hdf5_name):
 
     """
 
-    # Extract prefix
-    filename, file_extension = os.path.splitext(hdf5_name)
-    prefix = os.path.basename(filename)[0:19] # 2019-10-24_17h28-32
-    # Get info from config file
-    config = configparser.ConfigParser()
-    config_file = os.path.dirname(hdf5_name) + '/' + prefix + '_config.ini'
-    config.read(config_file)
-
-
     # Load data
     # chain = pd.read_hdf(hdf5_name, key='chain', mode='r').to_numpy()
     # chain_eff = chain[chain != 0]
@@ -38,7 +29,7 @@ def load_samples(hdf5_name):
     chain = pickle.load(chain_file)
     chain_file.close()
 
-    return chain, config
+    return chain
 
 
 def load_simulation(hdf5_name,
