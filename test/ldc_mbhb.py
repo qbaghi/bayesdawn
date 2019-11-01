@@ -424,6 +424,7 @@ if __name__ == '__main__':
     now = datetime.datetime.now()
     prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
     out_dir = config["OutputData"]["DirectoryPath"]
+    print("Chosen saving path: " + out_dir)
     # Save the configuration file used for the run
     with open(out_dir + prefix + "config.ini", 'w') as configfile:
         config.write(configfile)

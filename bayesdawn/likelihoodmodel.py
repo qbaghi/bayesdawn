@@ -722,4 +722,4 @@ class LogLike(object):
         #         for i in range(len(self.data))]
         # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
 
-        return ll + self.ll_norm
+        return np.real(ll + self.ll_norm)
