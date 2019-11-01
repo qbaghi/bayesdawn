@@ -657,7 +657,7 @@ class LogLike(object):
         """
 
         ll_norm = - self.nf/2 * np.log(2 * np.pi * 2 * self.del_t) - 0.5 * np.sum(np.log(self.sn)) \
-                  - 0.5 * np.sum(np.abs(self.data) ** 2 / self.sn)
+                  - 0.5 * np.sum(np.abs(self.data[0]) ** 2 / self.sn + np.abs(self.data[1]) ** 2 / self.sn)
 
         return ll_norm
 
@@ -668,12 +668,6 @@ class LogLike(object):
         ----------
         par : array_like
             vector of waveform parameters in the following order: [Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0]
-        data : array_like
-            DFT of TDI data A, E, T computed at frequencies freq
-        sn : ndarray
-            noise PSD computed at freq
-        freq: ndarray
-            frequency array
 
 
         Returns
@@ -700,3 +694,32 @@ class LogLike(object):
         llE = 4.0*(self.freq[1] - self.freq[0])*(sne - 0.5*ee)
 
         return llA + llE + self.ll_norm
+
+    def log_likelihood_reduced(self, par_intr):
+        """
+
+        Parameters
+        ----------
+        par_intr : array_like
+            vector of intrinsic waveform parameters in the following order: [Mc, q, tc, chi1, chi2, sb, lam]
+
+        Returns
+        -------
+
+        """
+
+        params_intr = physics.like_to_waveform_intr(par_intr)
+
+        # Design matrices for each channel
+        mat_list = lisaresp.design_matrix(params_intr, self.freq, self.tobs, tref=0, t_offset=self.t_offset,
+                                          channels=[1, 2])
+        # Weighted design matrices
+        mat_list_weighted = [mat_list[i] / np.array([self.sn]).T for i in range(2)]
+        z = [mat_list_weighted[i].conj().T.dot(self.data[i]) for i in range(2)]
+        ll = sum([0.5 * z[i].conj().T.dot(LA.pinv(mat_list[i].conj().T.dot(mat_list_weighted[i]))).dot(z[i])
+                  for i in range(2)])
+        # amps = [LA.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, self.data[i]))
+        #         for i in range(len(self.data))]
+        # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
+
+        return ll + self.ll_norm

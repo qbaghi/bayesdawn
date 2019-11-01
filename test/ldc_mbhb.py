@@ -209,7 +209,7 @@ if __name__ == '__main__':
     parser = OptionParser(usage="usage: %prog [options] YYY.txt", version="10.28.2018, Quentin Baghi")
     (options, args) = parser.parse_args()
     if not args:
-        config_file = "../configs/config_ldc.ini"
+        config_file = "../configs/config_ldc_ptemcee.ini"
     else:
         config_file = args[0]
     # ==================================================================================================================
@@ -322,20 +322,20 @@ if __name__ == '__main__':
 
     # Computation of the design matrix
     aet = [ADf[inds], EDf[inds], TDf[inds]]
-    # Restriction of sampling parameters to instrinsic ones Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0
+    # Restriction of sampling parameters to instrinsic ones Mc, q, tc, chi1, chi2, np.sin(bet), lam
+    i_sampl_intr = [0, 1, 2, 3, 4, 7, 8]
     # pS_sampl_intr = np.array([Mc, q, tc, chi1, chi2, np.sin(bet), lam])
     # params_intr = np.array(params)[lisaresp.i_intr]
-    params_intr = physics.like_to_waveform_intr(pS_sampl[[0, 1, 2, 3, 4, 7, 8]])
-
-    # t1 = time.time()
-    # # # par_intr = np.array([Mc, q, tc, chi1, chi2, np.sin(bet), lam])
-    # mat_list = lisaresp.design_matrix(params_intr, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
-    # amps = [linalg.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, aet[i]))
-    #         for i in range(len(aet))]
-    # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
-    # t2 = time.time()
-    # print("Reduced-model signal computation time: " + str(t2 - t1))
-    # print("=================================================================")
+    params_intr = physics.like_to_waveform_intr(pS_sampl[i_sampl_intr])
+    t1 = time.time()
+    # # par_intr = np.array([Mc, q, tc, chi1, chi2, np.sin(bet), lam])
+    mat_list = lisaresp.design_matrix(params_intr, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
+    amps = [linalg.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, aet[i]))
+            for i in range(len(aet))]
+    aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
+    t2 = time.time()
+    print("Reduced-model signal computation time: " + str(t2 - t1))
+    print("=================================================================")
 
     # Verification of parameters compatibility m1, m2, chi1, chi2, Deltat, dist, inc, phi, lambd, beta, psi
     params0 = physics.like_to_waveform(pS_sampl)
@@ -370,7 +370,8 @@ if __name__ == '__main__':
     t2 = time.time()
     print('My total likelihood: ' + str(lltot))
     print('Calculated in ' + str(t2 - t1) + ' seconds.')
-    # Include normalization
+
+    # Instantiate likelihood class
     ll_cls = likelihoodmodel.LogLike(dataAE, SA, freqD[inds], tobs, del_t * q,
                                      normalized=config['Model'].getboolean('normalized'),
                                      t_offset=t_offset)
@@ -387,6 +388,19 @@ if __name__ == '__main__':
     upper_bounds = np.array([bound[1] for bound in bounds])
     # Print it
     [print("Bounds for parameter " + names[i] + ": " + str(bounds[i])) for i in range(len(names))]
+    # If reduced likelihood is chosen, sample only intrinsic parameters
+    if config['Model'].getboolean('reduced'):
+        names = np.array(names)[i_sampl_intr]
+        lower_bounds = lower_bounds[i_sampl_intr]
+        upper_bounds = upper_bounds[i_sampl_intr]
+        log_likelihood = ll_cls.log_likelihood_reduced
+        print("Reduced likelihood chosen, with intrinsic parameters: ")
+        print(names)
+        # Mc, q, tc, chi1, chi2, np.sin(bet), lam
+    else:
+        log_likelihood = ll_cls.log_likelihood
+        # Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0
+        periodic = [6]
 
     # ==================================================================================================================
     # Test prior transform consistency
@@ -398,7 +412,10 @@ if __name__ == '__main__':
     # Check that they lie within bounds
     print("Within bounds: "
           + str(np.all(np.array([lower_bounds[i] <= par_ll[i] <= upper_bounds[i] for i in range(len(par_ll))]))))
-    print('random param loglik = ' + str(ll_cls.log_likelihood(par_ll)))
+    t1 = time.time()
+    ll_random = log_likelihood(par_ll)
+    t2 = time.time()
+    print('random param loglik = ' + str(ll_random) + ', computed in ' + str(t2-t1) + ' seconds.')
 
     # ==================================================================================================================
     # Prepare data to save during sampling
@@ -431,8 +448,8 @@ if __name__ == '__main__':
         #                   stop_kwargs={'pfrac': 1.0})
 
         # Instantiate sampler
-        sampler = dynesty.NestedSampler(ll_cls.log_likelihood, prior_transform, ndim=len(names),
-                                        bound='multi', sample='slice', periodic=[8, 9, 10],
+        sampler = dynesty.NestedSampler(log_likelihood, prior_transform, ndim=len(names),
+                                        bound='multi', sample='slice', periodic=periodic,
                                         ptform_args=(lower_bounds, upper_bounds),
                                         nlive=int(config["Sampler"]["WalkerNumber"]))
 
@@ -448,7 +465,7 @@ if __name__ == '__main__':
 
         sampler = samplers.ExtendedPTMCMC(int(config["Sampler"]["WalkerNumber"]),
                                           len(names),
-                                          ll_cls.log_likelihood,
+                                          log_likelihood,
                                           posteriormodel.logp,
                                           ntemps=int(config["Sampler"]["TemperatureNumber"]),
                                           logpargs=(lower_bounds, upper_bounds))
