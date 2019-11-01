@@ -366,11 +366,13 @@ class ExtendedPTMCMC(ptemcee.Sampler):
                 #  for j in range(self.chain.shape[1])]
                 # df = pd.DataFrame(self.chain[0, :, 0:i, :].reshape((-1, self.chain.shape[3])), columns=param_names)
                 # df.to_hdf(save_path, 'chain', append=False, mode='w', format='fixed')
-                file_object = open(save_path + 'chain.p', "wb")
-                pickle.dump(self.chain, file_object)
+                file_object = open(save_path + 'chain.npy', "wb")
+                # pickle.dump(self.chain[:, :, self.chain[0, 0, :, 0] != 0, :], file_object)
+                np.save(file_object, self.chain[:, :, self.chain[0, 0, :, 0] != 0, :])
                 file_object.close()
-                file_object = open(save_path + 'lnprob.p', "wb")
-                pickle.dump(self.logprobability, file_object)
+                file_object = open(save_path + 'lnprob.npy', "wb")
+                # pickle.dump(self.logprobability[:, :, self.logprobability[0, 0, :] != 0], file_object)
+                np.save(file_object, self.logprobability[:, :, self.logprobability[0, 0, :] != 0])
                 file_object.close()
                 print("Data saved.")
             else:

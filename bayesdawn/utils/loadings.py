@@ -2,8 +2,10 @@
 # Author: Quentin Baghi 2018
 import h5py
 import configparser
-import os
 import pickle
+from LISAhdf5 import LISAhdf5
+import re
+
 
 
 def load_samples(hdf5_name):
@@ -73,3 +75,20 @@ def create_config_file(file_name='example.ini'):
 
     with open(file_name, 'w') as configfile:
         config.write(configfile)
+
+
+def load_ldc_data(hdf5_name):
+
+    print("Loading data...")
+    fd5 = LISAhdf5(hdf5_name)
+    n_src = fd5.getSourcesNum()
+    gws = fd5.getSourcesName()
+    print("Found %d GW sources: " % n_src, gws)
+    if not re.search('MBHB', gws[0]):
+        raise NotImplementedError
+    p = fd5.getSourceParameters(gws[0])
+    td = fd5.getPreProcessTDI()
+    p.display()
+    print("Data loaded.")
+
+    return p, td

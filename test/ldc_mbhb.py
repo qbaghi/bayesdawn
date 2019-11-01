@@ -1,62 +1,14 @@
 # Standard useful python module
 import numpy as np
-import sys, os, re
 import time
-import copy
-# # Adding the LDC packages to the python path
-# sys.path.append("/root/.local/lib/python3.6/site-packages/")
+from scipy import linalg
 # LDC modules
 import tdi
-from LISAhdf5 import LISAhdf5, ParsUnits
-import LISAConstants as LC
-
-from scipy.interpolate import InterpolatedUnivariateSpline as spline
-import Cosmology
-import GenerateFD_SignalTDIs as GenTDIFD
-import pyIMRPhenomD
-import pyFDresponse as FD_Resp
+# MC Sampler modules
 import dynesty
-
-import lisabeta.lisa.lisa as lisa
-import lisabeta.lisa.ldctools as ldctools
-import lisabeta.tools.pyspline as pyspline
 from bayesdawn.utils import physics
 from bayesdawn.waveforms import lisaresp
 from bayesdawn import likelihoodmodel
-from scipy import linalg
-
-
-def get_params(p_gw):
-    """
-    returns array of parameters from hdf5 structure
-    Parameters
-    ----------
-    p_gw
-
-    Returns
-    -------
-
-    """
-    # print (pGW.get('Mass1')*1.e-6, pGW.get('Mass2')*1.e-6)
-    m1 = p_gw.get('Mass1') ### Assume masses redshifted
-    m2 = p_gw.get('Mass2')
-    tc = p_gw.get('CoalescenceTime')
-    chi1 = p_gw.get('Spin1') * np.cos(p_gw.get('PolarAngleOfSpin1'))
-    chi2 = p_gw.get('Spin2') * np.cos(p_gw.get('PolarAngleOfSpin2'))
-    theL = p_gw.get('InitialPolarAngleL')
-    phiL = p_gw.get('InitialAzimuthalAngleL')
-    longt = p_gw.get('EclipticLongitude')
-    lat = p_gw.get('EclipticLatitude')
-    phi0 = p_gw.get('PhaseAtCoalescence')
-    z = p_gw.get("Redshift")
-    DL = Cosmology.DL(z, w=0)[0]
-    dist = DL * 1.e6 * LC.pc
-    print ("DL = ", DL*1.e-3, "Gpc")
-    print ("Compare DL:", p_gw.getConvert('Distance', LC.convDistance, 'mpc'))
-
-    bet, lam, incl, psi = ldctools.GetSkyAndOrientation(p_gw)
-
-    return m1, m2, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL
 
 
 def SimpleLogLik(data, template, Sn, df, tdi='XYZ'):
@@ -190,8 +142,11 @@ if __name__ == '__main__':
     import datetime
     import pickle
     from bayesdawn import samplers, posteriormodel
+    from bayesdawn.utils import loadings
     # For parallel computing
     # from multiprocessing import Pool, Queue
+    # LDC tools
+    import lisabeta.lisa.ldctools as ldctools
     # Plotting modules
     import matplotlib.pyplot as plt
     import matplotlib as mpl
@@ -220,32 +175,16 @@ if __name__ == '__main__':
     # ==================================================================================================================
     # Unpacking the hdf5 file and getting data and source parameters
     # ==================================================================================================================
-    print("Loading data...")
-    fd5 = LISAhdf5(config["InputData"]["FilePath"])
-    n_src = fd5.getSourcesNum()
-    gws = fd5.getSourcesName()
-    print("Found %d GW sources: " % n_src, gws)
-    if not re.search('MBHB', gws[0]):
-        raise NotImplementedError
-    p = fd5.getSourceParameters(gws[0])
-    td = fd5.getPreProcessTDI()
+    p, td = loadings.load_ldc_data(config["InputData"]["FilePath"])
     del_t = float(p.get("Cadence"))
     tobs = float(p.get("ObservationDuration"))
-    p.display()
-    print("Cadence = ", del_t, "Observation time=", tobs)
-    print("Data loaded.")
 
     # ==================================================================================================================
     # Get the parameters
     # ==================================================================================================================
     # Get parameters as an array from the hdf5 structure (table)
-    m1, m2, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL = get_params(p)
-    Mc = FD_Resp.funcMchirpofm1m2(m1, m2)
-    q = m1 / m2
-    parS = Mc, q, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL, m1, m2
-
-    # transforming into sampling parameters
-    pS_sampl = np.array([Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0])
+    p_sampl = physics.get_params(p, sampling=True)
+    tc = p_sampl[2]
 
     # ==================================================================================================================
     # Pre-processing data: anti-aliasing and filtering
@@ -312,7 +251,7 @@ if __name__ == '__main__':
     # Get parameters from file
     # params = ldctools.get_params_from_LDC(p)
     # Or convert them
-    params = physics.like_to_waveform(pS_sampl)
+    params = physics.like_to_waveform(p_sampl)
 
     t1 = time.time()
     aft, eft, tft = lisaresp.lisabeta_template(params, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
@@ -326,7 +265,7 @@ if __name__ == '__main__':
     i_sampl_intr = [0, 1, 2, 3, 4, 7, 8]
     # pS_sampl_intr = np.array([Mc, q, tc, chi1, chi2, np.sin(bet), lam])
     # params_intr = np.array(params)[lisaresp.i_intr]
-    params_intr = physics.like_to_waveform_intr(pS_sampl[i_sampl_intr])
+    params_intr = physics.like_to_waveform_intr(p_sampl[i_sampl_intr])
     t1 = time.time()
     # # par_intr = np.array([Mc, q, tc, chi1, chi2, np.sin(bet), lam])
     mat_list = lisaresp.design_matrix(params_intr, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
@@ -338,7 +277,7 @@ if __name__ == '__main__':
     print("=================================================================")
 
     # Verification of parameters compatibility m1, m2, chi1, chi2, Deltat, dist, inc, phi, lambd, beta, psi
-    params0 = physics.like_to_waveform(pS_sampl)
+    params0 = physics.like_to_waveform(p_sampl)
 
 
 
@@ -366,7 +305,7 @@ if __name__ == '__main__':
     # Full computation of likelihood
     ll_cls = likelihoodmodel.LogLike(dataAE, SA, freqD[inds], tobs, del_t * q, normalized=False, t_offset=t_offset)
     t1 = time.time()
-    lltot = ll_cls.log_likelihood(pS_sampl)
+    lltot = ll_cls.log_likelihood(p_sampl)
     t2 = time.time()
     print('My total likelihood: ' + str(lltot))
     print('Calculated in ' + str(t2 - t1) + ' seconds.')
@@ -382,7 +321,7 @@ if __name__ == '__main__':
     # Get all parameter name keys
     names = [key for key in config['ParametersLowerBounds']]
     # Get prior bound values
-    bounds = [[float(config['ParametersLowerBounds'][name]), float(config['ParametersUpperBounds'][name])]
+    bounds = [[config['ParametersLowerBounds'].getfloat(name), config['ParametersUpperBounds'].getfloat(name)]
               for name in names]
     lower_bounds = np.array([bound[0] for bound in bounds])
     upper_bounds = np.array([bound[1] for bound in bounds])

@@ -1,5 +1,9 @@
 import numpy as np
 import pyFDresponse as fd_resp
+import Cosmology
+import LISAConstants as LC
+import lisabeta.lisa.ldctools as ldctools
+import pyFDresponse as FD_Resp
 
 
 def compute_masses(mc, q):
@@ -116,3 +120,42 @@ def like_to_waveform_intr(par_intr):
     params = np.array([m1, m2, chi1, chi2, tc, lam, bet])
 
     return params
+
+
+def get_params(p_gw, sampling=False):
+    """
+    returns array of parameters from hdf5 structure
+    Parameters
+    ----------
+    p_gw : ParsUnits instance
+        waveform parameter object
+
+    Returns
+    -------
+
+    """
+    # print (pGW.get('Mass1')*1.e-6, pGW.get('Mass2')*1.e-6)
+    m1 = p_gw.get('Mass1') ### Assume masses redshifted
+    m2 = p_gw.get('Mass2')
+    tc = p_gw.get('CoalescenceTime')
+    chi1 = p_gw.get('Spin1') * np.cos(p_gw.get('PolarAngleOfSpin1'))
+    chi2 = p_gw.get('Spin2') * np.cos(p_gw.get('PolarAngleOfSpin2'))
+    phi0 = p_gw.get('PhaseAtCoalescence')
+    z = p_gw.get("Redshift")
+    DL = Cosmology.DL(z, w=0)[0]
+    dist = DL * 1.e6 * LC.pc
+    print ("DL = ", DL*1.e-3, "Gpc")
+    print ("Compare DL:", p_gw.getConvert('Distance', LC.convDistance, 'mpc'))
+
+    bet, lam, incl, psi = ldctools.GetSkyAndOrientation(p_gw)
+
+    if not sampling:
+        return m1, m2, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL
+    else:
+        # Get parameters as an array from the hdf5 structure (table)
+        Mc = FD_Resp.funcMchirpofm1m2(m1, m2)
+        q = m1 / m2
+        # transforming into sampling parameters
+        ps_sampl = np.array([Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0])
+
+        return ps_sampl
