@@ -60,7 +60,7 @@ def like_to_waveform(par):
     # Convert Source latitude in SSB-frame
     bet = np.arcsin(sb)
 
-    params = m1, m2, chi1, chi2, tc, dl, incl, phi0, lam, bet, psi
+    params = np.array([m1, m2, chi1, chi2, tc, dl, incl, phi0, lam, bet, psi])
 
     return params
 
@@ -86,3 +86,33 @@ def waveform_to_like(params):
     par = np.array([mc, q, tc, chi1, chi2, np.log10(dl), np.cos(incl), np.sin(bet), lam, psi, phi0])
 
     return par
+
+
+def like_to_waveform_intr(par_intr):
+    """
+    Convert likelihood parameters into waveform-compatible parameters
+    Parameters
+    ----------
+    par : array_like
+        parameter vector for sampling the posterior:
+        Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0
+
+    Returns
+    -------
+    params : array_like
+       parameter vector for LISABeta waveform: m1, m2, chi1, chi2, del_t, dist, incl, phi0, lam, bet, psi
+
+    """
+
+    # Explicit the vector of paramters
+    mc, q, tc, chi1, chi2, sb, lam = par_intr
+
+    # Convert chirp mass into individual masses
+    m1, m2 = compute_masses(mc, q)
+
+    # Convert Source latitude in SSB-frame
+    bet = np.arcsin(sb)
+
+    params = np.array([m1, m2, chi1, chi2, tc, lam, bet])
+
+    return params

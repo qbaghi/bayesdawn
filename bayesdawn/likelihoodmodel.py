@@ -9,11 +9,13 @@ import numpy as np
 import copy
 from scipy import linalg as LA
 from bayesdawn import gaps
+from bayesdawn.utils import physics
 
 # FTT modules
 import pyfftw
 pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
+from bayesdawn.waveforms import lisaresp
 
 
 def dft(x, w):
@@ -604,4 +606,97 @@ class LikelihoodModel(object):
         self.counter = 0
 
 
+class LogLike(object):
 
+    def __init__(self, data, sn, freq, tobs, del_t, normalized=False, t_offset=52.657):
+        """
+
+        Parameters
+        ----------
+        data : array_like
+            DFT of TDI data A, E, T computed at frequencies freq
+        sn : ndarray
+            noise PSD computed at freq
+        freq: ndarray
+            frequency array
+        tobs : float
+            observation time
+        del_t : float
+            data sampling cadence
+        ll_norm : float
+            normalization constant for the log-likelihood
+        """
+
+        self.data = data
+        self.sn = sn
+        self.freq = freq
+        self.tobs = tobs
+        self.del_t = del_t
+        self.nf = len(freq)
+        self.t_offset = t_offset
+        if normalized:
+            self.ll_norm = self.log_norm()
+        else:
+            self.ll_norm = 0
+
+        # The full set of parameters is m1, m2, chi1, chi2, tc, dist, incl, phi0, lam, bet, psi
+        # Indices of extrinsic parameters
+        self.i_ext = [5, 6, 7, 10]
+        # Indices of intrinsic parameters m1, m2, chi1, chi2, tc, bet, psi
+        self.i_intr = [0, 1, 2, 3, 4, 8, 9]
+
+    def log_norm(self):
+        """
+        Compute normalizing constant for the log-likelihood
+
+        Returns
+        -------
+        ll_norm : float
+            normalization constant for the log-likelihood
+
+        """
+
+        ll_norm = - self.nf/2 * np.log(2 * np.pi * 2 * self.del_t) - 0.5 * np.sum(np.log(self.sn)) \
+                  - 0.5 * np.sum(np.abs(self.data) ** 2 / self.sn)
+
+        return ll_norm
+
+    def log_likelihood(self, par):
+        """
+
+        Parameters
+        ----------
+        par : array_like
+            vector of waveform parameters in the following order: [Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0]
+        data : array_like
+            DFT of TDI data A, E, T computed at frequencies freq
+        sn : ndarray
+            noise PSD computed at freq
+        freq: ndarray
+            frequency array
+
+
+        Returns
+        -------
+
+        """
+
+        # Convert likelihood parameters into waveform-compatible parameters
+        params = physics.like_to_waveform(par)
+
+        # Compute waveform template
+        at, et = lisaresp.lisabeta_template(params, self.freq, self.tobs, tref=0, t_offset=self.t_offset, channels=[1, 2])
+
+        # (h | y)
+        sna = np.sum(np.real(self.data[0]*np.conjugate(at)) / self.sn)
+        sne = np.sum(np.real(self.data[1]*np.conjugate(et)) / self.sn)
+
+        # (h | h)
+        aa = np.sum(np.abs(at) ** 2 / self.sn)
+        ee = np.sum(np.abs(et) ** 2 / self.sn)
+
+        # (h | y) - 1/2 (h | h)
+        llA = 4.0*(self.freq[1] - self.freq[0])*(sna - 0.5*aa)
+        llE = 4.0*(self.freq[1] - self.freq[0])*(sne - 0.5*ee)
+
+        return llA + llE + self.ll_norm

@@ -27,6 +27,19 @@ import lisabeta.tools.pyspline as pyspline
 from bayesdawn.utils import physics
 
 
+# Global variables
+# Indices of parameters in the full parameter vector m1, m2, chi1, chi2, Deltat, dist, inc, phi, lambd, beta, psi
+i_dist = 5
+i_inc = 6
+i_phi0 = 7
+i_psi = 10
+i_tc = 4
+# Indices of extrinsic parameters
+i_ext = [i_dist, i_inc, i_phi0, i_psi]
+# Indices of intrinsic parameters
+i_intr = [0, 1, 2, 3, 4, 8, 9]
+
+
 def optimal_order(theta, f_0):
     """
     Function calculating the optimal number of sidebands that must be calculated
@@ -542,6 +555,16 @@ class MBHBWaveform(GWwaveform):
         """
 
         # LISABETA
+
+        # # Indices of parameters in the full parameter vector
+        # self.i_dist = 5
+        # self.i_inc = 6
+        # self.i_phi0 = 7
+        # self.i_psi = 10
+        # # Indices of extrinsic parameters
+        # self.i_ext = [5, 6, 7, 10]
+        # # Indices of intrinsic parameters
+        # self.i_intr = [0, 1, 2, 3, 4, 8, 9]
         # m1, m2, chi1, chi2, tc, dist, inc, phi, lambd, beta, psi = params
         params_1 = np.zeros(11)
         params_2 = np.zeros(11)
@@ -602,37 +625,6 @@ class MBHBWaveform(GWwaveform):
         # A = (self.armlength / LC.c) ** 2 * A_tmp
 
         return mat_list
-
-
-def like_to_waveform_intr(par_intr):
-    """
-    Convert reduced-likelihood intrinsic parameters into waveform-compatible parameters
-    Parameters
-    ----------
-    par : array_like
-        intrinsic parameter vector for sampling the posterior:
-        Mc, q, tc, chi1, chi2, np.sin(bet), lam
-
-    Returns
-    -------
-    params_intr : array_like
-        instrinsic parameters m1, m2, chi1, chi2, tc, bet, psi
-
-    """
-
-    # Explicit the vector of paramters
-    mc, q, tc, chi1, chi2, sb, lam = par_intr
-
-    # Convert chirp mass into individual masses
-    m1, m2 = physics.compute_masses(mc, q)
-
-    # Convert Source latitude in SSB-frame
-    bet = np.arcsin(sb)
-
-    # Form the waveform-compatible intrinsic parameter vector
-    params_intr = m1, m2, chi1, chi2, tc, lam, bet
-
-    return params_intr
 
 
 def generate_lisa_signal(wftdi, freq=None, channels=None):
@@ -715,15 +707,13 @@ def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657, channels=None
     return ch_interp
 
 
-def design_matrix(par_intr, freq_data, tobs, tref=0, t_offset=52.657, channels=None, minf=1e-5, maxf=1., acc=1e-4,
-                  dist=1e3, torb=0, LISAconst=pyresponse.LISAconstProposal, responseapprox='full',
-                  frozenLISA=False, TDIrescaled=False):
+def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657, channels=None):
     """
     Design matrix for reduced order likelihood
     Parameters
     ----------
-    params_intr : ndarray
-        instrinsic parameters
+    par_intr : ndarray
+        instrinsic sampling parameters Mc, q, tc, chi1, chi2, np.sin(bet), lam
     freq :
     tobs
     tref
@@ -735,91 +725,164 @@ def design_matrix(par_intr, freq_data, tobs, tref=0, t_offset=52.657, channels=N
 
     """
 
-    # Convert likelihood parameters into waveform-compatible parameters
-    params_intr = like_to_waveform_intr(par_intr)
-    # The full set of parameters is m1, m2, chi1, chi2, tc, dist, incl, phi0, lam, bet, psi
-    # Indices of intrinsic parameters m1, m2, chi1, chi2, tc, bet, psi
-    # Initial phase: same!
-    phi0 = 0
-    # Inclination: same!
-    inc = 0
-    # Polarization angle: 45 degree angle difference
-    psi_1 = 0.0
-    psi_2 = np.pi / 4
-    # TDI response
-    m1, m2, chi1, chi2, tc, lambd, beta = params_intr
-    # Units
-    q = m1 / m2
-    m1_SI = m1 * pyconstants.MSUN_SI
-    m2_SI = m2 * pyconstants.MSUN_SI
-    dist_SI = dist * 1e6 * pyconstants.PC_SI
-    M = m1 + m2
-    Ms = M * pyconstants.MTSUN_SI
-    if tobs is not None:
-        minf = np.fmax(minf, pytools.funcNewtonianfoft(m1, m2, tobs * pyconstants.YRSID_SI))
-    Mfmin = Ms * minf
-    Mfmax = Ms * maxf
-    Mfmax_model = 0.2
-    Mfmax = np.fmin(Mfmax, Mfmax_model)
-    maxf = Mfmax / Ms
-
-    # Combined frequency grid for the waveform
-    gridfreqClass = pytools.FrequencyGrid(minf, maxf, M, q, acc=acc)
-    gridfreq = gridfreqClass.get_freq()
-
-    # Generate IMRPhenomD waveform and add time shift
-    # Calling with fRef=0., phiRef=0. defines the source frame
-    phiRef = 0.
-    fRef = 0.
-    wfClass = pyIMRPhenomD.IMRPhenomDh22AmpPhase(gridfreq, phiRef, fRef, m1_SI, m2_SI, chi1, chi2, dist_SI)
-    freq, amp, phase = wfClass.get_waveform()
-    phase += 2 * np.pi * freq * tc
-
-    # Build spline for tf
-    phaseov2pisplineClass = pyspline.CubicSpline(freq, phase / (2*np.pi))
-    tfspline = phaseov2pisplineClass.get_spline_d()
-
-    # Global shift of phase to account for
-    phase += 2 * np.pi * freq * tref
-
-    # ==================================================================================================================
-    # Compute TDI response for the two polarizations
-    # ==================================================================================================================
-    l0 = 2
-    m0 = 2
-    tdi_class_1 = pyresponse.LISAFDresponseTDI3Chan(gridfreq, tfspline, torb, l0, m0, inc, phi0, lambd, beta, psi_1,
-                                                 TDI='TDIAET', LISAconst=LISAconst, responseapprox=responseapprox,
-                                                 frozenLISA=frozenLISA, TDIrescaled=TDIrescaled)
-    tdi_class_2 = pyresponse.LISAFDresponseTDI3Chan(gridfreq, tfspline, torb, l0, m0, inc, phi0, lambd, beta, psi_2,
-                                                 TDI='TDIAET', LISAconst=LISAconst, responseapprox=responseapprox,
-                                                 frozenLISA=frozenLISA, TDIrescaled=TDIrescaled)
-
-    transfer_list_1 = tdi_class_1.get_response()
-    transfer_list_2 = tdi_class_2.get_response()
-
-    # ==================================================================================================================
-    # Interpolation of the response
-    # ==================================================================================================================
+    # m1, m2, chi1, chi2, tc, dist, inc, phi, lambd, beta, psi = params
+    params_1 = np.zeros(11)
+    params_2 = np.zeros(11)
+    # Save intrinsic parameters
+    params_1[i_intr] = params_intr
+    params_2[i_intr] = params_intr
+    # Luminosity distance (Mpc)
+    params_1[i_dist] = 1e3
+    params_2[i_dist] = 1e3
+    # # Coalescence time
+    # params_1[i_tc] = tobs/2  # 0.5 * np.pi
+    # params_2[i_tc] = tobs/2  # 0.5 * np.pi
+    # Polarization angle
+    params_1[i_psi] = 0.0
+    params_2[i_psi] = np.pi / 4
     if channels is None:
         channels = [1, 2, 3]
 
-    if freq_data is not None:
-        amp = pyspline.resample(freq_data, freq, amp)
-        phase = pyspline.resample(freq_data, freq, phase)
-        tr_int_1 = [pyspline.resample(freq_data, freq, transfer_list_1[i]) for i in channels]
-        tr_int_2 = [pyspline.resample(freq_data, freq, transfer_list_2[i]) for i in channels]
-    else:
-        tr_int_1 = [transfer_list_1[i] for i in channels]
-        tr_int_2 = [transfer_list_2[i] for i in channels]
+    # TDI response 1
+    wftdi_1 = lisa.GenerateLISATDI(params_1, tobs=tobs, minf=1e-5, maxf=1., tref=tref, torb=0., TDItag='TDIAET',
+                                   acc=1e-4, order_fresnel_stencil=0, approximant='IMRPhenomD',
+                                   responseapprox='full', frozenLISA=False, TDIrescaled=False)
+    # # TDI response 2
+    # wftdi_2 = lisa.GenerateLISATDI(params_1, tobs=tobs, minf=1e-5, maxf=1., tref=tref, torb=0., TDItag='TDIAET',
+    #                                acc=1e-4, order_fresnel_stencil=0, approximant='IMRPhenomD',
+    #                                responseapprox='full', frozenLISA=False, TDIrescaled=False)
 
-    # GW strain
+    fs = wftdi_1['freq']
+    # tr1 = [wftdi_1['transferL' + str(np.int(i))] for i in channels]
+    # tr2 = [wftdi_2['transferL' + str(np.int(i))] for i in channels]
+
+    if freq is not None:
+        amp = pyspline.resample(freq, fs, wftdi_1['amp'])
+        phase = pyspline.resample(freq, fs, wftdi_1['phase'])
+        tr_int1 = [pyspline.resample(freq, fs, wftdi_1['transferL' + str(np.int(i))]) for i in channels]
+        # tr_int2 = [pyspline.resample(freq, fs, tri) for tri in tr2]
+    else:
+        freq = fs
+        tr_int1 = [wftdi_1['transferL' + str(np.int(i))] for i in channels]
+        # tr_int2 = tr2
+
     h = amp * np.exp(1j * phase)
     # Phasor for the time shift
-    z = np.exp(-2j * np.pi * freq_data * t_offset)
-    # Compute response for all channels
-    ch_interp_1 = [np.conj(h * tr_int_1[i - 1] * z) for i in channels]
-    ch_interp_2 = [np.conj(h * tr_int_2[i - 1] * z) for i in channels]
-    # Build design matrix
-    mat_list = [np.array([ch_interp_1[i], ch_interp_2[i]]).T for i in range(len(ch_interp_1))]
+    z = np.exp(-2j * np.pi * freq * t_offset)
 
-    return mat_list
+    # mat_list = [np.vstack((h * tr_int1[i - 1] * z, h * tr_int2[i - 1] * z)).conj().T for i in channels]
+    mat_list = [np.array([h * tr_int1[i - 1] * z]).conj().T for i in channels]
+
+    return mat_list #, tr_int1, tr_int2
+
+
+
+# def design_matrix(par_intr, freq_data, tobs, tref=0, t_offset=52.657, channels=None, minf=1e-5, maxf=1., acc=1e-4,
+#                   dist=1e3, torb=0, LISAconst=pyresponse.LISAconstProposal, responseapprox='full',
+#                   frozenLISA=False, TDIrescaled=False):
+#     """
+#     Design matrix for reduced order likelihood
+#     Parameters
+#     ----------
+#     par_intr : ndarray
+#         instrinsic sampling parameters Mc, q, tc, chi1, chi2, np.sin(bet), lam
+#     freq :
+#     tobs
+#     tref
+#     t_offset
+#     channels
+#
+#     Returns
+#     -------
+#
+#     """
+#     # np.array([Mc, q, tc, chi1, chi2, np.sin(bet), lam])
+#     # Convert likelihood parameters into waveform-compatible parameters
+#     params_intr = like_to_waveform_intr(par_intr)
+#     # The full set of parameters is m1, m2, chi1, chi2, tc, dist, incl, phi0, lam, bet, psi
+#     # Indices of intrinsic parameters m1, m2, chi1, chi2, tc, lam, bet
+#     # Initial phase: same!
+#     phi0 = 0
+#     # Inclination: same!
+#     inc = 0
+#     # Polarization angle: 45 degree angle difference
+#     psi_1 = 0.0
+#     psi_2 = np.pi / 4
+#     # TDI response
+#     m1, m2, chi1, chi2, tc, lambd, beta = params_intr
+#     # Units
+#     q = m1 / m2
+#     m1_SI = m1 * pyconstants.MSUN_SI
+#     m2_SI = m2 * pyconstants.MSUN_SI
+#     dist_SI = dist * 1e6 * pyconstants.PC_SI
+#     M = m1 + m2
+#     Ms = M * pyconstants.MTSUN_SI
+#     if tobs is not None:
+#         minf = np.fmax(minf, pytools.funcNewtonianfoft(m1, m2, tobs * pyconstants.YRSID_SI))
+#     Mfmin = Ms * minf
+#     Mfmax = Ms * maxf
+#     Mfmax_model = 0.2
+#     Mfmax = np.fmin(Mfmax, Mfmax_model)
+#     maxf = Mfmax / Ms
+#
+#     # Combined frequency grid for the waveform
+#     gridfreqClass = pytools.FrequencyGrid(minf, maxf, M, q, acc=acc)
+#     gridfreq = gridfreqClass.get_freq()
+#
+#     # Generate IMRPhenomD waveform and add time shift
+#     # Calling with fRef=0., phiRef=0. defines the source frame
+#     phiRef = 0.
+#     fRef = 0.
+#     wfClass = pyIMRPhenomD.IMRPhenomDh22AmpPhase(gridfreq, phiRef, fRef, m1_SI, m2_SI, chi1, chi2, dist_SI)
+#     freq, amp, phase = wfClass.get_waveform()
+#     phase += 2 * np.pi * freq * tc
+#
+#     # Build spline for tf
+#     phaseov2pisplineClass = pyspline.CubicSpline(freq, phase / (2*np.pi))
+#     tfspline = phaseov2pisplineClass.get_spline_d()
+#
+#     # Global shift of phase to account for
+#     phase += 2 * np.pi * freq * tref
+#
+#     # ==================================================================================================================
+#     # Compute TDI response for the two polarizations
+#     # ==================================================================================================================
+#     l0 = 2
+#     m0 = 2
+#     tdi_class_1 = pyresponse.LISAFDresponseTDI3Chan(gridfreq, tfspline, torb, l0, m0, inc, phi0, lambd, beta, psi_1,
+#                                                  TDI='TDIAET', LISAconst=LISAconst, responseapprox=responseapprox,
+#                                                  frozenLISA=frozenLISA, TDIrescaled=TDIrescaled)
+#     tdi_class_2 = pyresponse.LISAFDresponseTDI3Chan(gridfreq, tfspline, torb, l0, m0, inc, phi0, lambd, beta, psi_2,
+#                                                  TDI='TDIAET', LISAconst=LISAconst, responseapprox=responseapprox,
+#                                                  frozenLISA=frozenLISA, TDIrescaled=TDIrescaled)
+#
+#     # phaseRdelay, transferL1, transferL2, transferL3
+#     transfer_list_1 = tdi_class_1.get_response()
+#     transfer_list_2 = tdi_class_2.get_response()
+#
+#     # ==================================================================================================================
+#     # Interpolation of the response
+#     # ==================================================================================================================
+#     if channels is None:
+#         channels = [1, 2, 3]
+#
+#     if freq_data is not None:
+#         amp = pyspline.resample(freq_data, freq, amp)
+#         phase = pyspline.resample(freq_data, freq, phase)
+#         tr_int_1 = [pyspline.resample(freq_data, freq, transfer_list_1[i]) for i in channels]
+#         tr_int_2 = [pyspline.resample(freq_data, freq, transfer_list_2[i]) for i in channels]
+#     else:
+#         tr_int_1 = [transfer_list_1[i] for i in channels]
+#         tr_int_2 = [transfer_list_2[i] for i in channels]
+#
+#     # GW strain
+#     h = amp * np.exp(1j * phase)
+#     # Phasor for the time shift
+#     z = np.exp(-2j * np.pi * freq_data * t_offset)
+#     # Compute response for all channels
+#     ch_interp_1 = [np.conj(h * tr_int_1[i - 1] * z) for i in channels]
+#     ch_interp_2 = [np.conj(h * tr_int_2[i - 1] * z) for i in channels]
+#     # Build design matrix
+#     mat_list = [np.array([ch_interp_1[i], ch_interp_2[i]]).T for i in range(len(ch_interp_1))]
+#
+#     return mat_list
