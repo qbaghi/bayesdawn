@@ -9,6 +9,7 @@ import copy
 from functools import reduce
 import ptemcee
 import h5py
+import tables
 import pandas as pd
 import dynesty
 from dynesty import NestedSampler, DynamicNestedSampler
@@ -346,7 +347,6 @@ class ExtendedPTMCMC(ptemcee.Sampler):
         #         pass
 
         self.position = pos[:]
-
         it = 0
 
         for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
@@ -355,6 +355,15 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             # if (it % n_update == 0) & (callback is not None):
             #     print("Update of auxiliary parameters at iteration " + str(i))
             #     callback(pos[0, 0, :])
+            # if it == 0:
+            #     f = tables.open_file(save_path + 'chain.p', 'w')
+            #     atom1 = tables.Atom.from_dtype(self.chain.dtype)
+            #     ds1 = f.create_earray(f.root, 'chain', atom1, (0, self.ntemps, self.nwalkers, 1, len(hi)))
+            #     ds1.append(self.chain[:, :, 0, :])
+            #     atom2 = tables.Atom.from_dtype(self.logprobability.dtype)
+            #     ds2 = f.create_earray(f.root, 'lnprob', atom2, (0, self.ntemps, self.nwalkers, 1))
+            #     ds2.append(self.logprobability[:, :, 0])
+            #     f.close()
             if (it % n_save == 0) & (it != 0):
                 print("Save data at iteration " + str(it) + "...")
                 # Make a list of data frames
@@ -366,13 +375,19 @@ class ExtendedPTMCMC(ptemcee.Sampler):
                 #  for j in range(self.chain.shape[1])]
                 # df = pd.DataFrame(self.chain[0, :, 0:i, :].reshape((-1, self.chain.shape[3])), columns=param_names)
                 # df.to_hdf(save_path, 'chain', append=False, mode='w', format='fixed')
-                file_object = open(save_path + 'chain.npy', "wb")
-                # pickle.dump(self.chain[:, :, self.chain[0, 0, :, 0] != 0, :], file_object)
-                np.save(file_object, self.chain[:, :, self.chain[0, 0, :, 0] != 0, :])
+                # Store "x" in a chunked array...
+                # f = tables.open_file(save_path + 'chain.p', 'a')
+                # f.root.chain.append(self.chain[:, :, 0:it, :])
+                # f.root.lnprob.append(self.logprobability[:, :, 0:it])
+                # f.close()
+
+                file_object = open(save_path + 'chain.p', "wb")
+                pickle.dump(self.chain[:, :, 0:it, :], file_object)
+                # np.save(file_object, self.chain[:, :, self.chain[0, 0, :, 0] != 0, :])
                 file_object.close()
-                file_object = open(save_path + 'lnprob.npy', "wb")
-                # pickle.dump(self.logprobability[:, :, self.logprobability[0, 0, :] != 0], file_object)
-                np.save(file_object, self.logprobability[:, :, self.logprobability[0, 0, :] != 0])
+                file_object = open(save_path + 'lnprob.p', "wb")
+                pickle.dump(self.logprobability[:, :, 0:it], file_object)
+                # np.save(file_object, self.logprobability[:, :, self.logprobability[0, 0, :] != 0])
                 file_object.close()
                 print("Data saved.")
             else:
