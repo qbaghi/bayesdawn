@@ -142,7 +142,7 @@ if __name__ == '__main__':
     import datetime
     import pickle
     from bayesdawn import samplers, posteriormodel
-    from bayesdawn.utils import loadings
+    from bayesdawn.utils import loadings, preprocess
     # For parallel computing
     # from multiprocessing import Pool, Queue
     # LDC tools
@@ -198,30 +198,12 @@ if __name__ == '__main__':
         i1 = 0
         i2 = np.int(td.shape[0])
         t_offset = 52.657
-    if config['InputData'].getboolean('decimation'):
-        fc = config['InputData'].getfloat('filterFrequency')
-        b, a = signal.butter(5, 0.03, 'low', analog=False, fs=1/del_t)
-        Xd = signal.filtfilt(b, a, td[:, 1])
-        Yd = signal.filtfilt(b, a, td[:, 2])
-        Zd = signal.filtfilt(b, a, td[:, 3])
-        # Downsampling
-        q = config['InputData'].getint('decimationFactor')
-        tm = td[i1:i2:q, 0]
-        Xd = Xd[i1:i2:q]
-        Yd = Yd[i1:i2:q]
-        Zd = Zd[i1:i2:q]
 
-    else:
-        q = 1
-        tm = td[i1:i2, 0]
-        Xd = td[i1:i2, 1]
-        Yd = td[i1:i2, 2]
-        Zd = td[i1:i2, 3]
+    tm, Xd, Yd, Zd, q = preprocess.preprocess(config, td, i1, i2)
 
     # ==================================================================================================================
     # Now we get extract the data and transform it to frequency domain
     # ==================================================================================================================
-
     # # FFT without any windowing
     # XDf = fft(Xd) * del_t * q
     # YDf = fft(Yd) * del_t * q
@@ -248,8 +230,6 @@ if __name__ == '__main__':
     # Restrict the frequency band to high SNR region
     inds = np.where((float(config['Model']['MinimumFrequency']) <= freqD)
                     & (freqD <= float(config['Model']['MaximumFrequency'])))[0]
-    # Get parameters from file
-    # params = ldctools.get_params_from_LDC(p)
     # Or convert them
     params = physics.like_to_waveform(p_sampl)
 
@@ -278,9 +258,6 @@ if __name__ == '__main__':
 
     # Verification of parameters compatibility m1, m2, chi1, chi2, Deltat, dist, inc, phi, lambd, beta, psi
     params0 = physics.like_to_waveform(p_sampl)
-
-
-
     # # Testing the right offset
     # offsets = np.linspace(50.60, 53, 50)
     # results = [lisabeta_template(params, freqD, tobs, tref=0, toffset=toffset) for toffset in offsets]
@@ -301,7 +278,6 @@ if __name__ == '__main__':
     print('compare A', llA1, llA2, llA3)
     print('compare E', llE1, llE2, llE3)
     print('total lloglik', llA1 + llE1, llA2 + llE2, llA3 + llE3)
-
     # Full computation of likelihood
     ll_cls = likelihoodmodel.LogLike(dataAE, SA, freqD[inds], tobs, del_t * q, normalized=False, t_offset=t_offset)
     t1 = time.time()
@@ -310,10 +286,12 @@ if __name__ == '__main__':
     print('My total likelihood: ' + str(lltot))
     print('Calculated in ' + str(t2 - t1) + ' seconds.')
 
+    # ==================================================================================================================
     # Instantiate likelihood class
+    # ==================================================================================================================
     ll_cls = likelihoodmodel.LogLike(dataAE, SA, freqD[inds], tobs, del_t * q,
                                      normalized=config['Model'].getboolean('normalized'),
-                                     t_offset=t_offset)
+                                     t_offset=t_offset, channels=[1, 2])
 
     # ==================================================================================================================
     # Get parameter names and bounds
@@ -341,20 +319,41 @@ if __name__ == '__main__':
         # Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0
         periodic = [6]
 
-    # ==================================================================================================================
-    # Test prior transform consistency
-    # ==================================================================================================================
-    # Draw random numbers in [0, 1]
-    theta_u = np.random.random(len(names))
-    # Transform to physical parameters
-    par_ll = prior_transform(theta_u, lower_bounds, upper_bounds)
-    # Check that they lie within bounds
-    print("Within bounds: "
-          + str(np.all(np.array([lower_bounds[i] <= par_ll[i] <= upper_bounds[i] for i in range(len(par_ll))]))))
-    t1 = time.time()
-    ll_random = log_likelihood(par_ll)
-    t2 = time.time()
-    print('random param loglik = ' + str(ll_random) + ', computed in ' + str(t2-t1) + ' seconds.')
+    # # ==================================================================================================================
+    # # Test prior transform consistency
+    # # ==================================================================================================================
+    # # Draw random numbers in [0, 1]
+    # theta_u = np.random.random(len(names))
+    # # Transform to physical parameters
+    # par_ll = prior_transform(theta_u, lower_bounds, upper_bounds)
+    # # Check that they lie within bounds
+    # print("Within bounds: "
+    #       + str(np.all(np.array([lower_bounds[i] <= par_ll[i] <= upper_bounds[i] for i in range(len(par_ll))]))))
+    # t1 = time.time()
+    # ll_random = log_likelihood(par_ll)
+    # t2 = time.time()
+    # print('random param loglik = ' + str(ll_random) + ', computed in ' + str(t2-t1) + ' seconds.')
+    #
+    # # Compare reduced and full model
+    # # Full model
+    # # Convert likelihood parameters into waveform-compatible parameters
+    # params_random = physics.like_to_waveform(par_ll)
+    # aft, eft, tft = lisaresp.lisabeta_template(params_random, freqD[inds], tobs, tref=0, t_offset=t_offset,
+    #                                            channels=[1, 2, 3])
+    # sig = [aft, eft, tft]
+    # # params_intr = physics.like_to_waveform_intr(par_ll[i_sampl_intr])
+    # # mat_list = lisaresp.design_matrix(params_intr, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
+    # # amps = [linalg.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, sig[i]))
+    # #         for i in range(len(aet))]
+    # # # Reduced model
+    # # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
+    #
+    # ll_cls_test = likelihoodmodel.LogLike(sig, SA, freqD[inds], tobs, del_t * q,
+    #                                       normalized=config['Model'].getboolean('normalized'),
+    #                                       t_offset=t_offset, channels=[1, 2, 3])
+    #
+    # aet_rec = ll_cls_test.compute_signal_reduced(par_ll[i_sampl_intr])
+
 
     # ==================================================================================================================
     # Prepare data to save during sampling
@@ -416,9 +415,9 @@ if __name__ == '__main__':
                              callback=None, pos0=None,
                              save_path=out_dir + prefix)
 
-    # # ==================================================================================================================
-    # # Plotting
-    # # ==================================================================================================================
+    # ==================================================================================================================
+    # Plotting
+    # ==================================================================================================================
     # fig1, ax = plt.subplots(nrows=2, sharex=True, sharey=True)
     # ax[0].semilogx(freqD, np.real(ADf))
     # ax[0].semilogx(freqD[inds], np.real(aft), '--')
@@ -430,5 +429,19 @@ if __name__ == '__main__':
     # # ax[1].semilogx(freqD, np.imag(Xft), '--')
     # # plt.xlim([6.955e-3, 6.957e-3])
     # # plt.ylim([-1e-18, 1e-18])
+    # plt.show()
+
+    # fig1, ax = plt.subplots(nrows=2, sharex=True, sharey=True)
+    # ax[0].semilogx(freqD[inds], np.real(aft), label='Full')
+    # ax[0].semilogx(freqD[inds], np.real(aet_rec[0]), '--', label='Reduced')
+    # ax[1].semilogx(freqD[inds], np.imag(aft), label='Full')
+    # ax[1].semilogx(freqD[inds], np.imag(aet_rec[0]), '--', label='Reduced')
+    # # ax[0].semilogx(freqD, np.real(XDf))
+    # # ax[0].semilogx(freqD, np.real(Xft), '--')
+    # # ax[1].semilogx(freqD, np.imag(XDf))
+    # # ax[1].semilogx(freqD, np.imag(Xft), '--')
+    # # plt.xlim([6.955e-3, 6.957e-3])
+    # # plt.ylim([-1e-18, 1e-18])
+    # plt.legend()
     # plt.show()
 

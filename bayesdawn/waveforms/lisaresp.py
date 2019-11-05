@@ -747,30 +747,34 @@ def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657, channels=Non
     wftdi_1 = lisa.GenerateLISATDI(params_1, tobs=tobs, minf=1e-5, maxf=1., tref=tref, torb=0., TDItag='TDIAET',
                                    acc=1e-4, order_fresnel_stencil=0, approximant='IMRPhenomD',
                                    responseapprox='full', frozenLISA=False, TDIrescaled=False)
-    # # TDI response 2
-    # wftdi_2 = lisa.GenerateLISATDI(params_1, tobs=tobs, minf=1e-5, maxf=1., tref=tref, torb=0., TDItag='TDIAET',
+    # TDI response 2
+    # wftdi_2 = lisa.GenerateLISATDI(params_2, tobs=tobs, minf=1e-5, maxf=1., tref=tref, torb=0., TDItag='TDIAET',
     #                                acc=1e-4, order_fresnel_stencil=0, approximant='IMRPhenomD',
     #                                responseapprox='full', frozenLISA=False, TDIrescaled=False)
 
-    fs = wftdi_1['freq']
+    fs1 = wftdi_1['freq']
+    # fs2 = wftdi_2['freq']
     # tr1 = [wftdi_1['transferL' + str(np.int(i))] for i in channels]
     # tr2 = [wftdi_2['transferL' + str(np.int(i))] for i in channels]
 
     if freq is not None:
-        amp = pyspline.resample(freq, fs, wftdi_1['amp'])
-        phase = pyspline.resample(freq, fs, wftdi_1['phase'])
-        tr_int1 = [pyspline.resample(freq, fs, wftdi_1['transferL' + str(np.int(i))]) for i in channels]
-        # tr_int2 = [pyspline.resample(freq, fs, tri) for tri in tr2]
+        amp = pyspline.resample(freq, fs1, wftdi_1['amp'])
+        phase = pyspline.resample(freq, fs1, wftdi_1['phase'])
+        # amp2 = pyspline.resample(freq, fs2, wftdi_1['amp'])
+        # phase2 = pyspline.resample(freq, fs2, wftdi_1['phase'])
+        tr_int1 = [pyspline.resample(freq, fs1, wftdi_1['transferL' + str(np.int(i))]) for i in channels]
+        # tr_int2 = [pyspline.resample(freq, fs2, wftdi_2['transferL' + str(np.int(i))]) for i in channels]
     else:
-        freq = fs
+        freq = wftdi_1['freq']
         tr_int1 = [wftdi_1['transferL' + str(np.int(i))] for i in channels]
-        # tr_int2 = tr2
+        # tr_int2 = [wftdi_2['transferL' + str(np.int(i))] for i in channels]
 
     h = amp * np.exp(1j * phase)
+    # h2 = amp2 * np.exp(1j * phase2)
     # Phasor for the time shift
     z = np.exp(-2j * np.pi * freq * t_offset)
 
-    # mat_list = [np.vstack((h * tr_int1[i - 1] * z, h * tr_int2[i - 1] * z)).conj().T for i in channels]
+    # mat_list = [np.vstack((h * tr_int1[i - 1] * z, h2 * tr_int2[i - 1] * z)).conj().T for i in channels]
     mat_list = [np.array([h * tr_int1[i - 1] * z]).conj().T for i in channels]
 
     return mat_list #, tr_int1, tr_int2

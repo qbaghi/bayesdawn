@@ -608,7 +608,7 @@ class LikelihoodModel(object):
 
 class LogLike(object):
 
-    def __init__(self, data, sn, freq, tobs, del_t, normalized=False, t_offset=52.657):
+    def __init__(self, data, sn, freq, tobs, del_t, normalized=False, t_offset=52.657, channels=None):
         """
 
         Parameters
@@ -634,6 +634,7 @@ class LogLike(object):
         self.del_t = del_t
         self.nf = len(freq)
         self.t_offset = t_offset
+        self.df = self.freq[1] - self.freq[0]
         if normalized:
             self.ll_norm = self.log_norm()
         else:
@@ -644,6 +645,11 @@ class LogLike(object):
         self.i_ext = [5, 6, 7, 10]
         # Indices of intrinsic parameters m1, m2, chi1, chi2, tc, bet, psi
         self.i_intr = [0, 1, 2, 3, 4, 8, 9]
+
+        if channels is None:
+            self.channels = [1, 2]
+        else:
+            self.channels = channels
 
     def log_norm(self):
         """
@@ -679,7 +685,8 @@ class LogLike(object):
         params = physics.like_to_waveform(par)
 
         # Compute waveform template
-        at, et = lisaresp.lisabeta_template(params, self.freq, self.tobs, tref=0, t_offset=self.t_offset, channels=[1, 2])
+        at, et = lisaresp.lisabeta_template(params, self.freq, self.tobs, tref=0, t_offset=self.t_offset,
+                                            channels=self.channels)
 
         # (h | y)
         sna = np.sum(np.real(self.data[0]*np.conjugate(at)) / self.sn)
@@ -690,10 +697,42 @@ class LogLike(object):
         ee = np.sum(np.abs(et) ** 2 / self.sn)
 
         # (h | y) - 1/2 (h | h)
-        llA = 4.0*(self.freq[1] - self.freq[0])*(sna - 0.5*aa)
-        llE = 4.0*(self.freq[1] - self.freq[0])*(sne - 0.5*ee)
+        llA = 4.0 * self.df * (sna - 0.5*aa)
+        llE = 4.0 * self.df * (sne - 0.5*ee)
 
         return llA + llE + self.ll_norm
+
+    def compute_signal_reduced(self, par_intr):
+        """
+
+        Parameters
+        ----------
+        par_intr
+
+        Returns
+        -------
+
+        """
+
+        # Transform parameters into waveform-compatible ones
+        params_intr = physics.like_to_waveform_intr(par_intr)
+
+        # Design matrices for each channel
+        mat_list = lisaresp.design_matrix(params_intr, self.freq, self.tobs,
+                                          tref=0, t_offset=self.t_offset, channels=self.channels)
+        # Weighted design matrices
+        mat_list_weighted = [mat_list[i] / np.array([self.sn]).T for i in range(len(self.channels))]
+        # Compute amplitudes
+        amps = [LA.pinv(np.dot(mat_list_weighted[i].conj().T, mat_list[i])).dot(np.dot(mat_list_weighted[i].conj().T,
+                                                                                       self.data[i]))
+                for i in range(len(self.channels))]
+        # amps = [LA.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, self.data[i]))
+        #         for i in range(len(self.channels))]
+        # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
+        # at = np.dot(mat_list[0], amps[0])
+        # et = np.dot(mat_list[1], amps[1])
+
+        return [np.dot(mat_list[i-1], amps[i-1]) for i in self.channels]
 
     def log_likelihood_reduced(self, par_intr):
         """
@@ -708,18 +747,30 @@ class LogLike(object):
 
         """
 
-        params_intr = physics.like_to_waveform_intr(par_intr)
-
-        # Design matrices for each channel
-        mat_list = lisaresp.design_matrix(params_intr, self.freq, self.tobs, tref=0, t_offset=self.t_offset,
-                                          channels=[1, 2])
+        at, et = self.compute_signal_reduced(par_intr)
+        # params_intr = physics.like_to_waveform_intr(par_intr)
+        #
+        # # Design matrices for each channel
+        # mat_list = lisaresp.design_matrix(params_intr, self.freq, self.tobs, tref=0, t_offset=self.t_offset,
+        #                                   channels=self.channels)
         # Weighted design matrices
-        mat_list_weighted = [mat_list[i] / np.array([self.sn]).T for i in range(2)]
-        z = [mat_list_weighted[i].conj().T.dot(self.data[i]) for i in range(2)]
-        ll = sum([0.5 * z[i].conj().T.dot(LA.pinv(mat_list[i].conj().T.dot(mat_list_weighted[i]))).dot(z[i])
-                  for i in range(2)])
-        # amps = [LA.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, self.data[i]))
-        #         for i in range(len(self.data))]
-        # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
+        # mat_list_weighted = [mat_list[i] / np.array([self.sn]).T for i in range(2)]
+        # z = [mat_list_weighted[i].conj().T.dot(self.data[i]) for i in range(2)]
+        # ll = sum([0.5 * z[i].conj().T.dot(LA.pinv(mat_list[i].conj().T.dot(mat_list_weighted[i]))).dot(z[i])
+        #           for i in range(2)])
 
-        return np.real(ll + self.ll_norm)
+        # return np.real(ll + self.ll_norm)
+
+        # (h | y)
+        sna = np.sum(np.real(self.data[0] * np.conjugate(at)) / self.sn)
+        sne = np.sum(np.real(self.data[1] * np.conjugate(et)) / self.sn)
+
+        # (h | h)
+        aa = np.sum(np.abs(at) ** 2 / self.sn)
+        ee = np.sum(np.abs(et) ** 2 / self.sn)
+
+        # (h | y) - 1/2 (h | h)
+        llA = 4.0 * self.df * (sna - 0.5 * aa)
+        llE = 4.0 * self.df * (sne - 0.5 * ee)
+
+        return llA + llE + self.ll_norm
