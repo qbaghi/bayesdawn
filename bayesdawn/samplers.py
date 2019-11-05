@@ -521,7 +521,7 @@ def run_and_save(sampler, nlive=50, n_save=1000, n_iter=100000, file_path="initi
     if dynamic:
         # Baseline run.
         it = 0
-        for results in sampler.sample_initial(nlive=nlive):
+        for results in sampler.sample_initial(nlive=nlive, maxiter=n_iter):
             it += 1
             # If it is a multiple of n_save, save data
             if it % n_save == 0:
@@ -540,7 +540,7 @@ def run_and_save(sampler, nlive=50, n_save=1000, n_iter=100000, file_path="initi
             stop = stopping_function(sampler.results, stop_kwargs={'pfrac': 1.0})  # evaluate stop
             if not stop:
                 logl_bounds = weight_function(sampler.results, wt_kwargs={'pfrac': 1.0})  # derive bounds
-                for results in sampler.sample_batch(logl_bounds=logl_bounds):
+                for results in sampler.sample_batch(logl_bounds=logl_bounds, maxiter=n_iter):
                     it += 1
                     # If it is a multiple of n_save, save data
                     if it % n_save == 0:
