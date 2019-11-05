@@ -376,21 +376,22 @@ if __name__ == '__main__':
     # pool = Pool(4)
 
     if config["Sampler"]["Type"] == 'dynesty':
-        # # Instantiate sampler
-        # dsampl = dynesty.DynamicNestedSampler(ll_cls.log_likelihood, prior_transform, ndim=len(names),
-        #                                       bound='multi', sample='slice', periodic=[8, 9, 10],
-        #                                       ptform_args=(lower_bounds, upper_bounds), ptform_kwargs=None)
-        #                                       # pool=pool, queue_size=4)
-        # # Start run
-        # dsampl.run_nested(dlogz_init=0.01, nlive_init=config["Sampler"].getint("WalkerNumber"),
-        # nlive_batch=500, wt_kwargs={'pfrac': 1.0},
-        #                   stop_kwargs={'pfrac': 1.0})
-
         # Instantiate sampler
-        sampler = dynesty.NestedSampler(log_likelihood, prior_transform, ndim=len(names),
-                                        bound='multi', sample='slice', periodic=periodic,
-                                        ptform_args=(lower_bounds, upper_bounds),
-                                        nlive=int(config["Sampler"]["WalkerNumber"]))
+        if config['Sampler'].getboolean('dynamic'):
+            sampler = dynesty.DynamicNestedSampler(log_likelihood, prior_transform, ndim=len(names),
+                                                   bound='multi', sample='slice', periodic=periodic,
+                                                   ptform_args=(lower_bounds, upper_bounds), ptform_kwargs=None)
+                                                   # pool=pool, queue_size=4)
+            # # Start run
+            # dsampl.run_nested(dlogz_init=0.01, nlive_init=config["Sampler"].getint("WalkerNumber"),
+            # nlive_batch=500, wt_kwargs={'pfrac': 1.0},
+            #                   stop_kwargs={'pfrac': 1.0})
+        else:
+            # Instantiate sampler
+            sampler = dynesty.NestedSampler(log_likelihood, prior_transform, ndim=len(names),
+                                            bound='multi', sample='slice', periodic=periodic,
+                                            ptform_args=(lower_bounds, upper_bounds),
+                                            nlive=int(config["Sampler"]["WalkerNumber"]))
 
         print("n_live_init = " + config["Sampler"]["WalkerNumber"])
         print("Save samples every " + config['Sampler']['SavingNumber'] + " iterations.")
