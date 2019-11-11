@@ -336,42 +336,42 @@ if __name__ == '__main__':
         # Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0
         periodic = [6]
 
-    # ==================================================================================================================
-    # Test prior transform consistency
-    # ==================================================================================================================
-    # Draw random numbers in [0, 1]
-    theta_u = np.random.random(len(names))
-    # Transform to physical parameters
-    par_ll = prior_transform(theta_u, lower_bounds, upper_bounds)
-    # # Check that they lie within bounds
-    # print("Within bounds: "
-    #       + str(np.all(np.array([lower_bounds[i] <= par_ll[i] <= upper_bounds[i] for i in range(len(par_ll))]))))
-    # t1 = time.time()
-    # ll_random = log_likelihood(par_ll)
-    # t2 = time.time()
-    # print('random param loglik = ' + str(ll_random) + ', computed in ' + str(t2-t1) + ' seconds.')
-
-    # Compare reduced and full model
-    # Full model
-    # Convert likelihood parameters into waveform-compatible parameters
-    params_random = physics.like_to_waveform(par_ll)
-    sig = lisaresp.lisabeta_template(params_random, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
-
-    params_intr = physics.like_to_waveform_intr(par_ll[i_sampl_intr])
-    # mat_list = lisaresp.design_matrix(params_intr, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
-    # mat_list_weighted = [mat / np.array([SA]).T for mat in mat_list]
-    # amps = [linalg.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, sig[i]))
-    #         for i in range(len(aet))]
-    # amps = [linalg.pinv(np.dot(mat_list_weighted[i].conj().T, mat_list[i])).dot(np.dot(mat_list_weighted[i].conj().T, sig[i]))
-    #         for i in range(len(aet))]
-    # # Reduced model
-    # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
+    # # ==================================================================================================================
+    # # Test prior transform consistency
+    # # ==================================================================================================================
+    # # Draw random numbers in [0, 1]
+    # theta_u = np.random.random(len(names))
+    # # Transform to physical parameters
+    # par_ll = prior_transform(theta_u, lower_bounds, upper_bounds)
+    # # # Check that they lie within bounds
+    # # print("Within bounds: "
+    # #       + str(np.all(np.array([lower_bounds[i] <= par_ll[i] <= upper_bounds[i] for i in range(len(par_ll))]))))
+    # # t1 = time.time()
+    # # ll_random = log_likelihood(par_ll)
+    # # t2 = time.time()
+    # # print('random param loglik = ' + str(ll_random) + ', computed in ' + str(t2-t1) + ' seconds.')
     #
-    ll_cls_test = likelihoodmodel.LogLike(sig, SA, freqD[inds], tobs, del_t * q,
-                                          normalized=config['Model'].getboolean('normalized'),
-                                          t_offset=t_offset, channels=[1, 2, 3])
-
-    aet_rec = ll_cls_test.compute_signal_reduced(par_ll[i_sampl_intr])
+    # # Compare reduced and full model
+    # # Full model
+    # # Convert likelihood parameters into waveform-compatible parameters
+    # params_random = physics.like_to_waveform(par_ll)
+    # sig = lisaresp.lisabeta_template(params_random, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
+    #
+    # params_intr = physics.like_to_waveform_intr(par_ll[i_sampl_intr])
+    # # mat_list = lisaresp.design_matrix(params_intr, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
+    # # mat_list_weighted = [mat / np.array([SA]).T for mat in mat_list]
+    # # amps = [linalg.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, sig[i]))
+    # #         for i in range(len(aet))]
+    # # amps = [linalg.pinv(np.dot(mat_list_weighted[i].conj().T, mat_list[i])).dot(np.dot(mat_list_weighted[i].conj().T, sig[i]))
+    # #         for i in range(len(aet))]
+    # # # Reduced model
+    # # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
+    # #
+    # ll_cls_test = likelihoodmodel.LogLike(sig, SA, freqD[inds], tobs, del_t * q,
+    #                                       normalized=config['Model'].getboolean('normalized'),
+    #                                       t_offset=t_offset, channels=[1, 2, 3])
+    #
+    # aet_rec = ll_cls_test.compute_signal_reduced(par_ll[i_sampl_intr])
 
     # ==================================================================================================================
     # Prepare data to save during sampling
