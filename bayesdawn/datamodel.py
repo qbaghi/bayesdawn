@@ -16,7 +16,7 @@ import numpy as np
 from scipy import signal
 import time
 from scipy import linalg as LA
-# from mecm import noise
+from mecm import mecm, matrixalgebra
 import copy
 # FTT modules
 import pyfftw
@@ -165,22 +165,26 @@ class GaussianStationaryProcess(object):
 
 
     """
-    def __init__(self, t, y, mask, na=150, nb=150):
+    def __init__(self, t, y, mask, method='nearest', na=150, nb=150, p=60, tol=1e-6, n_it_max=150):
         """
 
         Parameters
         ----------
         t : array_like
             vector of time stamps
-        y : array_lilke
+        y : array_like
             vector of masked data y = x * M
         mask : array_like
             binary mask
+        method : str
+            method to use to perform imputation. 'nearest': nearest neighboors, approximate method.
         na : scalar integer
             number of points to consider before each gap (for the conditional
             distribution of gap data)
         na : scalar integer
             number of points to consider after each gap
+        p : int
+            number of points to keep before truncation for the preconditionner (only if 'PCG' method is chosen)
         """
 
         # Masked data
@@ -197,19 +201,24 @@ class GaussianStationaryProcess(object):
         self.n = len(mask)
         # Observation time
         self.tobs = self.n * self.del_t
+        # Imputation method
+        self.method = method
+        # Tappering number for sparse approximation of the covariance
+        self.p = p
+        # Error tolerance to reach to end PCG algorithm iterations
+        self.tol = tol
+        # Maximum number of iterations for the PCG algorithm
+        self.n_it_max = n_it_max
         # Check whether there are gaps
         if np.any(self.mask == 0):
             # Starting and ending points of gaps
-            self.n_starts, self.n_ends = gapgenerator.findEnds(mask)
+            self.n_starts, self.n_ends = gapgenerator.find_ends(mask)
             gap_lengths = self.n_ends - self.n_starts
             self.n_max = np.int(na + nb + np.max(gap_lengths))
-            if self.n_max > 2000:
-                raise ValueError("The maximum size of gap + conditional set is too high.")
-
             self.na = na
             self.nb = nb
             # Number of gaps
-            n_gaps = len(self.n_starts)
+            self.n_gaps = len(self.n_starts)
             # Indices of missing data
             self.ind_mis = np.where(mask == 0)[0]
             # Indices of observed data
@@ -217,34 +226,36 @@ class GaussianStationaryProcess(object):
         else:
             self.n_starts, self.n_ends = 0, self.n
             self.n_max = 0
-            n_gaps = 0
+            self.n_gaps = 0
             self.ind_mis = []
             self.ind_obs = np.arange(0, self.n).astype(np.int)
-
+        # If the method is exact (not nearest neighboors) you need the full autocovariance
+        if self.method != 'nearest':
+            self.n_max = len(mask)
         # Indices of embedding segments around each gap
         # The edges of each segment is set such that there are Na + Nb observed
         # data around, unless another gap is present.
-        if n_gaps == 0:
+        if self.n_gaps == 0:
             self.indices = None
             print("Time series does not contain gaps.")
 
-        elif n_gaps == 1:
+        elif self.n_gaps == 1:
             # 2 segments
             self.indices = [np.arange(np.int(np.max([self.n_starts[0] - na, 0])),
                                       np.int(np.min([self.n_ends[0] + nb, self.n])))]
 
-        elif n_gaps > 1:
+        elif self.n_gaps > 1:
             # first segment
             self.indices = [np.arange(np.int(np.max([self.n_starts[0] - na, 0])), np.int(np.min([self.n_ends[0] + nb,
                                                                                                  self.n_starts[1]])))]
             # most of the segments
             self.indices = self.indices + [np.arange(np.int(np.max([self.n_starts[j] - na, self.n_ends[j - 1]])),
                                                      np.int(np.min([self.n_ends[j] + nb, self.n_starts[j + 1]])))
-                                           for j in range(1, n_gaps-1)]
+                                           for j in range(1, self.n_gaps-1)]
             # last segment
-            self.indices = self.indices + [np.arange(np.int(np.max([self.n_starts[n_gaps - 1] - na,
-                                                                    self.n_ends[n_gaps - 2]])),
-                                                     np.int(np.min([self.n_ends[n_gaps - 1] + nb, self.n])))]
+            self.indices = self.indices + [np.arange(np.int(np.max([self.n_starts[self.n_gaps - 1] - na,
+                                                                    self.n_ends[self.n_gaps - 2]])),
+                                                     np.int(np.min([self.n_ends[self.n_gaps - 1] + nb, self.n])))]
         # self.indices = [np.arange(np.int(np.max([self.N_starts[j]- Na,0])),
         # np.int(np.min([self.N_ends[j]+Nb,N]))) for j in range(len(self.N_starts))]
 
@@ -255,8 +266,8 @@ class GaussianStationaryProcess(object):
         ----------
         y_model : ndarray or list
             modeled signal in the data (deterministic part)
-        psd : ndarray
-            noise spectrum computed at Fourier frequencies
+        psd : PSD_spline instance
+            class to compute the noise PSD
 
         Returns
         -------
@@ -341,7 +352,6 @@ class GaussianStationaryProcess(object):
         psd : PSD_spline instance
             class to compute the noise PSD
 
-
         Returns
         -------
         y_rec : array_like
@@ -378,7 +388,7 @@ class GaussianStationaryProcess(object):
         Parameters
         ----------
         y : array_like
-            observed residuals
+            observed residuals (size N)
         r : array_like
             autocovariance function until lag N_max
         s2 : array_like
@@ -392,26 +402,51 @@ class GaussianStationaryProcess(object):
 
         """
 
-        C = LA.toeplitz(r)
-        # ======================================================================
-        # For precomputations
-        # ======================================================================
-        #indj_obs = np.where(M[indices[0]]==1)[0]
-        #indj_mis = np.where(M[indices[0]]==0)[0]
-        #y_mis = np.array([]) #np.zeros(len(ind_mis),dtype = np.float64)
-        #C_oo = C[np.ix_(indj_obs,indj_obs)]
-        #CooI = LA.inv(C_oo)
+        if self.method == 'nearest':
 
-        # ======================================================================
-        # Gap per gap imputation
-        # ======================================================================
-        results = [self.single_imputation(y[indj], self.mask[indj], C, s2) for indj in self.indices]
-        y_mis = np.concatenate(results)
-        # y_rec = np.zeros(N, dtype = np.float64)
-        # y_rec[self.ind_obs] = y[self.ind_obs]
-        # y_rec[self.ind_mis] = y_mis
+            if self.n_max > 2000:
+                raise ValueError("The maximum size of gap + conditional set is too high.")
 
-        #return y_rec
+            c = LA.toeplitz(r)
+            # ======================================================================
+            # For precomputations
+            # ======================================================================
+            #indj_obs = np.where(M[indices[0]]==1)[0]
+            #indj_mis = np.where(M[indices[0]]==0)[0]
+            #y_mis = np.array([]) #np.zeros(len(ind_mis),dtype = np.float64)
+            #C_oo = c[np.ix_(indj_obs,indj_obs)]
+            #CooI = LA.inv(C_oo)
+
+            # ======================================================================
+            # Gap per gap imputation
+            # ======================================================================
+            results = [self.single_imputation(y[indj], self.mask[indj], c, s2) for indj in self.indices]
+            y_mis = np.concatenate(results)
+            # y_rec = np.zeros(N, dtype = np.float64)
+            # y_rec[self.ind_obs] = y[self.ind_obs]
+            # y_rec[self.ind_mis] = y_mis
+        elif self.method == 'tapered':
+            # Sparse approximation of the covariance
+            print("Build preconditionner...")
+            solve = mecm.computePrecond(r, self.mask, p=self.p, taper='Wendland2')
+            print("Preconditionner built.")
+            # Approximately solve the linear system C_oo x = eps
+            u = solve(y[self.ind_obs])
+            # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
+            y_mis = matrixalgebra.matVectProd(u, self.ind_obs, self.ind_mis, self.mask, s2)
+        elif self.method == 'PCG':
+            # Precompute solver
+            print("Build preconditionner...")
+            solve = mecm.computePrecond(r, self.mask, p=self.p, taper='Wendland2')
+            print("Preconditionner built.")
+            # First guess
+            x0 = np.zeros(len(self.ind_obs))
+            # Solve the linear system C_oo x = eps
+            u = matrixalgebra.PCGsolve(self.ind_obs, self.mask, s2, y[self.ind_obs], x0,
+                                       self.tol, self.n_it_max, solve, 'scipy')
+            # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
+            y_mis = matrixalgebra.matVectProd(u, self.ind_obs, self.ind_mis, self.mask, s2)
+
         return y_mis
 
     def single_imputation(self, yj, maskj, c, psd_2n):
@@ -424,12 +459,12 @@ class GaussianStationaryProcess(object):
         ind_obsj = np.where(maskj == 1)[0]
         ind_misj = np.where(maskj == 0)[0]
 
-        C_mo = c[np.ix_(ind_misj, ind_obsj)]
+        c_mo = c[np.ix_(ind_misj, ind_obsj)]
         #C_mm = C[np.ix_(ind_misj,ind_misj)]
         c_oo_inv = LA.inv(c[np.ix_(ind_obsj, ind_obsj)])
 
-        out = self.conditional_draw(yj[ind_obsj], psd_2n, c_oo_inv, C_mo, ind_obsj, ind_misj, maskj, c)
-        #out = conditionalDraw2(yj[ind_obsj],C_mm,C_mo,c_oo_inv)
+        out = self.conditional_draw(yj[ind_obsj], psd_2n, c_oo_inv, c_mo, ind_obsj, ind_misj, maskj, c)
+        #out = conditionalDraw2(yj[ind_obsj],C_mm,c_mo,c_oo_inv)
 
         return out
 

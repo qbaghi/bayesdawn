@@ -157,6 +157,7 @@ if __name__ == '__main__':
     from pyfftw.interfaces.numpy_fft import fft, ifft
     import configparser
     from optparse import OptionParser
+    from bayesdawn.gaps import gapgenerator
 
     # ==================================================================================================================
     # Load configuration file
@@ -202,6 +203,23 @@ if __name__ == '__main__':
     tm, Xd, Yd, Zd, q = preprocess.preprocess(config, td, i1, i2)
 
     # ==================================================================================================================
+    # Introducing gaps if requested
+    # ==================================================================================================================
+    if config["TimeWindowing"].getboolean("Gaps"):
+        # nd, nf = gapgenerator.generategaps(tm.shape[0], 1/del_t, config["TimeWindowing"].getint("GapNumber"),
+        #                                    config["TimeWindowing"].getfloat("GapDuration"),
+        #                                    gap_type=config["TimeWindowing"]["GapType"],
+        #                                    f_gaps=config["TimeWindowing"].getfloat("GapFrequency"),
+        #                                    wind_type='rect', std_loc=0, std_dur=0)
+
+        nd = [np.int(config["TimeWindowing"].getfloat("GapStartTime")/del_t)]
+        nf = [np.int(config["TimeWindowing"].getfloat("GapEndTime")/del_t)]
+        wd = gapgenerator.windowing(nd, nf, tm.shape[0], window=config["TimeWindowing"]["WindowType"],
+                                    n_wind=config["TimeWindowing"].getint("DecayNumber"))
+    else:
+        wd = gapgenerator.modified_hann(tm.shape[0], n_wind=np.int((config["InputData"].getfloat("EndTime") - tc) / (2*del_t)))
+        # wd = signal.tukey(Xd.shape[0], alpha=(config["InputData"].getfloat("EndTime") - tc) / tobs, sym=True)
+    # ==================================================================================================================
     # Now we get extract the data and transform it to frequency domain
     # ==================================================================================================================
     # # FFT without any windowing
@@ -209,7 +227,7 @@ if __name__ == '__main__':
     # YDf = fft(Yd) * del_t * q
     # ZDf = fft(Zd) * del_t * q
     # FFT with windowing
-    wd = signal.tukey(Xd.shape[0], alpha=(config["InputData"].getfloat("EndTime") - tc)/tobs,  sym=True)
+
     resc = Xd.shape[0]/np.sum(wd)
     XDf = fft(wd * Xd) * del_t * q * resc
     YDf = fft(wd * Yd) * del_t * q * resc
@@ -230,10 +248,9 @@ if __name__ == '__main__':
     # Restrict the frequency band to high SNR region
     inds = np.where((float(config['Model']['MinimumFrequency']) <= freqD)
                     & (freqD <= float(config['Model']['MaximumFrequency'])))[0]
-    # Or convert them
-    params = physics.like_to_waveform(p_sampl)
 
     t1 = time.time()
+    params = physics.like_to_waveform(p_sampl)
     aft, eft, tft = lisaresp.lisabeta_template(params, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
     t2 = time.time()
     print("=================================================================")
@@ -319,13 +336,13 @@ if __name__ == '__main__':
         # Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0
         periodic = [6]
 
-    # # ==================================================================================================================
-    # # Test prior transform consistency
-    # # ==================================================================================================================
-    # # Draw random numbers in [0, 1]
-    # theta_u = np.random.random(len(names))
-    # # Transform to physical parameters
-    # par_ll = prior_transform(theta_u, lower_bounds, upper_bounds)
+    # ==================================================================================================================
+    # Test prior transform consistency
+    # ==================================================================================================================
+    # Draw random numbers in [0, 1]
+    theta_u = np.random.random(len(names))
+    # Transform to physical parameters
+    par_ll = prior_transform(theta_u, lower_bounds, upper_bounds)
     # # Check that they lie within bounds
     # print("Within bounds: "
     #       + str(np.all(np.array([lower_bounds[i] <= par_ll[i] <= upper_bounds[i] for i in range(len(par_ll))]))))
@@ -333,27 +350,28 @@ if __name__ == '__main__':
     # ll_random = log_likelihood(par_ll)
     # t2 = time.time()
     # print('random param loglik = ' + str(ll_random) + ', computed in ' + str(t2-t1) + ' seconds.')
-    #
-    # # Compare reduced and full model
-    # # Full model
-    # # Convert likelihood parameters into waveform-compatible parameters
-    # params_random = physics.like_to_waveform(par_ll)
-    # aft, eft, tft = lisaresp.lisabeta_template(params_random, freqD[inds], tobs, tref=0, t_offset=t_offset,
-    #                                            channels=[1, 2, 3])
-    # sig = [aft, eft, tft]
-    # # params_intr = physics.like_to_waveform_intr(par_ll[i_sampl_intr])
-    # # mat_list = lisaresp.design_matrix(params_intr, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
-    # # amps = [linalg.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, sig[i]))
-    # #         for i in range(len(aet))]
-    # # # Reduced model
-    # # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
-    #
-    # ll_cls_test = likelihoodmodel.LogLike(sig, SA, freqD[inds], tobs, del_t * q,
-    #                                       normalized=config['Model'].getboolean('normalized'),
-    #                                       t_offset=t_offset, channels=[1, 2, 3])
-    #
-    # aet_rec = ll_cls_test.compute_signal_reduced(par_ll[i_sampl_intr])
 
+    # Compare reduced and full model
+    # Full model
+    # Convert likelihood parameters into waveform-compatible parameters
+    params_random = physics.like_to_waveform(par_ll)
+    sig = lisaresp.lisabeta_template(params_random, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
+
+    params_intr = physics.like_to_waveform_intr(par_ll[i_sampl_intr])
+    # mat_list = lisaresp.design_matrix(params_intr, freqD[inds], tobs, tref=0, t_offset=t_offset, channels=[1, 2, 3])
+    # mat_list_weighted = [mat / np.array([SA]).T for mat in mat_list]
+    # amps = [linalg.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, sig[i]))
+    #         for i in range(len(aet))]
+    # amps = [linalg.pinv(np.dot(mat_list_weighted[i].conj().T, mat_list[i])).dot(np.dot(mat_list_weighted[i].conj().T, sig[i]))
+    #         for i in range(len(aet))]
+    # # Reduced model
+    # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
+    #
+    ll_cls_test = likelihoodmodel.LogLike(sig, SA, freqD[inds], tobs, del_t * q,
+                                          normalized=config['Model'].getboolean('normalized'),
+                                          t_offset=t_offset, channels=[1, 2, 3])
+
+    aet_rec = ll_cls_test.compute_signal_reduced(par_ll[i_sampl_intr])
 
     # ==================================================================================================================
     # Prepare data to save during sampling
@@ -416,33 +434,45 @@ if __name__ == '__main__':
                              callback=None, pos0=None,
                              save_path=out_dir + prefix)
 
-    # ==================================================================================================================
-    # Plotting
-    # ==================================================================================================================
-    # fig1, ax = plt.subplots(nrows=2, sharex=True, sharey=True)
-    # ax[0].semilogx(freqD, np.real(ADf))
-    # ax[0].semilogx(freqD[inds], np.real(aft), '--')
-    # ax[1].semilogx(freqD, np.imag(ADf))
-    # ax[1].semilogx(freqD[inds], np.imag(aft), '--')
-    # # ax[0].semilogx(freqD, np.real(XDf))
-    # # ax[0].semilogx(freqD, np.real(Xft), '--')
-    # # ax[1].semilogx(freqD, np.imag(XDf))
-    # # ax[1].semilogx(freqD, np.imag(Xft), '--')
+    # # ==================================================================================================================
+    # # Plotting
+    # # ==================================================================================================================
+    # from plottools import presets
+    # presets.plotconfig(ctype='time', lbsize=16, lgsize=14)
+    #
+    # # Frequency plot
+    # fig1, ax1 = plt.subplots(nrows=2, sharex=True, sharey=True)
+    # ax1[0].semilogx(freqD, np.real(ADf))
+    # ax1[0].semilogx(freqD[inds], np.real(aft), '--')
+    # ax1[1].semilogx(freqD, np.imag(ADf))
+    # ax1[1].semilogx(freqD[inds], np.imag(aft), '--')
+    # # ax1[0].semilogx(freqD, np.real(XDf))
+    # # ax1[0].semilogx(freqD, np.real(Xft), '--')
+    # # ax1[1].semilogx(freqD, np.imag(XDf))
+    # # ax1[1].semilogx(freqD, np.imag(Xft), '--')
     # # plt.xlim([6.955e-3, 6.957e-3])
     # # plt.ylim([-1e-18, 1e-18])
+    #
+    # # Time plot
+    # fig0, ax0 = plt.subplots(nrows=1, sharex=True, sharey=True)
+    # ax0.plot(tm, Xd, 'k')
+    # ax0.plot(tm, wd * np.max(np.abs(Xd)), 'r')
     # plt.show()
 
-    # fig1, ax = plt.subplots(nrows=2, sharex=True, sharey=True)
-    # ax[0].semilogx(freqD[inds], np.real(aft), label='Full')
-    # ax[0].semilogx(freqD[inds], np.real(aet_rec[0]), '--', label='Reduced')
-    # ax[1].semilogx(freqD[inds], np.imag(aft), label='Full')
-    # ax[1].semilogx(freqD[inds], np.imag(aet_rec[0]), '--', label='Reduced')
+    # fig2, ax2 = plt.subplots(nrows=4, sharex=True)
+    # ax2[0].semilogx(freqD[inds], np.real(sig[0]), label='Full')
+    # ax2[0].semilogx(freqD[inds], np.real(aet_rec[0]), '--', label='Reduced')
+    # ax2[1].semilogx(freqD[inds], np.imag(sig[0] - aet_rec[0]), 'k', label='Residuals')
+    # ax2[2].semilogx(freqD[inds], np.imag(sig[0]), label='Full')
+    # ax2[2].semilogx(freqD[inds], np.imag(aet_rec[0]), '--', label='Reduced')
+    # ax2[3].semilogx(freqD[inds], np.imag(sig[0] - aet_rec[0]), 'k', label='Residuals')
+    # # [ax.grid(b=True, which='major') for ax in ax2]
+    # [ax.legend(loc='upper left') for ax in ax2]
     # # ax[0].semilogx(freqD, np.real(XDf))
     # # ax[0].semilogx(freqD, np.real(Xft), '--')
     # # ax[1].semilogx(freqD, np.imag(XDf))
     # # ax[1].semilogx(freqD, np.imag(Xft), '--')
     # # plt.xlim([6.955e-3, 6.957e-3])
     # # plt.ylim([-1e-18, 1e-18])
-    # plt.legend()
     # plt.show()
 

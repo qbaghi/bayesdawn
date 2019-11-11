@@ -608,7 +608,7 @@ class LikelihoodModel(object):
 
 class LogLike(object):
 
-    def __init__(self, data, sn, freq, tobs, del_t, normalized=False, t_offset=52.657, channels=None):
+    def __init__(self, data, sn, freq, tobs, del_t, normalized=False, t_offset=52.657, channels=None, scale=1.0):
         """
 
         Parameters
@@ -628,6 +628,8 @@ class LogLike(object):
         """
 
         self.data = data
+        self.scale = scale
+        self.n_data = self.data[0].shape[0]
         self.sn = sn
         self.freq = freq
         self.tobs = tobs
@@ -635,6 +637,8 @@ class LogLike(object):
         self.nf = len(freq)
         self.t_offset = t_offset
         self.df = self.freq[1] - self.freq[0]
+        self.f = np.fft.fftfreq(self.n_data) / del_t
+        self.inds = np.where((self.freq[0] <= self.f) &  (self.f <= self.freq[-1]))[0]
         if normalized:
             self.ll_norm = self.log_norm()
         else:
@@ -667,6 +671,41 @@ class LogLike(object):
 
         return ll_norm
 
+    def compute_signal(self, par):
+        """
+        Compute the GW signal in the frequency domain
+
+        Parameters
+        ----------
+        par : array_like
+            array of sampling parameters
+
+        Returns
+        -------
+
+        """
+
+        # Convert likelihood parameters into waveform-compatible parameters
+        params = physics.like_to_waveform(par)
+
+        # Compute waveform template
+        # return lisaresp.lisabeta_template(params, self.freq, self.tobs, tref=0, t_offset=self.t_offset, channels=self.channels)
+        ch = lisaresp.lisabeta_template(params, self.freq, self.tobs, tref=0, t_offset=self.t_offset, channels=self.channels)
+
+        return [ch_i * self.scale for ch_i in ch]
+
+    def frequency_to_time(self, y_gw_fft_pos):
+        """
+        Compute the waveform in the time domain from the waveform values in the frequency domain evaluated at positive
+        Fourier frequencies
+        """
+
+        y_gw_fft = np.zeros(self.data[0].shape[0], dtype=np.complex128)
+        y_gw_fft[self.inds] = y_gw_fft_pos
+        y_gw_fft[self.n_data - self.inds] = np.conj(y_gw_fft_pos)
+
+        return np.real(ifft(y_gw_fft))/self.del_t
+
     def log_likelihood(self, par):
         """
 
@@ -681,12 +720,8 @@ class LogLike(object):
 
         """
 
-        # Convert likelihood parameters into waveform-compatible parameters
-        params = physics.like_to_waveform(par)
-
         # Compute waveform template
-        at, et = lisaresp.lisabeta_template(params, self.freq, self.tobs, tref=0, t_offset=self.t_offset,
-                                            channels=self.channels)
+        at, et = self.compute_signal(par)
 
         # (h | y)
         sna = np.sum(np.real(self.data[0]*np.conjugate(at)) / self.sn)
