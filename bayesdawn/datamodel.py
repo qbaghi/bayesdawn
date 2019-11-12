@@ -165,13 +165,11 @@ class GaussianStationaryProcess(object):
 
 
     """
-    def __init__(self, t, y, mask, method='nearest', na=150, nb=150, p=60, tol=1e-6, n_it_max=150):
+    def __init__(self, y, mask, method='nearest', na=150, nb=150, p=60, tol=1e-6, n_it_max=150):
         """
 
         Parameters
         ----------
-        t : array_like
-            vector of time stamps
         y : array_like
             vector of masked data y = x * M
         mask : array_like
@@ -189,18 +187,10 @@ class GaussianStationaryProcess(object):
 
         # Masked data
         self.y = copy.deepcopy(y)
-        # Corresponding times
-        self.t = t
-        # Sampling cadence
-        self.del_t = t[1] - t[0]
-        # Sampling frequency
-        self.fs = 1 / self.del_t
         # The binary mask
-        self.mask = mask[:]
+        self.mask = copy.deepcopy(mask)
         # Total length of the data
         self.n = len(mask)
-        # Observation time
-        self.tobs = self.n * self.del_t
         # Imputation method
         self.method = method
         # Tappering number for sparse approximation of the covariance
@@ -258,6 +248,26 @@ class GaussianStationaryProcess(object):
                                                      np.int(np.min([self.n_ends[self.n_gaps - 1] + nb, self.n])))]
         # self.indices = [np.arange(np.int(np.max([self.N_starts[j]- Na,0])),
         # np.int(np.min([self.N_ends[j]+Nb,N]))) for j in range(len(self.N_starts))]
+        self.solve = None
+
+    def compute_preconditioner(self, autocorr):
+        """
+        Precompute the pre-conditionner operator that looks like Coo
+
+        Parameters
+        ----------
+        autocorr : numpy array
+            noise autocovarinace until lag n_max
+
+        Returns
+        -------
+
+        """
+
+        # Precompute solver
+        print("Build preconditionner...")
+        self.solve = mecm.computePrecond(autocorr, self.mask, p=self.p, taper='Wendland2')
+        print("Preconditionner built.")
 
     def impute(self, y_model, psd):
         """
@@ -280,14 +290,14 @@ class GaussianStationaryProcess(object):
         if type(self.y) == np.ndarray:
             # If there is only one single channel
             if self.n_gaps > 0:
-                return self.draw_missing_data(y_model, psd)
+                return self.draw_missing_data(self.y, y_model, psd)
             else:
                 return self.y
 
         elif type(self.y) == list:
             # If there are several
             if self.n_gaps > 0:
-                return [self.draw_missing_data(y_model[i], psd[i]) for i in range(len(y_model))]
+                return [self.draw_missing_data(self.y[i], y_model[i], psd[i]) for i in range(len(y_model))]
             else:
                 return self.y
 
@@ -339,7 +349,7 @@ class GaussianStationaryProcess(object):
 
         return eps
 
-    def draw_missing_data(self, y_model, psd):
+    def draw_missing_data(self, y, y_model, psd):
         """
 
         Draw the missing data from their conditional distributions on the
@@ -347,6 +357,8 @@ class GaussianStationaryProcess(object):
 
         Parameters
         ----------
+        y : ndarray or list
+            masked data y = mask * x
         y_model : array_like
             vector of modelled signal (size N)
         psd : PSD_spline instance
@@ -369,11 +381,11 @@ class GaussianStationaryProcess(object):
         s2 = psd.calculate(2 * self.n_max)
         t1 = time.time()
         # Impute the missing data: estimation of missing residuals
-        y_mis_res = self.imputation(self.y - y_model, autocorr, s2)
+        y_mis_res = self.imputation(y - y_model, autocorr, s2)
         # Construct the full imputed data vector
         # at observed value this is the same
         y_rec = np.zeros(self.n, dtype=np.float64)
-        y_rec[self.ind_obs] = self.y[self.ind_obs]
+        y_rec[self.ind_obs] = y[self.ind_obs]
         y_rec[self.ind_mis] = y_mis_res + y_model[self.ind_mis]
         t2 = time.time()
         print("Missing data imputation took " + str(t2-t1))
@@ -428,22 +440,21 @@ class GaussianStationaryProcess(object):
         elif self.method == 'tapered':
             # Sparse approximation of the covariance
             print("Build preconditionner...")
-            solve = mecm.computePrecond(r, self.mask, p=self.p, taper='Wendland2')
+            self.solve = mecm.computePrecond(r, self.mask, p=self.p, taper='Wendland2')
             print("Preconditionner built.")
             # Approximately solve the linear system C_oo x = eps
-            u = solve(y[self.ind_obs])
+            u = self.solve(y[self.ind_obs])
             # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
             y_mis = matrixalgebra.matVectProd(u, self.ind_obs, self.ind_mis, self.mask, s2)
         elif self.method == 'PCG':
-            # Precompute solver
-            print("Build preconditionner...")
-            solve = mecm.computePrecond(r, self.mask, p=self.p, taper='Wendland2')
-            print("Preconditionner built.")
+            # Precompute solver if necessary
+            if self.solve is None:
+                self.compute_preconditioner(r)
             # First guess
             x0 = np.zeros(len(self.ind_obs))
             # Solve the linear system C_oo x = eps
             u = matrixalgebra.PCGsolve(self.ind_obs, self.mask, s2, y[self.ind_obs], x0,
-                                       self.tol, self.n_it_max, solve, 'scipy')
+                                       self.tol, self.n_it_max, self.solve, 'scipy')
             # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
             y_mis = matrixalgebra.matVectProd(u, self.ind_obs, self.ind_mis, self.mask, s2)
 

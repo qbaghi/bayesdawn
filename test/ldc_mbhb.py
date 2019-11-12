@@ -242,8 +242,10 @@ if __name__ == '__main__':
     ZDf = ZDf[:Nf]
     df = freqD[1] - freqD[0]
 
-    # Convert Michelson TDI to A, E, T
+    # Convert Michelson TDI to A, E, T (freq. domain)
     ADf, EDf, TDf = ldctools.convert_XYZ_to_AET(XDf, YDf, ZDf)
+    # Convert Michelson TDI to A, E, T (time domain)
+    ad, ed, td = ldctools.convert_XYZ_to_AET(XDf, YDf, ZDf)
 
     # Restrict the frequency band to high SNR region
     inds = np.where((float(config['Model']['MinimumFrequency']) <= freqD)
@@ -286,8 +288,10 @@ if __name__ == '__main__':
     # ==================================================================================================================
     # One-sided PSD
     SA = tdi.noisepsd_AE(freqD[inds], model='Proposal', includewd=None)
-    # Consider only A and E TDI data
+    # Consider only A and E TDI data in frequency domain
     dataAE = [ADf[inds], EDf[inds]]
+    # And in time domain
+    data_ae_time = [ad, ed]
     templateAE = [aft, eft]
     llA1, llE1 = SimpleLogLik(dataAE, templateAE, SA, df, tdi='AET')
     llA2, llE2 = SimpleLogLik(dataAE, dataAE, SA, df, tdi='AET')
@@ -296,7 +300,8 @@ if __name__ == '__main__':
     print('compare E', llE1, llE2, llE3)
     print('total lloglik', llA1 + llE1, llA2 + llE2, llA3 + llE3)
     # Full computation of likelihood
-    ll_cls = likelihoodmodel.LogLike(dataAE, SA, freqD[inds], tobs, del_t * q, normalized=False, t_offset=t_offset)
+    ll_cls = likelihoodmodel.LogLike(data_ae_time, SA, freqD[inds], tobs, del_t * q, normalized=False, t_offset=t_offset,
+                                     model_cls=None, psd_cls=None, counter=1000, wd=wd)
     t1 = time.time()
     lltot = ll_cls.log_likelihood(p_sampl)
     t2 = time.time()

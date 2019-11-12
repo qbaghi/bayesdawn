@@ -8,7 +8,7 @@ Created on Tue Jan 22 17:11:56 2019
 import numpy as np
 import copy
 from scipy import linalg as LA
-from bayesdawn import gaps
+from bayesdawn import gaps, datamodel
 from bayesdawn.utils import physics
 
 # FTT modules
@@ -608,13 +608,14 @@ class LikelihoodModel(object):
 
 class LogLike(object):
 
-    def __init__(self, data, sn, freq, tobs, del_t, normalized=False, t_offset=52.657, channels=None, scale=1.0):
+    def __init__(self, data, sn, freq, tobs, del_t, normalized=False, t_offset=52.657, channels=None, scale=1.0,
+                 model_cls=None, psd_cls=None, n_update=1000, wd=None, wd_full=None):
         """
 
         Parameters
         ----------
         data : array_like
-            DFT of TDI data A, E, T computed at frequencies freq
+            TDI data A, E, T in the time domain
         sn : ndarray
             noise PSD computed at freq
         freq: ndarray
@@ -623,27 +624,58 @@ class LogLike(object):
             observation time
         del_t : float
             data sampling cadence
-        ll_norm : float
-            normalization constant for the log-likelihood
+        normalized : boolean
+            whether to apply normalization constant for the log-likelihood
+        t_offset : float
+            offset time for the waveform start
+        channels : list of ints
+            TDI channels to consider
+        scale : float
+            rescaling factor for waveforms
+        model_cls : bayesdawn.datamodel.GaussianStationaryModel instance
+            data model used for missing data imputation
+        psd_cls : bayesdawn.psdmodel.PSD instance
+            noise PSD model
+        counter : int
+            each time the number of loglikelihood call is a multiple of counter, an update of auxiliary variables
+            (i.e. missing data and PSD) is performed
+
         """
 
         self.data = data
         self.scale = scale
-        self.n_data = self.data[0].shape[0]
         self.sn = sn
         self.freq = freq
         self.tobs = tobs
         self.del_t = del_t
+        # Full data size
+        self.n_data = self.data[0].shape[0]
         self.nf = len(freq)
         self.t_offset = t_offset
         self.df = self.freq[1] - self.freq[0]
         self.f = np.fft.fftfreq(self.n_data) / del_t
-        self.inds = np.where((self.freq[0] <= self.f) &  (self.f <= self.freq[-1]))[0]
+        # Fourier bin indices where we restrict the analysis
+        self.inds = np.where((self.freq[0] <= self.f) & (self.f <= self.freq[-1]))[0]
+
+        # Time windowing
+        if wd is None:
+            self.wd = np.ones(data[0].shape[0])
+        else:
+            self.wd = wd
+        if wd_full is None:
+            self.wd_full = np.ones(data[0].shape[0])
+        else:
+            self.wd_full = wd_full
+
+        self.resc = self.n_data / np.sum(self.wd)
+        self.resc_full = self.n_data / np.sum(self.wd_full)
+        # Concert time data to frequency domain and restrict it to the band of interest
+        self.data_dft = [fft(self.wd * dat)[self.inds] * self.del_t * self.resc for dat in self.data]
+
         if normalized:
             self.ll_norm = self.log_norm()
         else:
             self.ll_norm = 0
-
         # The full set of parameters is m1, m2, chi1, chi2, tc, dist, incl, phi0, lam, bet, psi
         # Indices of extrinsic parameters
         self.i_ext = [5, 6, 7, 10]
@@ -654,6 +686,58 @@ class LogLike(object):
             self.channels = [1, 2]
         else:
             self.channels = channels
+
+        # For missing data imputation
+        self.model = model_cls
+        # For noise PSD estimation
+        self.psd = psd_cls
+        if (self.model is None) & (self.psd is None):
+            self.n_update = np.inf
+        else:
+            self.n_update = n_update
+        # Counter of the number of likelihood calls
+        self.counter = 0
+
+    def reset_counter(self):
+
+        self.counter = 0
+
+    def update_psd(self, y_gw_list):
+        """
+
+        Parameters
+        ----------
+        y_gw_list : list
+            list of waveform in the time domain for each channel calculated in the band of interest (at indices inds)
+
+        Returns
+        -------
+
+        """
+
+        # Estimate PSD parameters
+        self.psd.estimate(self.data[0] - y_gw_list[0])
+        self.sn = self.psd.calculate(self.freq)
+
+    def update_missing_data(self, y_gw_list):
+        """
+        Update the value of missing data
+
+        Parameters
+        ----------
+        y_gw_list : list
+            list of waveform in the time domain for each channel calculated in the band of interest (at indices inds)
+
+        Returns
+        -------
+        Nothing, just update the attribute self.data_dft
+
+        """
+
+        # Impute missing data
+        y_imp = self.model.impute(y_gw_list, [self.psd, self.psd])
+        # Transform back to Fourier domain
+        self.data_dft = [fft(y_imp0 * self.wd_full)[self.inds] * self.del_t * self.resc_full for y_imp0 in y_imp]
 
     def log_norm(self):
         """
@@ -667,7 +751,7 @@ class LogLike(object):
         """
 
         ll_norm = - self.nf/2 * np.log(2 * np.pi * 2 * self.del_t) - 0.5 * np.sum(np.log(self.sn)) \
-                  - 0.5 * np.sum(np.abs(self.data[0]) ** 2 / self.sn + np.abs(self.data[1]) ** 2 / self.sn)
+                  - 0.5 * np.sum(np.abs(self.data_dft[0]) ** 2 / self.sn + np.abs(self.data_dft[1]) ** 2 / self.sn)
 
         return ll_norm
 
@@ -700,7 +784,7 @@ class LogLike(object):
         Fourier frequencies
         """
 
-        y_gw_fft = np.zeros(self.data[0].shape[0], dtype=np.complex128)
+        y_gw_fft = np.zeros(self.n_data, dtype=np.complex128)
         y_gw_fft[self.inds] = y_gw_fft_pos
         y_gw_fft[self.n_data - self.inds] = np.conj(y_gw_fft_pos)
 
@@ -724,8 +808,8 @@ class LogLike(object):
         at, et = self.compute_signal(par)
 
         # (h | y)
-        sna = np.sum(np.real(self.data[0]*np.conjugate(at)) / self.sn)
-        sne = np.sum(np.real(self.data[1]*np.conjugate(et)) / self.sn)
+        sna = np.sum(np.real(self.data_dft[0] * np.conjugate(at)) / self.sn)
+        sne = np.sum(np.real(self.data_dft[1] * np.conjugate(et)) / self.sn)
 
         # (h | h)
         aa = np.sum(np.abs(at) ** 2 / self.sn)
@@ -759,7 +843,7 @@ class LogLike(object):
         mat_list_weighted = [mat_list[i] / np.array([self.sn]).T for i in range(len(self.channels))]
         # Compute amplitudes
         amps = [LA.pinv(np.dot(mat_list_weighted[i].conj().T, mat_list[i])).dot(np.dot(mat_list_weighted[i].conj().T,
-                                                                                       self.data[i]))
+                                                                                       self.data_dft[i]))
                 for i in range(len(self.channels))]
         # amps = [LA.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, self.data[i]))
         #         for i in range(len(self.channels))]
@@ -782,6 +866,9 @@ class LogLike(object):
 
         """
 
+        # Record that the likelihood has been called
+        self.counter += 1
+        # Compute the signal in the frequency domain
         at, et = self.compute_signal_reduced(par_intr)
         # params_intr = physics.like_to_waveform_intr(par_intr)
         #
@@ -795,17 +882,29 @@ class LogLike(object):
         #           for i in range(2)])
 
         # return np.real(ll + self.ll_norm)
+        if (self.counter % self.n_update == 0) & (self.counter > 0):
+            if (self.psd is not None) | (self.model is not None):
+                y_gw_fft_list = [at, et]
+                # Convert the signal in the time domain
+                y_gw = [self.frequency_to_time(y_gw_fft_pos) for y_gw_fft_pos in y_gw_fft_list]
+                # Update PSD if requested
+                if self.psd is not None:
+                    self.update_psd(y_gw)
+                    print("PSD updated at function call " + str(self.counter))
+                if self.model is not None:
+                    self.update_missing_data(y_gw)
+                    print("Missing data updated at function call " + str(self.counter))
 
         # (h | y)
-        sna = np.sum(np.real(self.data[0] * np.conjugate(at)) / self.sn)
-        sne = np.sum(np.real(self.data[1] * np.conjugate(et)) / self.sn)
+        sna = np.sum(np.real(self.data_dft[0] * np.conjugate(at)) / self.sn)
+        sne = np.sum(np.real(self.data_dft[1] * np.conjugate(et)) / self.sn)
 
         # (h | h)
         aa = np.sum(np.abs(at) ** 2 / self.sn)
         ee = np.sum(np.abs(et) ** 2 / self.sn)
 
         # (h | y) - 1/2 (h | h)
-        llA = 4.0 * self.df * (sna - 0.5 * aa)
-        llE = 4.0 * self.df * (sne - 0.5 * ee)
+        ll_a = 4.0 * self.df * (sna - 0.5 * aa)
+        ll_e = 4.0 * self.df * (sne - 0.5 * ee)
 
-        return llA + llE + self.ll_norm
+        return ll_a + ll_e + self.ll_norm

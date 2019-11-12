@@ -1,295 +1,295 @@
+# Standard useful python module
 import numpy as np
-import datetime
-import pandas as pd
-# import myplots
 import time
-import h5py
-import pickle
-# from scipy import signal
-from bayesdawn.waveforms import lisaresp
-from bayesdawn import likelihoodmodel, dasampler, datamodel, psdmodel, posteriormodel
-from bayesdawn.utils import loadings
-from bayesdawn import samplers
+from scipy import linalg
+# LDC modules
 import tdi
+# MC Sampler modules
 import dynesty
-from dynesty.dynamicsampler import stopping_function, weight_function
-import ptemcee
-# FTT modules
-import pyfftw
+from bayesdawn.utils import physics
+from bayesdawn.waveforms import lisaresp
+from bayesdawn import likelihoodmodel
 
-pyfftw.interfaces.cache.enable()
-from pyfftw.interfaces.numpy_fft import fft, ifft
+
+def prior_transform(theta_u, lower_bound, upper_bound):
+
+    # order in theta
+     # 0   1   2   3     4      5     6  7    8    9    10
+    # [Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0]
+    theta = lower_bound + (upper_bound - lower_bound) * theta_u
+
+    return theta
 
 
 if __name__ == '__main__':
 
+    # Standard modules
+    from scipy import signal
+    import datetime
+    import pickle
+    from bayesdawn import samplers, posteriormodel, datamodel, psdmodel
+    from bayesdawn.utils import loadings, preprocess
+    # For parallel computing
+    # from multiprocessing import Pool, Queue
+    # LDC tools
+    import lisabeta.lisa.ldctools as ldctools
+    # Plotting modules
+    import matplotlib.pyplot as plt
+    import matplotlib as mpl
+    # FTT modules
+    import fftwisdom
+    import pyfftw
+    pyfftw.interfaces.cache.enable()
+    from pyfftw.interfaces.numpy_fft import fft, ifft
     import configparser
     from optparse import OptionParser
+    from bayesdawn.gaps import gapgenerator
 
     # ==================================================================================================================
-    parser = OptionParser(usage="usage: %prog [options] YYY.txt", version="08.02.2018, Quentin Baghi")
-    # ### Options  ###
-    # parser.add_option("-o", "--out_dir",
-    #                   type="string", dest="out_dir", default="",
-    #                   help="Path to the directory where the results are written [default ]")
-    #
-    # parser.add_option("-i", "--in_dir",
-    #                   type="string", dest="in_dir", default="",
-    #                   help="Path to the directory where the simulation file is stored [default ]")
-
+    # Load configuration file
+    # ==================================================================================================================
+    parser = OptionParser(usage="usage: %prog [options] YYY.txt", version="10.28.2018, Quentin Baghi")
     (options, args) = parser.parse_args()
-    if args == []:
-        config_file = "../configs/config_ptemcee.ini"
+    if not args:
+        config_file = "../configs/config_ldc.ini"
     else:
         config_file = args[0]
     # ==================================================================================================================
     config = configparser.ConfigParser()
-    # config.read("../configs/config_dynesty.ini")
     config.read(config_file)
-    # ==================================================================================================================
-    # Input file name
-    hdf5_name = config["InputData"]["FilePath"]
-    # Load simulation data
-    time_vect, signal_list, noise_list, params = loadings.load_simulation(hdf5_name)
-    t_sig = time_vect[:]
-    del_t = t_sig[1] - t_sig[0]
-    scale = 1.0
-    # i1 = np.int(np.float(config["InputData"]["StartTime"]) / del_t)
-    # i2 = np.int(np.float(config["InputData"]["EndTime"]) / del_t)
-    i1 = 0
-    i2 = signal_list[0].shape[0]
-    y_list = [(signal_list[j][i1:i2] + noise_list[j][i1:i2])/scale for j in range(len(signal_list))]
-    y_fft_list = [fft(y0) for y0 in y_list]
-    n = len(y_list[0])
-    fs = 1 / del_t
-    # No missing data
-    mask = np.ones(n)
+    fftwisdom.load_wisdom()
 
     # ==================================================================================================================
-    # Instantiate waveform class
+    # Unpacking the hdf5 file and getting data and source parameters
     # ==================================================================================================================
-    signal_cls = lisaresp.MBHBWaveform()
+    p, td = loadings.load_ldc_data(config["InputData"]["FilePath"])
+    del_t = float(p.get("Cadence"))
+    tobs = float(p.get("ObservationDuration"))
 
     # ==================================================================================================================
-    # Instantiate GW model class
+    # Get the parameters
+    # ==================================================================================================================
+    # Get parameters as an array from the hdf5 structure (table)
+    p_sampl = physics.get_params(p, sampling=True)
+    tc = p_sampl[2]
+
+    # ==================================================================================================================
+    # Pre-processing data: anti-aliasing and filtering
+    # ==================================================================================================================
+    if config['InputData'].getboolean('trim'):
+        i1 = np.int(config["InputData"].getfloat("StartTime") / del_t)
+        i2 = np.int(config["InputData"].getfloat("EndTime") / del_t)
+        t_offset = 52.657 + config["InputData"].getfloat("StartTime")
+        tobs = (i2 - i1) * del_t
+    else:
+        i1 = 0
+        i2 = np.int(td.shape[0])
+        t_offset = 52.657
+
+    tm, Xd, Yd, Zd, q = preprocess.preprocess(config, td, i1, i2, scale=config["InputData"].getfloat("rescale"))
+
+    # ==================================================================================================================
+    # Introducing gaps if requested
+    # ==================================================================================================================
+    if config["TimeWindowing"].getboolean("Gaps"):
+        nd, nf = gapgenerator.generategaps(tm.shape[0], 1/del_t, config["TimeWindowing"].getint("GapNumber"),
+                                           config["TimeWindowing"].getfloat("GapDuration"),
+                                           gap_type=config["TimeWindowing"]["GapType"],
+                                           f_gaps=config["TimeWindowing"].getfloat("GapFrequency"),
+                                           wind_type='rect', std_loc=0, std_dur=0)
+
+        # nd = [np.int(config["TimeWindowing"].getfloat("GapStartTime")/del_t)]
+        # nf = [np.int(config["TimeWindowing"].getfloat("GapEndTime")/del_t)]
+        wd = gapgenerator.windowing(nd, nf, tm.shape[0], window=config["TimeWindowing"]["WindowType"],
+                                    n_wind=config["TimeWindowing"].getint("DecayNumber"))
+        mask = gapgenerator.windowing(nd, nf, tm.shape[0], window='rect')
+        wd_full = gapgenerator.modified_hann(tm.shape[0],
+                                             n_wind=np.int((config["InputData"].getfloat("EndTime") - tc) / (2*del_t)))
+    else:
+        wd = gapgenerator.modified_hann(tm.shape[0],
+                                        n_wind=np.int((config["InputData"].getfloat("EndTime") - tc) / (2*del_t)))
+        wd_full = wd[:]
+        # wd = signal.tukey(Xd.shape[0], alpha=(config["InputData"].getfloat("EndTime") - tc) / tobs, sym=True)
+
+    # ==================================================================================================================
+    # Now we get extract the data and transform it to frequency domain
+    # ==================================================================================================================
+    resc = Xd.shape[0]/np.sum(wd)
+    XDf = fft(wd * Xd) * del_t * q * resc
+    YDf = fft(wd * Yd) * del_t * q * resc
+    ZDf = fft(wd * Zd) * del_t * q * resc
+
+    freqD = np.fft.fftfreq(len(tm), del_t * q)
+    # Convert Michelson TDI to A, E, T (freq. domain)
+    ADf, EDf, TDf = ldctools.convert_XYZ_to_AET(XDf, YDf, ZDf)
+    # Convert Michelson TDI to A, E, T (time domain)
+    ad, ed, td = ldctools.convert_XYZ_to_AET(Xd, Yd, Zd)
+
+    # Restrict the frequency band to high SNR region
+    inds = np.where((float(config['Model']['MinimumFrequency']) <= freqD)
+                    & (freqD <= float(config['Model']['MaximumFrequency'])))[0]
+    aet = [ADf[inds], EDf[inds], TDf[inds]]
+    # Restriction of sampling parameters to instrinsic ones Mc, q, tc, chi1, chi2, np.sin(bet), lam
+    i_sampl_intr = [0, 1, 2, 3, 4, 7, 8]
+    print("=================================================================")
+
+    # Consider only A and E TDI data in frequency domain
+    dataAE = [ADf[inds], EDf[inds]]
+    # And in time domain
+    data_ae_time = [ad, ed]
+    fftwisdom.save_wisdom()
+
+    # ==================================================================================================================
+    # Auxiliary parameter classes
+    # ==================================================================================================================
+    if config["PSD"].getboolean("estimation"):
+        print("PSD estimation enabled.")
+        psd_cls = psdmodel.PSDSpline(tm.shape[0], 1 / del_t, J=config["PSD"].getint("knotNumber"),
+                                     D=config["PSD"].getint("SplineOrder"),
+                                     fmin=1 / (del_t * tm.shape[0]) * 1.05,
+                                     fmax=1 / (del_t * 2))
+        psd_cls.estimate(ad)
+        sa = psd_cls.calculate(freqD[inds])
+    else:
+        psd_cls = None
+        # One-sided PSD
+        sa = tdi.noisepsd_AE(freqD[inds], model='Proposal', includewd=None)
+
+    if config["Imputation"].getboolean("imputation"):
+        print("Missing data imputation enabled.")
+        data_cls = datamodel.GaussianStationaryProcess(data_ae_time, mask, method=config["Imputation"]['method'],
+                                                       na=150, nb=150, p=config["Imputation"].getint("precondOrder"),
+                                                       tol=config["Imputation"].getfloat("tolerance"),
+                                                       n_it_max=config["Imputation"].getint("maximumIterationNumber"))
+
+        data_cls.compute_preconditioner(psd_cls.calculate_autocorr(data_cls.n)[0:data_cls.n_max])
+
+    else:
+        data_cls = None
+
+
+    # ==================================================================================================================
+    # Instantiate likelihood class
+    # ==================================================================================================================
+    ll_cls = likelihoodmodel.LogLike(data_ae_time, sa, freqD[inds], tobs, del_t * q,
+                                     normalized=config['Model'].getboolean('normalized'),
+                                     t_offset=t_offset, channels=[1, 2],
+                                     scale=config["InputData"].getfloat("rescale"),
+                                     model_cls=data_cls, psd_cls=psd_cls,
+                                     n_update=config['Sampler'].getint('AuxiliaryParameterUpdateNumber'),
+                                     wd=wd,
+                                     wd_full=wd_full)
+
+    # ==================================================================================================================
+    # Testing likelihood
+    # ==================================================================================================================
+    t1 = time.time()
+    if config['Model'].getboolean('reduced'):
+        aft, eft = ll_cls.compute_signal_reduced(p_sampl[i_sampl_intr])
+    else:
+        aft, eft = ll_cls.compute_signal(p_sampl)
+    t2 = time.time()
+    print('Waveform Calculated in ' + str(t2 - t1) + ' seconds.')
+
+    # ==================================================================================================================
+    # Get parameter names and bounds
     # ==================================================================================================================
     # Get all parameter name keys
     names = [key for key in config['ParametersLowerBounds']]
     # Get prior bound values
-    bounds = [[float(config['ParametersLowerBounds'][name]), float(config['ParametersUpperBounds'][name])]
+    bounds = [[config['ParametersLowerBounds'].getfloat(name), config['ParametersUpperBounds'].getfloat(name)]
               for name in names]
-
+    lower_bounds = np.array([bound[0] for bound in bounds])
+    upper_bounds = np.array([bound[1] for bound in bounds])
+    # Print it
+    [print("Bounds for parameter " + names[i] + ": " + str(bounds[i])) for i in range(len(names))]
+    # If reduced likelihood is chosen, sample only intrinsic parameters
     if config['Model'].getboolean('reduced'):
-        # Create data analysis GW model with instrinsic parameters only
-        names = np.array(names)[signal_cls.i_intr]
-        bounds = np.array(bounds)[signal_cls.i_intr]
-        params0 = np.array(params)[signal_cls.i_intr]
-        periodic = [5]
+        names = np.array(names)[i_sampl_intr]
+        lower_bounds = lower_bounds[i_sampl_intr]
+        upper_bounds = upper_bounds[i_sampl_intr]
+        log_likelihood = ll_cls.log_likelihood_reduced
+        print("Reduced likelihood chosen, with intrinsic parameters: ")
+        print(names)
+        # Mc, q, tc, chi1, chi2, np.sin(bet), lam
     else:
-        # Create data analysis GW model with the full parameter vector
-        params0 = np.array(params)
-        periodic = [7, 8, 10]
-
-    distribs = ['uniform' for name in names]
-    channels = ['A', 'E', 'T']
-
-    # Upper bounds
-    lo = np.array([bound[0] for bound in bounds])
-    # Lower bounds
-    hi = np.array([bound[1] for bound in bounds])
+        log_likelihood = ll_cls.log_likelihood
+        # Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0
+        periodic = [6]
 
     # ==================================================================================================================
-    # Creation of data class instance
+    # Prepare data to save during sampling
     # ==================================================================================================================
-    dat_cls = datamodel.GaussianStationaryProcess(time_vect, y_list, mask)
-
-    # ==================================================================================================================
-    # Creation of PSD class
-    # ==================================================================================================================
-    psd_cls = psdmodel.PSDTheoretical(n, fs, channels=channels, scale=scale)
-    spectrum_list = psd_cls.calculate(n)
-
-
-    # ==================================================================================================================
-    # Instanciate likelihood class
-    # ==================================================================================================================
-    model_cls = likelihoodmodel.LikelihoodModel(signal_cls,
-                                                psd_cls,
-                                                dat_cls,
-                                                names=names,
-                                                channels=channels,
-                                                fmin=float(config['Model']['MinimumFrequency']),
-                                                fmax=float(config['Model']['MaximumFrequency']),
-                                                nsources=1,
-                                                reduced=config['Model'].getboolean('reduced'),
-                                                window = 'modified_hann',
-                                                n_wind=int(config["TimeWindowing"]["DecayNumber"]),
-                                                n_wind_psd=int(config["TimeWindowing"]["DecayNumberPSD"]),
-                                                imputation=config['Sampler'].getboolean('MissingDataImputation'),
-                                                psd_estimation=config['Sampler'].getboolean('PSDEstimation'),
-                                                normalized=config['Model'].getboolean('normalized'),
-                                                n_update=int(config['Sampler']['AuxiliaryParameterUpdateNumber']))
-
-
-    # ==================================================================================================================
-    # Test of likelihood calculation
-    # ==================================================================================================================
-    # Full parameter vector
-    t1 = time.time()
-    test0 = model_cls.log_likelihood(params0) + model_cls.log_norm
-    t2 = time.time()
-    print("Likelihood computation time: " + str(t2 - t1))
-
-    # ==================================================================================================================
-    # Creation of sampler class instance and start the Monte-Carlo sampling
-    # ==================================================================================================================
-    print("Chosen sampler: " + config["Sampler"]["Type"])
-    np.random.seed(int(config["Sampler"]["RandomSeed"]))
-    n_save = int(config['Sampler']['SavingNumber'])
     # Append current date and prefix to file names
     now = datetime.datetime.now()
     prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
     out_dir = config["OutputData"]["DirectoryPath"]
+    print("Chosen saving path: " + out_dir)
     # Save the configuration file used for the run
-    with open(out_dir + prefix + "_config.ini", 'w') as configfile:
+    with open(out_dir + prefix + "config.ini", 'w') as configfile:
         config.write(configfile)
 
-    print("start sampling...")
-    def stop_and_save(results, args=None, rstate=None, M=None, return_vals=False):
-
-        print("Save data after reaching " + str(results.samples.shape[0]) + " samples.")
-        if (results.samples.shape[0] % n_save == 0) & (results.samples.shape[0] != 0):
-            df = pd.DataFrame(results.samples[-n_save:, :], columns=names)
-            df.to_hdf(out_dir + prefix + 'chains_temp.hdf5', 'chain', append=True, mode='a', format='table')
-
-        return dynesty.dynamicsampler.stopping_function(results, args=args, rstate=rstate, M=M, return_vals=return_vals)
+    # ==================================================================================================================
+    # Start sampling
+    # ==================================================================================================================
+    # Set seed
+    np.random.seed(int(config["Sampler"]["RandomSeed"]))
+    # Multiprocessing pool
+    # pool = Pool(4)
 
     if config["Sampler"]["Type"] == 'dynesty':
-        nlive = np.int(config["Sampler"]["WalkerNumber"])
+        # Instantiate sampler
+        if config['Sampler'].getboolean('dynamic'):
+            sampler = dynesty.DynamicNestedSampler(log_likelihood, prior_transform, ndim=len(names),
+                                                   bound='multi', sample='slice', periodic=periodic,
+                                                   ptform_args=(lower_bounds, upper_bounds), ptform_kwargs=None)
+                                                   # pool=pool, queue_size=4)
+            # # Start run
+            # dsampl.run_nested(dlogz_init=0.01, nlive_init=config["Sampler"].getint("WalkerNumber"),
+            # nlive_batch=500, wt_kwargs={'pfrac': 1.0},
+            #                   stop_kwargs={'pfrac': 1.0})
+        else:
+            # Instantiate sampler
+            sampler = dynesty.NestedSampler(log_likelihood, prior_transform, ndim=len(names),
+                                            bound='multi', sample='slice', periodic=periodic,
+                                            ptform_args=(lower_bounds, upper_bounds),
+                                            nlive=int(config["Sampler"]["WalkerNumber"]))
 
-        def uniform2param(u):
-            return posteriormodel.unwrap(u, lo, hi)
+        print("n_live_init = " + config["Sampler"]["WalkerNumber"])
+        print("Save samples every " + config['Sampler']['SavingNumber'] + " iterations.")
 
-        # Instantiate the sampler
-        # sampler = dynesty.DynamicNestedSampler(model_cls.log_likelihood,
-        #                                        uniform2param,
-        #                                        model_cls.ndim_tot,
-        #                                        bound='multi',
-        #                                        sample='slice',
-        #                                        periodic=periodic)
-
-        sampler = dynesty.NestedSampler(model_cls.log_likelihood, uniform2param, model_cls.ndim_tot,
-                                        bound='multi', sample='slice', nlive=int(config["Sampler"]["WalkerNumber"]))
-
-        # Instantiate the sampler
-        # # Run the sampler
-        # sampler.run_nested(nlive_init=int(config["Sampler"]["WalkerNumber"]), maxiter_init=None, maxcall_init=None,
-        #                    dlogz_init=0.01, nlive_batch=500, wt_function=None, wt_kwargs={'pfrac': 1.0},
-        #                    stop_kwargs={'pfrac': 1.0}, maxiter_batch=None, maxcall_batch=None,
-        #                    maxiter=int(config["Sampler"]["MaximumIterationNumber"]),
-        #                    print_progress=config['Sampler'].getboolean('printProgress'))
-
-        # # Baseline run.
-        # it = 0
-        # it_max = int(int(config["Sampler"]["MaximumIterationNumber"])/2)
-        # print("Initial sampling begins")
-        # for results in sampler.sample_initial(nlive=500):
-        #
-        #     if (it % n_save == 0) & (n_save != 0):
-        #         print("Saving results at iteration " + str(it))
-        #         file_object = open(out_dir + prefix + "initial_save.p", "wb")
-        #         pickle.dump(sampler.results, file_object)
-        #         file_object.close()
-        #
-        #     it += 1
-        #
-        # # Add batches until we hit the stopping criterion.
-        # it = 0
-        # print("Batch sampling begins")
-        # while True:
-        #     stop = stopping_function(sampler.results)  # evaluate stop
-        #     if not stop:
-        #         logl_bounds = weight_function(sampler.results)  # derive bounds
-        #         for results in sampler.sample_batch(logl_bounds=logl_bounds, maxiter=it_max):
-        #             if (it % n_save == 0) & (n_save != 0):
-        #                 print("Saving results at iteration " + str(it))
-        #                 file_object = open(out_dir + prefix + "batch_save.p", "wb")
-        #                 pickle.dump(sampler.results, file_object)
-        #             it += 1
-        #
-        #         sampler.combine_runs()  # add new samples to previous results
-        #     else:
-        #         break
-
-        # The main nested sampling loop.
-        print("Main nested sampling loop starts...")
-        for it, res in enumerate(sampler.sample(maxiter=int(config["Sampler"]["MaximumIterationNumber"]),
-                                                save_samples=True)):
-            # If it is a multiple of n_save, run the callback function
-            if (it % n_save == 0) & (n_save != 0):
-                print("Saving results at iteration " + str(it))
-                file_object = open(out_dir + prefix + "initial_save.p", "wb")
-                pickle.dump(sampler.results, file_object)
-                file_object.close()
-            else:
-                pass
-
-        # Adding the final set of live points.
-        print("Adding the final set of live points...")
-        for it_final, res in enumerate(sampler.add_live_points()):
-            if (it_final % n_save == 0) & (n_save != 0):
-                file_object = open(out_dir + prefix + "final_save.p", "wb")
-                pickle.dump(sampler.results, file_object)
-                file_object.close()
-            else:
-                pass
+        samplers.run_and_save(sampler, nlive=config["Sampler"].getint("WalkerNumber"),
+                              n_save=config['Sampler'].getint('SavingNumber'),
+                              n_iter=config["Sampler"].getint("MaximumIterationNumber"),
+                              file_path=out_dir + prefix, dynamic=config['Sampler'].getboolean('dynamic'))
 
     elif config["Sampler"]["Type"] == 'ptemcee':
 
-        # sampler = ptemcee.Sampler(int(config["Sampler"]["WalkerNumber"]),
-        #                           model_cls.ndim_tot,
-        #                           model_cls.log_likelihood,
-        #                           posteriormodel.logp,
-        #                           ntemps=int(config["Sampler"]["TemperatureNumber"]),
-        #                           loglargs=(spectrum_list, y_fft_list),
-        #                           logpargs=(lo, hi))
         sampler = samplers.ExtendedPTMCMC(int(config["Sampler"]["WalkerNumber"]),
-                                          model_cls.ndim_tot,
-                                          model_cls.log_likelihood,
+                                          len(names),
+                                          log_likelihood,
                                           posteriormodel.logp,
                                           ntemps=int(config["Sampler"]["TemperatureNumber"]),
-                                          logpargs=(lo, hi))
+                                          logpargs=(lower_bounds, upper_bounds))
 
-        result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]), n_save,
-                             int(config["Sampler"]["thinningNumber"]), callback=None, pos0=None,
+        result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
+                             config['Sampler'].getint('SavingNumber'),
+                             int(config["Sampler"]["thinningNumber"]),
+                             callback=None, pos0=None,
                              save_path=out_dir + prefix)
-        # Run the sampler
-        # result = sampler.run_mcmc(p0=None, iterations=int(config["Sampler"]["MaximumIterationNumber"]),
-        #                           thin=int(config["Sampler"]["thinningNumber"]),
-        #                           storechain=True, adapt=False, swap_ratios=False)
-    # pos, lnlike0, lnprob0
-    # ==================================================================================================================
-    # Saving the data finally
-    # ==================================================================================================================
-    fh5 = h5py.File(out_dir + prefix + config["OutputData"]["FileSuffix"], 'w')
-    if config["Sampler"]["Type"] == 'dynesty':
-        fh5.create_dataset("chains/chain", data=sampler.results.samples)
-        fh5.create_dataset("chains/logl", data=sampler.results.logl)
-        fh5.create_dataset("chains/logwt", data=sampler.results.logwt)
-        fh5.create_dataset("chains/logvol", data=sampler.results.logvol)
-        fh5.create_dataset("chains/logz", data=sampler.results.logz)
-        pickle.dump(sampler.results, open(out_dir + prefix + "save.p", "wb"))
 
-    elif config["Sampler"]["Type"] == 'ptemcee':
-        fh5.create_dataset("chains/chain", data=sampler.chain)
-        fh5.create_dataset("chains/lnlike", data=result[1])
-        fh5.create_dataset("chains/lnprob", data=result[2])
-        fh5.create_dataset("temperatures/beta_hist", data=sampler._beta_history)
-
-    fh5.close()
-
-
-
-
+    # # ==================================================================================================================
+    # # Plotting
+    # # ==================================================================================================================
+    # from plottools import presets
+    # presets.plotconfig(ctype='frequency', lbsize=16, lgsize=14)
+    #
+    # # Frequency plot
+    # fig1, ax1 = plt.subplots(nrows=2, sharex=True, sharey=True)
+    # ax1[0].semilogx(freqD, np.real(ADf))
+    # ax1[0].semilogx(freqD[inds], np.real(aft), '--')
+    # ax1[1].semilogx(freqD, np.imag(ADf))
+    # ax1[1].semilogx(freqD[inds], np.imag(aft), '--')
+    # plt.show()
 
 
