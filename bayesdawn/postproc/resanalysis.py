@@ -51,7 +51,8 @@ def log_evidence_estimate(logl, betas, fburnin=0.1):
 
 
 def cornerplot(s_list, truths_vect, offset, rscales, labels, colors=['k', 'gray', 'b'], limits=None, fontsize=16,
-               bins=50, truth_color='cadetblue', figsize=(9, 8.5), linewidth=1):
+               bins=50, truth_color='cadetblue', figsize=(9, 8.5), linewidth=1, smooth=1.0, smooth1d=1.0,
+               plot_datapoints=False):
     """
 
     Parameters
@@ -90,18 +91,20 @@ def cornerplot(s_list, truths_vect, offset, rscales, labels, colors=['k', 'gray'
         truths_res = (truths_vect[0:s_list[0].shape[1]]-offset)*rscales
     else:
         truths_res = None
-    # truths_res = (truths[sample_list[0].shape[1]:] - offset) * rscales
+
     ndim = s_list[0].shape[1]
 
-    #fig, axes = plt.subplots(ndim, ndim, figsize=(8, 8))  # ,sharex=True)
-    fig, axes = plt.subplots(ndim, ndim, figsize=figsize)  # ,sharex=True)
+    fig, axes = plt.subplots(ndim, ndim, figsize=figsize)
 
     fig = corner.corner((s_list[0]-offset)*rscales, truths=truths_res,
                         labels=labels, range=limits,
                         color=colors[0],
-                        plot_datapoints=False, fill_contours=True, bins=bins,
-                        smooth=1.0, label_kwargs={"fontsize": fontsize}, hist_kwargs={"linewidth": linewidth},
-                        truth_color=truth_color, fig=fig)
+                        plot_datapoints=plot_datapoints, fill_contours=True, bins=bins,
+                        smooth=smooth,
+                        smooth1d=smooth1d,
+                        label_kwargs={"fontsize": fontsize},
+                        hist_kwargs={"linewidth": linewidth},
+                        truth_color=truth_color, fig=fig, use_math_text=True)
 
     # fig = plt.figure(figsize = (8,8))
 
@@ -110,9 +113,10 @@ def cornerplot(s_list, truths_vect, offset, rscales, labels, colors=['k', 'gray'
             fig = corner.corner((s_list[j]-offset)*rscales, truths=truths_res,
                                 labels=labels, range=limits,
                                 color=colors[j],
-                                plot_datapoints=False, fill_contours=True, bins=bins,
-                                smooth=1.0, label_kwargs={"fontsize": fontsize}, hist_kwargs={"linewidth": linewidth},
-                                truth_color=truth_color, fig=fig)
+                                plot_datapoints=plot_datapoints, fill_contours=True, bins=bins,
+                                smooth=smooth, smooth1d=smooth1d,
+                                label_kwargs={"fontsize": fontsize}, hist_kwargs={"linewidth": linewidth},
+                                truth_color=truth_color, fig=fig, use_math_text=True)
 
 
     return fig, axes
@@ -190,9 +194,7 @@ def jointplot(s_list, truths_vect, labels, legend_labels, kind="kde", colors=['k
 
     graph = sns.JointGrid(labels[0], labels[1], data=df, space=0.0, ratio=5)
 
-
-    graph = graph.plot_joint(sns.kdeplot, color=colors[i],
-                             linestyles=linestyles[i], label=legend_labels[i],
+    graph = graph.plot_joint(sns.kdeplot, color=colors[i], linestyles=linestyles[i], label=legend_labels[i],
                              shade=shade, levels=levels, shade_lowest=False)
     graph = graph.plot_marginals(sns.distplot, hist=False, kde=True, color=colors[i],
                                  kde_kws={"shade": True, "linewidth": linewidth, "linestyle": linestyles[i]})

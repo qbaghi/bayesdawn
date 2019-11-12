@@ -12,8 +12,11 @@ if __name__ == '__main__':
     from bayesdawn.utils import loadings, physics
 
     # Pathf for the simulation
+    # config_path = '/Users/qbaghi/Codes/data/results_dynesty/mbhb/2019-11-01_14h48-14_config.ini'
     # config_path = '/Users/qbaghi/Codes/data/results_ptemcee/mbhb/2019-11-05_19h22-55_config.ini'
-    config_path = '/Users/qbaghi/Codes/data/results_ptemcee/mbhb/2019-11-04_18h55-04_config.ini'
+    # With gaps
+    config_path = '/Users/qbaghi/Codes/data/results_ptemcee/mbhb/2019-11-11_23h42-15_config.ini'
+    # config_path = '/Users/qbaghi/Codes/data/results_ptemcee/mbhb/2019-11-04_18h55-04_config.ini'
 
     # Load config file
     config = configparser.ConfigParser()
@@ -28,7 +31,10 @@ if __name__ == '__main__':
         sampler_type = 'dynesty'
 
     # Load the corresponding simulation
+    names_full = np.array([key for key in config['ParametersLowerBounds']])
     simu_name = os.path.basename(config["InputData"]["FilePath"])
+    names_math = [r'$M_c$', r'$q$', r'$t_c$', r'$\chi_1$', r'$\chi_2$', r'$\log D_L$', r'$\cos \i$',
+                  r'$\cos \beta$', r'$\lambda$', r'$\psi$', r'$\phi_0$']
     if 'LDC' in simu_name:
         simu_path = '/Users/qbaghi/Codes/data/LDC/'
         p, td = loadings.load_ldc_data(simu_path + '/' + simu_name)
@@ -37,28 +43,28 @@ if __name__ == '__main__':
         i_intr = [0, 1, 2, 3, 4, 7, 8]
     else:
         simu_path = '/Users/qbaghi/Codes/data/simulations/mbhb/'
-        time_vect, signal_list, noise_list, params = loadings.load_simulation(simu_name)
+        time_vect, signal_list, noise_list, par = loadings.load_simulation(simu_name)
         i_intr = [0, 1, 2, 3, 4, 8, 9]
 
+    # Restrict to instrinsic parameters
+    names = np.array(names_math)[i_intr]
+    par0 = np.array(par)[i_intr]
     # Corner plot
-    n_burn = 1000
+    n_burn = 300
     ndim = len(i_intr)
     if sampler_type == 'ptemcee':
         # Load the MCMC samples
         chain = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_chain.p')
         lnprob = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_lnprob.p')
-        names_full = np.array([key for key in config['ParametersLowerBounds']])
-        names_math = [r'$M_c$', r'$q$', r'$t_c$', r'$\chi_1$', r'$\chi_2$', r'$\log D_L$', r'\cos \i',
-                      r'$\cos \beta$', r'$\lambda$', r'$\psi$', r'\phi_0']
+
         if not config["Model"].getboolean('reduced'):
             chain0 = chain[:, :, :, i_intr]
             names = np.array(names_math)[i_intr]
         else:
             chain0 = chain[:]
+            names = np.array(names_math)
 
-        names = np.array(names_math)[i_intr]
-        par0 = np.array(par)[i_intr]
-        fig, ax = postprocess.postprocess(chain0, lnprob, names, par0, n_burn=n_burn, n_thin=1, n_bins=40, k=3)
+        fig, ax = postprocess.postprocess(chain0, lnprob, names, par0, n_burn=n_burn, n_thin=1, n_bins=40, k=4)
         # # Try to use dynesty plotting
         # chain_flat = chain[0, :, n_burn:, :].reshape((-1, chain.shape[3]))
         # results = {'samples': chain_flat,
@@ -75,12 +81,13 @@ if __name__ == '__main__':
         except ValueError:
             print("No final dinesty result, loading the initial file.")
             chain = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_initial_save.p')
-        # fg, ax = dyplot.cornerpoints(chain, cmap='plasma', truths=params, kde=False)
-        par = physics.waveform_to_like(params)
-        names = np.array([key for key in config['ParametersLowerBounds']])
-        fig, axes = plt.subplots(len(i_intr), len(i_intr), figsize=(9, 8.5))
-        fg, ax = dyplot.cornerplot(chain, dims=i_intr, span=None, quantiles=None, color='black',
-                                   smooth=0.02, quantiles_2d=None, hist_kwargs=None, hist2d_kwargs=None, labels=names,
+
+        # fig, axes = plt.subplots(len(i_intr), len(i_intr), figsize=(9, 8.5))
+        fig, axes = plt.subplots(len(par), len(par), figsize=(9, 8.5))
+        fg, ax = dyplot.cornerplot(chain, # dims=i_intr,
+                                   span=None, quantiles=None, color='black',
+                                   smooth=0.02, quantiles_2d=None, hist_kwargs=None, hist2d_kwargs=None,
+                                   labels=names_math,
                                    label_kwargs=None, show_titles=False, title_fmt='.2f', title_kwargs=None,
                                    truths=par, truth_color='red', truth_kwargs=None, max_n_ticks=5, top_ticks=False,
                                    use_math_text=False, verbose=False, fig=(fig, axes))
