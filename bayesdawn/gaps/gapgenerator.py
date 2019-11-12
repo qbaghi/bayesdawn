@@ -179,10 +179,9 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2, win
                 nf[k + 1] = nf[k] + d_n[k]
 
         # Keep only hole locations that do not exceed data span
-        print("Shape of nf: " + str(len(nf)))
-        print("Shape of nd: " + str(len(nd)))
-        nf = nf[nf < n_data - 1]
-        nd = nd[nf < n_data - 1]
+        inds = np.where(nf < n_data - 1)[0]
+        nf = nf[inds]
+        nd = nd[inds]
 
     elif gap_type == 'periodic':
 
