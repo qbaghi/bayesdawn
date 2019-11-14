@@ -92,14 +92,18 @@ if __name__ == '__main__':
     # Introducing gaps if requested
     # ==================================================================================================================
     if config["TimeWindowing"].getboolean("Gaps"):
-        nd, nf = gapgenerator.generategaps(tm.shape[0], 1/del_t, config["TimeWindowing"].getint("GapNumber"),
-                                           config["TimeWindowing"].getfloat("GapDuration"),
-                                           gap_type=config["TimeWindowing"]["GapType"],
-                                           f_gaps=config["TimeWindowing"].getfloat("GapFrequency"),
-                                           wind_type='rect', std_loc=0, std_dur=0)
 
-        # nd = [np.int(config["TimeWindowing"].getfloat("GapStartTime")/del_t)]
-        # nf = [np.int(config["TimeWindowing"].getfloat("GapEndTime")/del_t)]
+        if config["TimeWindowing"]["GapType"] == 'single':
+            nd = [np.int(config["TimeWindowing"].getfloat("GapStartTime")/del_t)]
+            nf = [np.int(config["TimeWindowing"].getfloat("GapEndTime")/del_t)]
+
+        else:
+            nd, nf = gapgenerator.generategaps(tm.shape[0], 1/del_t, config["TimeWindowing"].getint("GapNumber"),
+                                               config["TimeWindowing"].getfloat("GapDuration"),
+                                               gap_type=config["TimeWindowing"]["GapType"],
+                                               f_gaps=config["TimeWindowing"].getfloat("GapFrequency"),
+                                               wind_type='rect', std_loc=0, std_dur=0)
+
         wd = gapgenerator.windowing(nd, nf, tm.shape[0], window=config["TimeWindowing"]["WindowType"],
                                     n_wind=config["TimeWindowing"].getint("DecayNumber"))
         mask = gapgenerator.windowing(nd, nf, tm.shape[0], window='rect')
