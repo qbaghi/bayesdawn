@@ -277,7 +277,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
         super(ExtendedPTMCMC, self).__init__(*args, **kwargs)
         # ptemcee.Sampler.__init__(self, args)
 
-        self.position=[]
+        self.position = []
 
     def get_log_likelihood(self):
 
@@ -309,7 +309,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             print("Update of auxiliary parameters at iteration " + str(it))
             callback(self.position[0, 0, :])
 
-    def run(self, n_it, n_save, n_thin, callback=None, pos0=None, save_path='./', param_names=None):
+    def run(self, n_it, n_save, n_thin, callback=None, n_callback=1000, n_start_callback=0, pos0=None, save_path='./'):
         """
 
         Parameters
@@ -321,13 +321,13 @@ class ExtendedPTMCMC(ptemcee.Sampler):
         n_thin : int
             thinning number
         callback : callable
-            external function to call at each iteration
+            external function of the parameters, to call at each iteration
+        n_callback : int
+            call the callback function every n_callback iterations
         pos0 : array_like
             initial values for parameters
         save_path : str
             path to save the data
-        param_names : list
-            list of parameter names (optional)
 
         Returns
         -------
@@ -341,45 +341,18 @@ class ExtendedPTMCMC(ptemcee.Sampler):
         else:
             pos = pos0[:]
 
-        # # If no callback function specified, set it to do nothing
-        # if callback is None:
-        #     def callback(p):
-        #         pass
+        # If no callback function specified, set it to do nothing
+        if callback is None:
+            def callback(p):
+                print(str(p))
 
         self.position = pos[:]
         it = 0
 
         for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
 
-            # print("Iteration " + str(it) + " done.")
-            # if (it % n_update == 0) & (callback is not None):
-            #     print("Update of auxiliary parameters at iteration " + str(i))
-            #     callback(pos[0, 0, :])
-            # if it == 0:
-            #     f = tables.open_file(save_path + 'chain.p', 'w')
-            #     atom1 = tables.Atom.from_dtype(self.chain.dtype)
-            #     ds1 = f.create_earray(f.root, 'chain', atom1, (0, self.ntemps, self.nwalkers, 1, len(hi)))
-            #     ds1.append(self.chain[:, :, 0, :])
-            #     atom2 = tables.Atom.from_dtype(self.logprobability.dtype)
-            #     ds2 = f.create_earray(f.root, 'lnprob', atom2, (0, self.ntemps, self.nwalkers, 1))
-            #     ds2.append(self.logprobability[:, :, 0])
-            #     f.close()
             if (it % n_save == 0) & (it != 0):
                 print("Save data at iteration " + str(it) + "...")
-                # Make a list of data frames
-                # df = pd.DataFrame(self.chain[0, :, i-n_save:i, :].reshape((-1, self.chain.shape[3])),
-                #                   columns=param_names)
-                # df = [pd.DataFrame(self.chain[0, j, i-n_save:i, :], columns=param_names)
-                #            for j in range(self.chain.shape[1])]
-                # [df[j].to_hdf(save_path, 'chain_' + str(j), append=True, mode='a', format='table')
-                #  for j in range(self.chain.shape[1])]
-                # df = pd.DataFrame(self.chain[0, :, 0:i, :].reshape((-1, self.chain.shape[3])), columns=param_names)
-                # df.to_hdf(save_path, 'chain', append=False, mode='w', format='fixed')
-                # Store "x" in a chunked array...
-                # f = tables.open_file(save_path + 'chain.p', 'a')
-                # f.root.chain.append(self.chain[:, :, 0:it, :])
-                # f.root.lnprob.append(self.logprobability[:, :, 0:it])
-                # f.close()
 
                 file_object = open(save_path + 'chain.p', "wb")
                 pickle.dump(self.chain[:, :, 0:it, :], file_object)
@@ -390,8 +363,12 @@ class ExtendedPTMCMC(ptemcee.Sampler):
                 # np.save(file_object, self.logprobability[:, :, self.logprobability[0, 0, :] != 0])
                 file_object.close()
                 print("Data saved.")
-            else:
-                pass
+
+            if (it % n_callback == 0) & (it != 0) & (it >= n_start_callback):
+                print(str(self.chain[0, 0, it, :]))
+                callback(self.chain[0, 0, it, :])
+                print("Callback function called at iteration " + str(it))
+
             it += 1
 
         return pos, lnlike0, lnprob0

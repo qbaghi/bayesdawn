@@ -16,6 +16,7 @@ from scipy import signal
 # Plot modules
 from plottools import myplots
 
+
 def compute_periodogram(x, fs=1.0, wind='tukey'):
     """
 
@@ -88,8 +89,35 @@ def plot_periodogram(x, fs=1.0, wind='tukey', xlabel='Frequency [Hz]', ylabel='P
     if sqr:
         y_list = [np.sqrt(dat[1][dat[0] > 0]) for dat in data_list]
     else:
-        y_list  = [dat[1][dat[0] > 0] for dat in data_list]
+        y_list = [dat[1][dat[0] > 0] for dat in data_list]
 
+    fig1, ax1 = fp.plot(x_list, y_list, colors, linewidths, linestyles=linestyles, labels=labels)
+
+    return fig1, ax1
+
+
+def plot_time_series(x_list, y_list, xlabel='Time [s]', ylabel='Amplitude', colors=None, linewidths=None,
+                     labels=None, linestyles='solid'):
+
+    fp = myplots.fplot(plotconf='time')
+    fp.xscale = 'linear'
+    fp.yscale = 'linear'
+    fp.draw_frame = True
+    fp.ylabel = r'Fractional frequency'
+    fp.legendloc = 'upper left'
+    fp.xlabel = xlabel
+    fp.ylabel = ylabel
+
+    if labels is None:
+        labels = [None for dat in y_list]
+    if linestyles=='solid':
+        linestyles = ['solid' for dat in y_list]
+    if linewidths is None:
+        linewidths = np.ones(7)
+    if colors is None:
+        colors = ['k', 'r', 'b', 'g', 'm', 'gray', 'o']
+
+    colors = [colors[i] for i in range(len(y_list))]
     fig1, ax1 = fp.plot(x_list, y_list, colors, linewidths, linestyles=linestyles, labels=labels)
 
     return fig1, ax1

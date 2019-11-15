@@ -5,7 +5,8 @@ import configparser
 import pickle
 from LISAhdf5 import LISAhdf5
 import re
-
+import numpy as np
+from bayesdawn.gaps import gapgenerator
 
 
 def load_samples(hdf5_name):
@@ -92,3 +93,59 @@ def load_ldc_data(hdf5_name):
     print("Data loaded.")
 
     return p, td
+
+
+def load_gaps(config, tm):
+    """
+
+    Parameters
+    ----------
+    config : parseconfig instance
+        configuration of the simulation
+    tm : ndarray
+        time vector
+
+    Returns
+    -------
+    wd : ndarray
+        smooth time window including gaps
+    wd_full : ndarray
+        smooth time window for full time series
+    mask : ndarray
+        binary mask (sharp gap window)
+
+    """
+
+    del_t = tm[1] - tm[0]
+
+    if config["TimeWindowing"].getboolean("Gaps"):
+
+        if config["TimeWindowing"]["GapType"] == 'single':
+            nd = [np.int(config["TimeWindowing"].getfloat("GapStartTime")/del_t)]
+            nf = [np.int(config["TimeWindowing"].getfloat("GapEndTime")/del_t)]
+
+        else:
+            nd, nf = gapgenerator.generategaps(tm.shape[0], 1/del_t, config["TimeWindowing"].getint("GapNumber"),
+                                               config["TimeWindowing"].getfloat("GapDuration"),
+                                               gap_type=config["TimeWindowing"]["GapType"],
+                                               f_gaps=config["TimeWindowing"].getfloat("GapFrequency"),
+                                               wind_type='rect', std_loc=0, std_dur=0)
+
+        wd = gapgenerator.windowing(nd, nf, tm.shape[0], window=config["TimeWindowing"]["WindowType"],
+                                    n_wind=config["TimeWindowing"].getint("DecayNumberGaps"))
+        wd_full = gapgenerator.modified_hann(tm.shape[0], n_wind=config["TimeWindowing"].getint("DecayNumberFull"))
+        mask = gapgenerator.windowing(nd, nf, tm.shape[0], window='rect')
+        # wd_full = gapgenerator.modified_hann(tm.shape[0],
+        #                                      n_wind=np.int((config["InputData"].getfloat("EndTime") - tc) / (2*del_t)))
+    else:
+
+        wd = gapgenerator.modified_hann(tm.shape[0], n_wind=config["TimeWindowing"].getint("DecayNumberFull"))
+
+        # wd = gapgenerator.modified_hann(tm.shape[0],
+        #                                 n_wind=np.int((config["InputData"].getfloat("EndTime") - tc) / (2*del_t)))
+        wd_full = wd[:]
+
+        mask = np.ones(tm.shape[0])
+        # wd = signal.tukey(Xd.shape[0], alpha=(config["InputData"].getfloat("EndTime") - tc) / tobs, sym=True)
+
+    return wd, wd_full, mask

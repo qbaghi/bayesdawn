@@ -1,5 +1,11 @@
 from scipy import signal
 import numpy as np
+from bayesdawn.utils import physics
+import lisabeta.lisa.ldctools as ldctools
+# FTT modules
+import pyfftw
+pyfftw.interfaces.cache.enable()
+from pyfftw.interfaces.numpy_fft import fft, ifft
 
 
 def preprocess(config, td, i1, i2, scale=1.0):
@@ -27,3 +33,65 @@ def preprocess(config, td, i1, i2, scale=1.0):
         Zd = td[i1:i2, 3] * scale
 
     return tm, Xd, Yd, Zd, q
+
+
+def preprocess_ldc_data(p, td, config):
+
+    del_t = float(p.get("Cadence"))
+    tobs = float(p.get("ObservationDuration"))
+
+    # ==================================================================================================================
+    # Get the parameters
+    # ==================================================================================================================
+    # Get parameters as an array from the hdf5 structure (table)
+    p_sampl = physics.get_params(p, sampling=True)
+
+    # ==================================================================================================================
+    # Pre-processing data: anti-aliasing and filtering
+    # ==================================================================================================================
+    if config['InputData'].getboolean('trim'):
+        i1 = np.int(config["InputData"].getfloat("StartTime") / del_t)
+        i2 = np.int(config["InputData"].getfloat("EndTime") / del_t)
+        t_offset = 52.657 + config["InputData"].getfloat("StartTime")
+        tobs = (i2 - i1) * del_t
+    else:
+        i1 = 0
+        i2 = np.int(td.shape[0])
+        t_offset = 52.657
+
+    tm, xd, yd, zd, q = preprocess(config, td, i1, i2, scale=config["InputData"].getfloat("rescale"))
+
+    return tm, xd, yd, zd, q, t_offset, tobs, del_t, p_sampl
+
+
+def time_to_frequency(ad, ed, td, wd, del_t, q, compensate_window=True):
+    """
+    Convert time domain data to discrete Fourier transformed data,
+    with normalization by del_t x q x n / k1
+    Parameters
+    ----------
+    ad
+    ed
+    td
+    wd
+    del_t
+    q
+
+    Returns
+    -------
+
+    """
+
+    # ==================================================================================================================
+    # Now we get extract the data and transform it to frequency domain
+    # ==================================================================================================================
+    if compensate_window:
+        resc = ad.shape[0] / np.sum(wd)
+    else:
+        resc = 1.0
+    a_df = fft(wd * ad) * del_t * q * resc
+    e_df = fft(wd * ed) * del_t * q * resc
+    t_df = fft(wd * td) * del_t * q * resc
+
+    return a_df, e_df, t_df
+

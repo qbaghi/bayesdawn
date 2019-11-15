@@ -63,82 +63,37 @@ if __name__ == '__main__':
     # Unpacking the hdf5 file and getting data and source parameters
     # ==================================================================================================================
     p, td = loadings.load_ldc_data(config["InputData"]["FilePath"])
-    del_t = float(p.get("Cadence"))
-    tobs = float(p.get("ObservationDuration"))
-
-    # ==================================================================================================================
-    # Get the parameters
-    # ==================================================================================================================
-    # Get parameters as an array from the hdf5 structure (table)
-    p_sampl = physics.get_params(p, sampling=True)
-    tc = p_sampl[2]
 
     # ==================================================================================================================
     # Pre-processing data: anti-aliasing and filtering
     # ==================================================================================================================
-    if config['InputData'].getboolean('trim'):
-        i1 = np.int(config["InputData"].getfloat("StartTime") / del_t)
-        i2 = np.int(config["InputData"].getfloat("EndTime") / del_t)
-        t_offset = 52.657 + config["InputData"].getfloat("StartTime")
-        tobs = (i2 - i1) * del_t
-    else:
-        i1 = 0
-        i2 = np.int(td.shape[0])
-        t_offset = 52.657
-
-    tm, Xd, Yd, Zd, q = preprocess.preprocess(config, td, i1, i2, scale=config["InputData"].getfloat("rescale"))
+    tm, xd, yd, zd, q, t_offset, tobs, del_t, p_sampl = preprocess.preprocess_ldc_data(p, td, config)
 
     # ==================================================================================================================
     # Introducing gaps if requested
     # ==================================================================================================================
-    if config["TimeWindowing"].getboolean("Gaps"):
-
-        if config["TimeWindowing"]["GapType"] == 'single':
-            nd = [np.int(config["TimeWindowing"].getfloat("GapStartTime")/del_t)]
-            nf = [np.int(config["TimeWindowing"].getfloat("GapEndTime")/del_t)]
-
-        else:
-            nd, nf = gapgenerator.generategaps(tm.shape[0], 1/del_t, config["TimeWindowing"].getint("GapNumber"),
-                                               config["TimeWindowing"].getfloat("GapDuration"),
-                                               gap_type=config["TimeWindowing"]["GapType"],
-                                               f_gaps=config["TimeWindowing"].getfloat("GapFrequency"),
-                                               wind_type='rect', std_loc=0, std_dur=0)
-
-        wd = gapgenerator.windowing(nd, nf, tm.shape[0], window=config["TimeWindowing"]["WindowType"],
-                                    n_wind=config["TimeWindowing"].getint("DecayNumber"))
-        mask = gapgenerator.windowing(nd, nf, tm.shape[0], window='rect')
-        wd_full = gapgenerator.modified_hann(tm.shape[0],
-                                             n_wind=np.int((config["InputData"].getfloat("EndTime") - tc) / (2*del_t)))
-    else:
-        wd = gapgenerator.modified_hann(tm.shape[0],
-                                        n_wind=np.int((config["InputData"].getfloat("EndTime") - tc) / (2*del_t)))
-        wd_full = wd[:]
-        # wd = signal.tukey(Xd.shape[0], alpha=(config["InputData"].getfloat("EndTime") - tc) / tobs, sym=True)
+    wd, wd_full, mask = loadings.load_gaps(config, tm)
+    print("Ideal decay number: " + str(np.int((config["InputData"].getfloat("EndTime") - p_sampl[2]) / (2 * del_t))))
 
     # ==================================================================================================================
     # Now we get extract the data and transform it to frequency domain
     # ==================================================================================================================
-    resc = Xd.shape[0]/np.sum(wd)
-    XDf = fft(wd * Xd) * del_t * q * resc
-    YDf = fft(wd * Yd) * del_t * q * resc
-    ZDf = fft(wd * Zd) * del_t * q * resc
-
-    freqD = np.fft.fftfreq(len(tm), del_t * q)
-    # Convert Michelson TDI to A, E, T (freq. domain)
-    ADf, EDf, TDf = ldctools.convert_XYZ_to_AET(XDf, YDf, ZDf)
+    freq_d = np.fft.fftfreq(len(tm), del_t * q)
     # Convert Michelson TDI to A, E, T (time domain)
-    ad, ed, td = ldctools.convert_XYZ_to_AET(Xd, Yd, Zd)
+    ad, ed, td = ldctools.convert_XYZ_to_AET(xd, yd, zd)
+
+    a_df, e_df, t_df = preprocess.time_to_frequency(ad, ed, td, wd, del_t, q, compensate_window=True)
 
     # Restrict the frequency band to high SNR region
-    inds = np.where((float(config['Model']['MinimumFrequency']) <= freqD)
-                    & (freqD <= float(config['Model']['MaximumFrequency'])))[0]
-    aet = [ADf[inds], EDf[inds], TDf[inds]]
+    inds = np.where((float(config['Model']['MinimumFrequency']) <= freq_d)
+                    & (freq_d <= float(config['Model']['MaximumFrequency'])))[0]
+    aet = [a_df[inds], e_df[inds], t_df[inds]]
     # Restriction of sampling parameters to instrinsic ones Mc, q, tc, chi1, chi2, np.sin(bet), lam
     i_sampl_intr = [0, 1, 2, 3, 4, 7, 8]
     print("=================================================================")
 
     # Consider only A and E TDI data in frequency domain
-    dataAE = [ADf[inds], EDf[inds]]
+    dataAE = [a_df[inds], e_df[inds]]
     # And in time domain
     data_ae_time = [ad, ed]
     fftwisdom.save_wisdom()
@@ -153,15 +108,16 @@ if __name__ == '__main__':
                                      fmin=1 / (del_t * tm.shape[0]) * 1.05,
                                      fmax=1 / (del_t * 2))
         psd_cls.estimate(ad)
-        sa = psd_cls.calculate(freqD[inds])
+        sa = psd_cls.calculate(freq_d[inds])
     else:
         psd_cls = None
         # One-sided PSD
-        sa = tdi.noisepsd_AE(freqD[inds], model='Proposal', includewd=None)
+        sa = tdi.noisepsd_AE(freq_d[inds], model='Proposal', includewd=None)
 
     if config["Imputation"].getboolean("imputation"):
         print("Missing data imputation enabled.")
-        data_cls = datamodel.GaussianStationaryProcess(data_ae_time, mask, method=config["Imputation"]['method'],
+        data_cls = datamodel.GaussianStationaryProcess([mask * ad, mask * ed], mask,
+                                                       method=config["Imputation"]['method'],
                                                        na=150, nb=150, p=config["Imputation"].getint("precondOrder"),
                                                        tol=config["Imputation"].getfloat("tolerance"),
                                                        n_it_max=config["Imputation"].getint("maximumIterationNumber"))
@@ -171,16 +127,14 @@ if __name__ == '__main__':
     else:
         data_cls = None
 
-
     # ==================================================================================================================
     # Instantiate likelihood class
     # ==================================================================================================================
-    ll_cls = likelihoodmodel.LogLike(data_ae_time, sa, freqD[inds], tobs, del_t * q,
+    ll_cls = likelihoodmodel.LogLike([mask * ad, mask * ed], sa, freq_d[inds], tobs, del_t * q,
                                      normalized=config['Model'].getboolean('normalized'),
                                      t_offset=t_offset, channels=[1, 2],
                                      scale=config["InputData"].getfloat("rescale"),
                                      model_cls=data_cls, psd_cls=psd_cls,
-                                     n_update=config['Sampler'].getint('AuxiliaryParameterUpdateNumber'),
                                      wd=wd,
                                      wd_full=wd_full)
 
@@ -279,7 +233,10 @@ if __name__ == '__main__':
         result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
                              config['Sampler'].getint('SavingNumber'),
                              int(config["Sampler"]["thinningNumber"]),
-                             callback=None, pos0=None,
+                             callback=ll_cls.update_auxiliary_params,
+                             n_callback=config['Sampler'].getint('AuxiliaryParameterUpdate'),
+                             n_start_callback=config['Sampler'].getint('AuxiliaryParameterStart'),
+                             pos0=None,
                              save_path=out_dir + prefix)
 
     # # ==================================================================================================================
@@ -290,10 +247,10 @@ if __name__ == '__main__':
     #
     # # Frequency plot
     # fig1, ax1 = plt.subplots(nrows=2, sharex=True, sharey=True)
-    # ax1[0].semilogx(freqD, np.real(ADf))
-    # ax1[0].semilogx(freqD[inds], np.real(aft), '--')
-    # ax1[1].semilogx(freqD, np.imag(ADf))
-    # ax1[1].semilogx(freqD[inds], np.imag(aft), '--')
+    # ax1[0].semilogx(freq_d, np.real(a_df))
+    # ax1[0].semilogx(freq_d[inds], np.real(aft), '--')
+    # ax1[1].semilogx(freq_d, np.imag(a_df))
+    # ax1[1].semilogx(freq_d[inds], np.imag(aft), '--')
     # plt.show()
 
 
