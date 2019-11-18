@@ -124,6 +124,10 @@ def load_gaps(config, tm):
             nd = [np.int(config["TimeWindowing"].getfloat("GapStartTime")/del_t)]
             nf = [np.int(config["TimeWindowing"].getfloat("GapEndTime")/del_t)]
 
+        elif config["TimeWindowing"]["GapType"] == 'file':
+            mask = np.load(config["TimeWindowing"]["MaskFilePath"])
+            nd, nf = gapgenerator.find_ends(mask)
+
         else:
             nd, nf = gapgenerator.generategaps(tm.shape[0], 1/del_t, config["TimeWindowing"].getint("GapNumber"),
                                                config["TimeWindowing"].getfloat("GapDuration"),
@@ -136,7 +140,8 @@ def load_gaps(config, tm):
         wd_full = gapgenerator.modified_hann(tm.shape[0], n_wind=config["TimeWindowing"].getint("DecayNumberFull"))
         mask = gapgenerator.windowing(nd, nf, tm.shape[0], window='rect')
         # wd_full = gapgenerator.modified_hann(tm.shape[0],
-        #                                      n_wind=np.int((config["InputData"].getfloat("EndTime") - tc) / (2*del_t)))
+        # n_wind=np.int((config["InputData"].getfloat("EndTime") - tc) / (2*del_t)))
+
     else:
 
         wd = gapgenerator.modified_hann(tm.shape[0], n_wind=config["TimeWindowing"].getint("DecayNumberFull"))
