@@ -95,3 +95,16 @@ def time_to_frequency(ad, ed, td, wd, del_t, q, compensate_window=True):
 
     return a_df, e_df, t_df
 
+
+# def determine_frequency_bounds(config, freq_d):
+#
+#     # Restrict the frequency band to high SNR region, and exclude distorted frequencies due to gaps
+#     if (config["TimeWindowing"].getboolean('gaps')) & (not config["Imputation"].getboolean('imputation')):
+#
+#         f1, f2 = physics.find_distorted_interval(mask, p_sampl, t_offset, del_t, margin=1e-4)
+#
+#         inds = np.where((float(config['Model']['MinimumFrequency']) <= freq_d)
+#                         & (freq_d <= float(config['Model']['MaximumFrequency']))
+#                         & (freq_d >= f1) & (freq_d <= f2))[0]
+#     inds = np.where((float(config['Model']['MinimumFrequency']) <= freq_d)
+#                     & (freq_d <= float(config['Model']['MaximumFrequency'])))[0]

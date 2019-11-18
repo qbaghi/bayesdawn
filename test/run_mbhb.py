@@ -84,9 +84,17 @@ if __name__ == '__main__':
 
     a_df, e_df, t_df = preprocess.time_to_frequency(ad, ed, td, wd, del_t, q, compensate_window=True)
 
-    # Restrict the frequency band to high SNR region
-    inds = np.where((float(config['Model']['MinimumFrequency']) <= freq_d)
-                    & (freq_d <= float(config['Model']['MaximumFrequency'])))[0]
+    # Restrict the frequency band to high SNR region, and exclude distorted frequencies due to gaps
+    if (config["TimeWindowing"].getboolean('gaps')) & (not config["Imputation"].getboolean('imputation')):
+        f1, f2 = physics.find_distorted_interval(mask, p_sampl, t_offset, del_t, margin=0.5)
+        f1 = np.max([f1, 0])
+        f2 = np.min([f2, 1/(2*del_t)])
+        inds = np.where((float(config['Model']['MinimumFrequency']) <= freq_d)
+                        & (freq_d <= float(config['Model']['MaximumFrequency']))
+                        & (freq_d >= f1) & (freq_d <= f2))[0]
+    else:
+        inds = np.where((float(config['Model']['MinimumFrequency']) <= freq_d)
+                        & (freq_d <= float(config['Model']['MaximumFrequency'])))[0]
     aet = [a_df[inds], e_df[inds], t_df[inds]]
     # Restriction of sampling parameters to instrinsic ones Mc, q, tc, chi1, chi2, np.sin(bet), lam
     i_sampl_intr = [0, 1, 2, 3, 4, 7, 8]

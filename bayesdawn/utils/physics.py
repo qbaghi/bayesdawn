@@ -4,6 +4,7 @@ import Cosmology
 import LISAConstants as LC
 import lisabeta.lisa.ldctools as ldctools
 import pyFDresponse as FD_Resp
+from bayesdawn.gaps import gapgenerator
 
 
 def compute_masses(mc, q):
@@ -159,3 +160,58 @@ def get_params(p_gw, sampling=False):
         ps_sampl = np.array([Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0])
 
         return ps_sampl
+
+
+def compute_frequency_vs_time(t, m_chirp, t_merger):
+    """
+
+    Compute frequency as a function of time at 1 PN order
+
+    Parameters
+    ----------
+    t : array_like
+        time vector [seconds]
+    m_chirp : scalar float
+        chirp mass [solar mass]
+    t_merger : scalar float
+        time to merger [seconds]
+
+    Returns
+    -------
+    f_dot : scalar float
+        source frequency derivative [Hz/s]
+
+
+    """
+
+    # Convert merger time from seconds to years
+    t_merger_years = t_merger / LC.year
+
+    # Compute starting frequency (source frequency at t=0 [Hz]) as a function of time to merger
+    f_start = FD_Resp.funcNewtonianfoft(m_chirp, t_merger_years)
+
+    # Convert chirp mass in kg
+    # m_chirp_kg = m_chirp*LC.MsunKG
+
+    # Compute involved constant
+    # k = 96/5.*np.pi**(8/3.)*(LC.G*m_chirp_kg/LC.c**3)**(5/3.)
+
+    # ft = (f_start**(-8/3) - 8/3 * k * t)**(-3/8)
+    ft = f_start * (1 - t / t_merger) ** (-3/8)
+
+    return ft
+
+
+def find_distorted_interval(mask, p_sampl, t0, del_t, margin=0):
+
+    m_chirp = p_sampl[0]
+    t_merger = p_sampl[2]
+    nd, nf = gapgenerator.find_ends(mask)
+    t1 = del_t * nd[0]
+    t2 = del_t * nf[-1]
+
+    f1 = compute_frequency_vs_time(t1, m_chirp, t_merger - t0)
+    f2 = compute_frequency_vs_time(t2, m_chirp, t_merger - t0)
+
+    return f1 * (1 - margin), f2 * (1 + margin)
+
