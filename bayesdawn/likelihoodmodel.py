@@ -643,15 +643,14 @@ class LogLike(object):
         self.data = data
         self.scale = scale
         self.sn = sn
-        self.freq = freq
         self.tobs = tobs
         self.del_t = del_t
         # Full data size
         self.n_data = self.data[0].shape[0]
-        self.nf = len(freq)
+        self.nf = len(inds)
         self.t_offset = t_offset
-        self.df = self.freq[1] - self.freq[0]
-        self.f = np.fft.fftfreq(self.n_data) / del_t
+        self.df = 1 / (self.n_data * self.del_t)
+        self.f = np.fft.fftfreq(self.n_data) / self.del_t
         # Fourier bin indices where we restrict the analysis
         # intersect, self.inds, comm2 = np.intersect1d(self.f, freq)
         self.inds = inds
@@ -708,7 +707,7 @@ class LogLike(object):
         # Estimate PSD parameters from the residuals in the time domain, in the first TDI channel.
         self.psd.estimate(self.data[0] - y_gw_list[0], wind='hanning')
         # Calculate the spectrum in the estimation band
-        self.sn = self.psd.calculate(self.freq)
+        self.sn = self.psd.calculate(self.f[self.inds])
 
     def update_missing_data(self, y_gw_list):
         """
@@ -779,8 +778,8 @@ class LogLike(object):
         params = physics.like_to_waveform(par)
 
         # Compute waveform template
-        # return lisaresp.lisabeta_template(params, self.freq, self.tobs, tref=0, t_offset=self.t_offset, channels=self.channels)
-        ch = lisaresp.lisabeta_template(params, self.freq, self.tobs, tref=0, t_offset=self.t_offset, channels=self.channels)
+        ch = lisaresp.lisabeta_template(params, self.f[self.inds], self.tobs, tref=0, t_offset=self.t_offset,
+                                        channels=self.channels)
 
         return [ch_i * self.scale for ch_i in ch]
 
@@ -843,7 +842,7 @@ class LogLike(object):
         params_intr = physics.like_to_waveform_intr(par_intr)
 
         # Design matrices for each channel
-        mat_list = lisaresp.design_matrix(params_intr, self.freq, self.tobs,
+        mat_list = lisaresp.design_matrix(params_intr, self.f[self.inds], self.tobs,
                                           tref=0, t_offset=self.t_offset, channels=self.channels)
         # Weighted design matrices
         mat_list_weighted = [mat_list[i] / np.array([self.sn]).T for i in range(len(self.channels))]
@@ -877,7 +876,7 @@ class LogLike(object):
         # params_intr = physics.like_to_waveform_intr(par_intr)
         #
         # # Design matrices for each channel
-        # mat_list = lisaresp.design_matrix(params_intr, self.freq, self.tobs, tref=0, t_offset=self.t_offset,
+        # mat_list = lisaresp.design_matrix(params_intr, self.f[self.inds], self.tobs, tref=0, t_offset=self.t_offset,
         #                                   channels=self.channels)
         # Weighted design matrices
         # mat_list_weighted = [mat_list[i] / np.array([self.sn]).T for i in range(2)]
