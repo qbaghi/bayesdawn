@@ -58,7 +58,7 @@ class TestWaveform(unittest.TestCase):
         a_df, e_df, t_df = preprocess.time_to_frequency(ad, ed, td, wd, del_t, q, compensate_window=True)
 
         # Instantiate likelihood class
-        ll_cls = likelihoodmodel.LogLike([mask * ad, mask * ed], sa, freq_d[inds], tobs, del_t * q,
+        ll_cls = likelihoodmodel.LogLike([mask * ad, mask * ed], sa, inds, tobs, del_t * q,
                                          normalized=config['Model'].getboolean('normalized'),
                                          t_offset=t_offset, channels=[1, 2],
                                          scale=config["InputData"].getfloat("rescale"),
@@ -128,7 +128,7 @@ class TestWaveform(unittest.TestCase):
         a_df, e_df, t_df = preprocess.time_to_frequency(ad, ed, td, wd, del_t, q, compensate_window=True)
 
         # Instantiate likelihood class
-        ll_cls = likelihoodmodel.LogLike([mask * ad, mask * ed], sa, freq_d[inds], tobs, del_t * q,
+        ll_cls = likelihoodmodel.LogLike([mask * ad, mask * ed], sa, inds, tobs, del_t * q,
                                          normalized=config['Model'].getboolean('normalized'),
                                          t_offset=t_offset, channels=[1, 2],
                                          scale=config["InputData"].getfloat("rescale"),

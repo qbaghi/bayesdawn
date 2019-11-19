@@ -138,7 +138,7 @@ if __name__ == '__main__':
     # ==================================================================================================================
     # Instantiate likelihood class
     # ==================================================================================================================
-    ll_cls = likelihoodmodel.LogLike([mask * ad, mask * ed], sa, freq_d[inds], tobs, del_t * q,
+    ll_cls = likelihoodmodel.LogLike([mask * ad, mask * ed], sa, inds, tobs, del_t * q,
                                      normalized=config['Model'].getboolean('normalized'),
                                      t_offset=t_offset, channels=[1, 2],
                                      scale=config["InputData"].getfloat("rescale"),

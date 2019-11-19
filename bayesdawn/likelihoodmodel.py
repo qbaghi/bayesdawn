@@ -608,7 +608,7 @@ class LikelihoodModel(object):
 
 class LogLike(object):
 
-    def __init__(self, data, sn, freq, tobs, del_t, normalized=False, t_offset=52.657, channels=None, scale=1.0,
+    def __init__(self, data, sn, inds, tobs, del_t, normalized=False, t_offset=52.657, channels=None, scale=1.0,
                  model_cls=None, psd_cls=None, wd=None, wd_full=None):
         """
 
@@ -618,8 +618,8 @@ class LogLike(object):
             TDI data A, E, T in the time domain, without any smooth windowing (except binary masking)
         sn : ndarray
             noise PSD computed at freq
-        freq: ndarray
-            frequency array
+        inds: array_like
+            indices of the frequencies to consider in the Fourier frequency array
         tobs : float
             observation time
         del_t : float
@@ -653,7 +653,8 @@ class LogLike(object):
         self.df = self.freq[1] - self.freq[0]
         self.f = np.fft.fftfreq(self.n_data) / del_t
         # Fourier bin indices where we restrict the analysis
-        self.inds = np.where((self.freq[0] <= self.f) & (self.f <= self.freq[-1]))[0]
+        # intersect, self.inds, comm2 = np.intersect1d(self.f, freq)
+        self.inds = inds
 
         # Time windowing for gapped data
         if wd is None:
