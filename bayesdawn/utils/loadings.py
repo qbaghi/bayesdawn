@@ -89,7 +89,7 @@ def load_ldc_data(hdf5_name):
         raise NotImplementedError
     p = fd5.getSourceParameters(gws[0])
     td = fd5.getPreProcessTDI()
-    p.display()
+    # p.display()
     print("Data loaded.")
 
     return p, td

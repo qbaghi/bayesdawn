@@ -2,6 +2,7 @@ import os
 import configparser
 from bayesdawn.postproc import resanalysis
 from scipy import stats
+from chainconsumer import ChainConsumer
 
 
 def get_simu_parameters(config_path):
@@ -45,12 +46,13 @@ def get_simu_parameters(config_path):
         lnprob = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_lnprob.p')
 
         if not config["Model"].getboolean('reduced'):
+            print("Shape of loaded sample array: " + str(chain.shape))
             chain0 = chain[:, :, chain[0, 0, :, 0] != 0, i_intr]
             print("Shape of non-zero sample array: " + str(chain0.shape))
-            names = np.array(names_math)[i_intr]
         else:
+            print("Shape of loaded sample array: " + str(chain.shape))
             chain0 = chain[:, :, chain[0, 0, :, 0] != 0, :]
-            names = np.array(names_math)
+            print("Shape of non-zero sample array: " + str(chain0.shape))
 
     elif sampler_type == 'dynesty':
         # fig, axes = dyplot.runplot(chain)  # summary (run) plot
@@ -72,14 +74,14 @@ if __name__ == '__main__':
     from bayesdawn.utils import loadings, physics
 
     # Path for the analysis configuration
-    analysis_config_path = "/Users/qbaghi/Codes/python/bayesdawn/bayesdawn/configs/config_analysis_single_gap.ini"
+    analysis_config_path = "/Users/qbaghi/Codes/python/bayesdawn/bayesdawn/configs/config_analysis.ini"
 
     # Load config file
     config_a = configparser.ConfigParser()
     config_a.read(analysis_config_path)
 
     # Path for the simulation configuration files
-    i_max = 3
+    i_max = 4
     config_paths = [config_a["InputData"]["configPath" + str(i)] for i in range(1, i_max)]
 
     # names, par0, chain0, lnprob = get_simu_parameters(config_paths[0])
@@ -113,13 +115,22 @@ if __name__ == '__main__':
 
     if sampler_type == 'ptemcee':
 
-        fig, axes = resanalysis.cornerplot(flattened_chains,
-                                           par0, offset, scales, names,
-                                           colors=['k', 'gray', 'blue'],
-                                           limits=limits, fontsize=16,
-                                           bins=n_bins, truth_color='red', figsize=(9, 8.5), linewidth=1,
-                                           plot_datapoints=False, smooth=1.0, smooth1d=2.0)
+        # fig, axes = resanalysis.cornerplot(flattened_chains,
+        #                                    par0, offset, scales, names,
+        #                                    colors=['k', 'gray', 'blue'],
+        #                                    limits=limits, fontsize=16,
+        #                                    bins=n_bins, truth_color='red', figsize=(9, 8.5), linewidth=1,
+        #                                    plot_datapoints=False, smooth=1.0, smooth1d=2.0)
+        #
+        # plt.show()
 
+        c = ChainConsumer()
+        colors = ['#0A6E2B', '#646464', '#0868AC']
+        labels = ['Complete data', 'Gapped data, window', 'Gapped data, DA']
+        for i in range(len(flattened_chains)):
+            c.add_chain(flattened_chains[i], parameters=list(names), name=labels[i], color=colors[i])
+
+        fig = c.plotter.plot(truth=par0, filename=config_a["OutputData"]["outputPath"])
         plt.show()
         # # Try to use dynesty plotting
         # chain_flat = chain[0, :, n_burn:, :].reshape((-1, chain.shape[3]))

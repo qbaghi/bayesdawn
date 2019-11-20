@@ -729,20 +729,26 @@ class LogLike(object):
         # Transform back to Fourier domain, applying the windowing for complete time series, with re-scaling
         self.data_dft = [fft(y_imp0 * self.wd_full)[self.inds] * self.del_t * self.resc_full for y_imp0 in y_imp]
 
-    def update_auxiliary_params(self, par):
-
-        # Compute waveform template in the frequency domain
-        at, et = self.compute_signal(par)
+    def update_auxiliary_params(self, par, reduced=True):
 
         if (self.psd is not None) | (self.model is not None):
-            y_gw_fft_list = [at, et]
+            # Compute waveform template in the frequency domain
+            if reduced:
+                at, et = self.compute_signal_reduced(par)
+            else:
+                at, et = self.compute_signal(par)
+
+            # y_gw_fft_list = [at, et]
             # Convert the signal in the time domain (factor 1 / del_t incluced)
-            y_gw_list = [self.frequency_to_time(y_gw_fft_pos) for y_gw_fft_pos in y_gw_fft_list]
+            y_gw_list = [self.frequency_to_time(y_gw_fft_pos) for y_gw_fft_pos in [at, et]]
             # Update PSD if requested
             if self.psd is not None:
                 self.update_psd(y_gw_list)
             if self.model is not None:
                 self.update_missing_data(y_gw_list)
+
+        else:
+            pass
 
     def log_norm(self):
         """
