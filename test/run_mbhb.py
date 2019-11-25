@@ -82,26 +82,22 @@ if __name__ == '__main__':
     # Convert Michelson TDI to A, E, T (time domain)
     ad, ed, td = ldctools.convert_XYZ_to_AET(xd, yd, zd)
 
-    a_df, e_df, t_df = preprocess.time_to_frequency(ad, ed, td, wd, del_t, q, compensate_window=True)
-
     # Restrict the frequency band to high SNR region, and exclude distorted frequencies due to gaps
     if (config["TimeWindowing"].getboolean('gaps')) & (not config["Imputation"].getboolean('imputation')):
-        f1, f2 = physics.find_distorted_interval(mask, p_sampl, t_offset, del_t, margin=0.5)
+        f1, f2 = physics.find_distorted_interval(mask, p_sampl, t_offset, del_t, margin=0.4)
         f1 = np.max([f1, 0])
-        f2 = np.min([f2, 1/(2*del_t)])
+        f2 = np.min([f2, 1 / (2 * del_t)])
         inds = np.where((float(config['Model']['MinimumFrequency']) <= freq_d)
                         & (freq_d <= float(config['Model']['MaximumFrequency']))
-                        & (freq_d >= f1) & (freq_d <= f2))[0]
+                        & ((freq_d <= f1) | (freq_d >= f2)))[0]
     else:
         inds = np.where((float(config['Model']['MinimumFrequency']) <= freq_d)
                         & (freq_d <= float(config['Model']['MaximumFrequency'])))[0]
-    aet = [a_df[inds], e_df[inds], t_df[inds]]
+
     # Restriction of sampling parameters to instrinsic ones Mc, q, tc, chi1, chi2, np.sin(bet), lam
     i_sampl_intr = [0, 1, 2, 3, 4, 7, 8]
     print("=================================================================")
 
-    # Consider only A and E TDI data in frequency domain
-    dataAE = [a_df[inds], e_df[inds]]
     # And in time domain
     data_ae_time = [ad, ed]
     fftwisdom.save_wisdom()
@@ -246,19 +242,5 @@ if __name__ == '__main__':
                              n_start_callback=config['Sampler'].getint('AuxiliaryParameterStart'),
                              pos0=None,
                              save_path=out_dir + prefix)
-
-    # # ==================================================================================================================
-    # # Plotting
-    # # ==================================================================================================================
-    # from plottools import presets
-    # presets.plotconfig(ctype='frequency', lbsize=16, lgsize=14)
-    #
-    # # Frequency plot
-    # fig1, ax1 = plt.subplots(nrows=2, sharex=True, sharey=True)
-    # ax1[0].semilogx(freq_d, np.real(a_df))
-    # ax1[0].semilogx(freq_d[inds], np.real(aft), '--')
-    # ax1[1].semilogx(freq_d, np.imag(a_df))
-    # ax1[1].semilogx(freq_d[inds], np.imag(aft), '--')
-    # plt.show()
 
 

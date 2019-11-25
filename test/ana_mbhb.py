@@ -81,7 +81,7 @@ if __name__ == '__main__':
     config_a.read(analysis_config_path)
 
     # Path for the simulation configuration files
-    i_max = 4
+    i_max = 2
     config_paths = [config_a["InputData"]["configPath" + str(i)] for i in range(1, i_max)]
 
     # names, par0, chain0, lnprob = get_simu_parameters(config_paths[0])

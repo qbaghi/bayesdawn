@@ -26,9 +26,9 @@ def rms_error(x, x_ref,  relative=True):
     return rms
 
 
-class TestLikelihood(unittest.TestCase):
+class TestPSDModel(unittest.TestCase):
 
-    def test_likelihood_with_gaps(self, config_file="../configs/config_ldc_single_gap.ini", plot=True):
+    def test_psd_estimation(self, config_file="../configs/config_ldc_full.ini", plot=True):
 
         config = configparser.ConfigParser()
         config.read(config_file)
@@ -68,9 +68,13 @@ class TestLikelihood(unittest.TestCase):
         fftwisdom.save_wisdom()
 
         # Auxiliary parameter classes
-        psd_cls = None
-        # One-sided PSD
-        sa = tdi.noisepsd_AE(freq_d[inds], model='Proposal', includewd=None)
+        print("PSD estimation enabled.")
+        psd_cls = psdmodel.PSDSpline(tm.shape[0], 1 / del_t, J=config["PSD"].getint("knotNumber"),
+                                     D=config["PSD"].getint("SplineOrder"),
+                                     fmin=1 / (del_t * tm.shape[0]) * 1.05,
+                                     fmax=1 / (del_t * 2))
+        psd_cls.estimate(ad)
+        sa = psd_cls.calculate(freq_d[inds])
 
         data_cls = None
 
@@ -82,53 +86,28 @@ class TestLikelihood(unittest.TestCase):
                                          model_cls=data_cls, psd_cls=psd_cls,
                                          wd=wd,
                                          wd_full=wd_full)
-        # # Waveform generation in the Frequency domain
-        # t1 = time.time()
-        # if config['Model'].getboolean('reduced'):
-        #     i_sampl_intr = [0, 1, 2, 3, 4, 7, 8]
-        #     aft, eft = ll_cls.compute_signal_reduced(p_sampl[i_sampl_intr])
-        # else:
-        #     aft, eft = ll_cls.compute_signal(p_sampl)
-        # t2 = time.time()
-        # print('Waveform Calculated in ' + str(t2 - t1) + ' seconds.')
 
-        # Get the windowed discrete Fourier transform used in the likelihood
-        a_df_like, e_df_like = ll_cls.data_dft
-        # Compare to the DFT of the complete data set
-        a_df = fft(ad * wd_full) * del_t * q * wd_full.shape[0] / np.sum(wd_full)
-        e_df = fft(ed * wd_full) * del_t * q * wd_full.shape[0] / np.sum(wd_full)
+        # Test PSD estimation from the likelihood class
+        ll_cls.update_auxiliary_params(p_sampl[i_sampl_intr], reduced=True)
+
+        sa2 = ll_cls.psd.calculate(freq_d[inds])
 
         # Plotting
         if plot:
             from plottools import presets
             presets.plotconfig(ctype='time', lbsize=16, lgsize=14)
 
-            # Time plot
-            fig0, ax0 = plt.subplots(nrows=1)
-            ax0.semilogx(tm, ad, 'k')
-            ax0.semilogx(tm, wd * np.max(ad), 'r')
-            ax0.semilogx(tm, mask * np.max(ad), 'gray')
-
             # Frequency plot
-            fig1, ax1 = plt.subplots(nrows=2, sharex=True, sharey=True)
-            ax1[0].semilogx(freq_d[inds], np.real(a_df[inds]))
-            ax1[0].semilogx(freq_d[inds], np.real(a_df_like), '--')
-            ax1[0].set_ylabel("Fractional frequency", fontsize=16)
-            # ax1[0].legend()
-            ax1[1].semilogx(freq_d[inds], np.imag(a_df[inds]))
-            ax1[1].semilogx(freq_d[inds], np.imag(a_df_like), '--')
-            ax1[1].set_xlabel("Frequency [Hz]", fontsize=16)
-            ax1[1].set_ylabel("Fractional frequency", fontsize=16)
-            # ax1[1].legend()
-            for i in range(len(ax1)):
-                ax1[i].axvline(x=f1, ymin=0, ymax=np.max(np.real(a_df[inds])), color='r', linestyle='--')
-                ax1[i].axvline(x=f2, ymin=0, ymax=np.max(np.real(a_df[inds])), color='r', linestyle='--')
+            fig0, ax0 = plt.subplots(nrows=1)
+            ax0.semilogx(freq_d[inds], np.sqrt(sa), 'g', label='First estimate.')
+            ax0.semilogx(freq_d[inds], np.sqrt(sa2), 'r', label='Second estimate.')
+            plt.legend()
             plt.show()
 
-        rms = rms_error(a_df_like, a_df[inds], relative=True)
+        rms = rms_error(sa2, sa, relative=True)
 
         print("Cumulative relative error is " + str(rms))
-        self.assertLess(rms, 5e-2, "Cumulative relative error sould be less than 0.05 (5 percents)")
+        self.assertLess(rms, 1e-2, "Cumulative relative error sould be less than 0.05 (5 percents)")
 
 
 if __name__ == '__main__':

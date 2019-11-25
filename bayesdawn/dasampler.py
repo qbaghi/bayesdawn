@@ -18,7 +18,7 @@ class FullModel(object):
 
         Parameters
         ----------
-        posterior_cls : instance of GWModel
+        posterior_cls : instance of LikelihoodModel
             the class providing the log likelihood function and auxiliary parameters
             update functions.
         psd_cls : instance of PSDSpline class
@@ -150,7 +150,7 @@ class FullModel(object):
         # Inverse Fourier transform back in time domain (can be a numpy array or a list of arrays)
         y_gw = self.posterior_cls.compute_time_signal(pos0)
         # Draw the missing data (can be a numpy array or a list of arrays)
-        y_rec = self.dat_cls.imputation(y_gw, self.psd_cls.psd_list)
+        y_rec = self.dat_cls.impute(y_gw, self.psd_cls.psd_list)
         # Calculate the DFT of the reconstructed data
         self.y_fft = fft(y_rec * self.w) * self.dat_cls.N / self.K1
         # Update the data DFT for the psd estimation
@@ -226,7 +226,7 @@ class FullModel(object):
         # Initialization of periodogram
         self.psd_cls.set_periodogram(z_fft, K2=self.K2_psd)
         # Initialization of the PSD
-        self.psd_cls.estimate_from_I(self.psd_cls.I)
+        self.psd_cls.estimate_from_periodogram(self.psd_cls.I)
         # Update new value of the spectrum
         self.spectrum = self.psd_cls.calculate(self.N)
         # Store first value of PSD

@@ -9,12 +9,12 @@ Class to set up a simple Metropolis Hasting sampler for the PSD parameters
 """
 
 import numpy as np
-from .psd import psdspline
-from . import samplers
+from bayesdawn import psdmodel
+from bayesdawn import samplers
 from scipy import interpolate
 
 
-class PSDSampler(psdspline.PSDSpline, samplers.MHSampler):
+class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
     """
     
     ** ** 
@@ -27,7 +27,7 @@ class PSDSampler(psdspline.PSDSpline, samplers.MHSampler):
     
     def __init__(self, Neff, fs, J=30, D=3, fmin=None, fmax=None):
 
-        psdspline.PSDSpline.__init__(self, Neff, fs, J=J, D=D, fmin=fmin, fmax=fmax)
+        psdmodel.PSDSpline.__init__(self, Neff, fs, J=J, D=D, fmin=fmin, fmax=fmax)
         
         # Periodogram of the residuals is an attribute
         self.I = []
