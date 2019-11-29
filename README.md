@@ -34,11 +34,11 @@ we then filter to obtain a stationary colored noise:
   import random
   from scipy import signal
   # Choose size of data
-  N = 2**14
+  n_data = 2**14
   # Set sampling frequency
   fs = 1.0
   # Generate Gaussian white noise
-  noise = np.random.normal(loc=0.0, scale=1.0, size = N)
+  noise = np.random.normal(loc=0.0, scale=1.0, size = n_data)
   # Apply filtering to turn it into colored noise
   r = 0.01
   b, a = signal.butter(3, 0.1/0.5, btype='high', analog=False)
@@ -49,10 +49,10 @@ Then we need a deterministic signal to add. We choose a sinusoid with some
 frequency f0 and amplitude a0:
 
 ```python
-  t = np.arange(0,N) / fs
+  t = np.arange(0, n_data) / fs
   f0 = 1e-2
   a0 = 5e-3
-  s = a0*np.sin(2*np.pi*f0*t)
+  s = a0 * np.sin(2 * np.pi * f0 * t)
 ```
 
 The noisy data is then
@@ -68,9 +68,9 @@ The pattern is represented by a mask vector with entries equal to 1 when data
 is observed, and 0 otherwise:
 
 ```python
-  mask = np.ones(N)
+  mask = np.ones(n_data)
   Ngaps = 30
-  gapstarts = (N * np.random.random(Ngaps)).astype(int)
+  gapstarts = (n_data * np.random.random(Ngaps)).astype(int)
   gaplength = 10
   gapends = (gapstarts+gaplength).astype(int)
   for k in range(Ngaps): mask[gapstarts[k]:gapends[k]]= 0
@@ -94,9 +94,9 @@ Then we can do a crude estimation of the PSD from masked data:
 
 ```python
     # Fit PSD with a spline of degree 2 and 10 knots
-    psd_cls = psdspline.PSDSpline(N, fs, J=10, D=2, fmin=fs/N, fmax=fs/2)
+    psd_cls = psdmodel.PSDSpline(n_data, fs, J=10, D=2, fmin=fs/N, fmax=fs/2)
     psd_cls.estimate(y - s_mask)
-    psd = psd_cls.calculate(N)
+    psd = psd_cls.calculate(n_data)
 
 ```
 
