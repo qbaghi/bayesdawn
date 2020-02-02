@@ -3,16 +3,16 @@
 # Author: Quentin Baghi 2017
 # This code provides routines for PSD estimation using a peace-continuous model
 # that assumes that the logarithm of the PSD is linear per peaces.
-import numpy as np
-from scipy import linalg as la
-from scipy import interpolate
-from scipy import optimize
-import patsy
 import copy
-import tdi
 
+import numpy as np
 # FTT modules
 import pyfftw
+import tdi
+from scipy import interpolate
+from scipy import linalg as la
+from scipy import optimize
+
 pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
 
@@ -328,11 +328,15 @@ class PSDSpline(PSD):
         # Set the knot grid
         if f_knots is None:
             self.f_knots = self.choose_knots()
-            self.inds_est = np.where(self.f[1] <= self.f[1:self.n + 1] <= self.f[self.n])[0]
+            self.f_min_est = self.f[1]
+            self.f_max_est = self.f[self.n]
         else:
             self.f_knots = f_knots
             self.J = len(self.f_knots)
-            self.inds_est = np.where((self.fmin <= self.f[1:self.n + 1]) & (self.f[1:self.n + 1] <= self.fmax))[0]
+
+            self.f_min_est = copy.deepcopy(self.fmin)
+            self.f_max_est = copy.deepcopy(self.fmax)
+            # self.inds_est = np.where((self.f_min_est <= self.f[1:self.n + 1]) & (self.f[1:self.n + 1] <= self.f_max_est))[0]
 
         self.logf_knots = np.log(self.f_knots)
         # Spline order
@@ -498,15 +502,20 @@ class PSDSpline(PSD):
         
         if NI not in list(self.logf.keys()):
             f = np.fft.fftfreq(NI)*self.fs
-            self.logf[NI] = np.log(f[f>0])
+            self.logf[NI] = np.log(f[f > 0])
+        else:
+            f = np.concatenate(([0], np.exp(self.logf[NI])))
             
         n = np.int((NI-1)/2.)
         z = per[1:n + 1]
         v = np.log(z) - self.C0
 
         # Spline estimator of the log-PSD
-        spl = interpolate.LSQUnivariateSpline(self.logf[NI][self.inds_est], v[self.inds_est],
-                                              self.logf_knots, k=self.D, ext=self.ext)
+        inds_est = np.where((self.f_min_est <= f[1:self.n + 1]) & (f[1:self.n + 1] <= self.f_max_est))[0]
+        spl = interpolate.LSQUnivariateSpline(self.logf[NI][inds_est], v[inds_est],
+                                              self.logf_knots,
+                                              k=self.D,
+                                              ext=self.ext)
 
         return spl
 
@@ -535,7 +544,6 @@ class PSDPowerLaw(PSD):
         # self.f_knots = self.f[self.ind_knots]
         # self.f_knots[self.f_knots == 0] = self.f[1]
         # Spline order
-        self.d = d
         self.C0 = -0.57721
         # Create a dictionary corresponding to each data length
         self.logf = {n:np.log(self.f[1:self.n+1])}

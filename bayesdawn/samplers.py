@@ -17,6 +17,16 @@ import pickle
 from dynesty.dynamicsampler import stopping_function, weight_function
 
 
+def prior_transform(theta_u, lower_bound, upper_bound):
+
+    # order in theta
+     # 0   1   2   3     4      5     6  7    8    9    10
+    # [Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0]
+    theta = lower_bound + (upper_bound - lower_bound) * theta_u
+
+    return theta
+
+
 def clipcov(X, nit = 3, n_sig = 5):
     """
 

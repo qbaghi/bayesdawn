@@ -6,29 +6,21 @@ Created on Fri Feb  1 15:09:36 2019
 @author: qbaghi
 """
 
-
-import copy
-import numpy as np
-import LISAConstants as LC
-import tdi
-from scipy import special, linalg
-from .coeffs import k_coeffs
-# from lisabeta.lisa import lisa
-import lisabeta.lisa.lisa as lisa
-from scipy.interpolate import InterpolatedUnivariateSpline as spline
-
 # For MBHB only, use MLDC code
 import GenerateFD_SignalTDIs
-import lisabeta.waveforms.bbh.pyIMRPhenomD as pyIMRPhenomD
-import lisabeta.lisa.pyresponse as pyresponse
-import lisabeta.pyconstants as pyconstants
-import lisabeta.tools.pytools as pytools
+import LISAConstants as LC
+# from lisabeta.lisa import lisa
+import lisabeta.lisa.lisa as lisa
 import lisabeta.tools.pyspline as pyspline
-from bayesdawn.utils import physics
+import numpy as np
+from scipy import special
+from scipy.interpolate import InterpolatedUnivariateSpline as spline
 
+from . import coeffs
 
 # Global variables
-# Indices of parameters in the full parameter vector m1, m2, chi1, chi2, Deltat, dist, inc, phi, lambd, beta, psi
+# Indices of parameters in the full parameter vector
+# m1, m2, chi1, chi2, Deltat, dist, inc, phi, lambd, beta, psi
 i_dist = 5
 i_inc = 6
 i_phi0 = 7
@@ -40,31 +32,110 @@ i_ext = [i_dist, i_inc, i_phi0, i_psi]
 i_intr = [0, 1, 2, 3, 4, 8, 9]
 
 
+def indices_low_freq(channel):
+    """
+
+    Returns the indices of the integrated gravitational strain signal for the
+    low frequency approximation of the tdi response, such that
+
+    dTDI = (1-D^2)(1+D)(H_i - H_j)
+
+    Parameters
+    ----------
+    channel : string
+        tdi channel among {'X1','Y1','Z1'}
+
+    Returns
+    -------
+    i : scalar integer
+        index of first arm
+    j : scalar integer
+        index of second arm
+
+
+    """
+
+    if channel == 'X1':
+        i = 2
+        j = 3
+
+    elif channel == 'Y1':
+        i = 3
+        j = 1
+
+    elif channel == 'Z1':
+        i = 1
+        j = 2
+
+    return i, j
+
+
 def optimal_order(theta, f_0):
     """
-    Function calculating the optimal number of sidebands that must be calculated
-    in the Bessel approximation to make a good approximation of the frequency
-    modulated signal
+    Function calculating the optimal number of sidebands that must be
+    calculated in the Bessel approximation to make a good approximation of the
+    frequency modulated signal
 
     """
 
     R = LC.ua
     d0 = R * np.sin(theta) / LC.c
     # Modulation index
-    mf = 2*np.pi*f_0*d0
+    mf = 2 * np.pi * f_0 * d0
     # Empirical model
-    nc = np.int(1.2185*mf+5.625)+1
+    nc = np.int(1.2185 * mf + 5.625) + 1
 
     return nc
 
 
-def convert_xyz_to_aet(X, Y, Z):
+def convert_xyz_to_aet(x, y, z):
+    a = (z - x) / np.sqrt(2.0)
+    e = (x - 2.0 * y + z) / np.sqrt(6.0)
+    t = (x + y + z) / np.sqrt(3.0)
+    return a, e, t
 
-    A = (Z - X)/np.sqrt(2)
-    E = (X - 2*Y + Z)/np.sqrt(6)
-    T = (X + Y + Z)/np.sqrt(3)
 
-    return A, E, T
+def form_design_matrix(uc, k_p, k_c, complex=False):
+    """
+    Construct the design matrix A such that the GW signal can be written as
+    s = A * beta
+
+    Parameters
+    ----------
+    uc : 2d numpy array
+        matrix Uc(f) of waveform basis functions, size n x 5
+    k_p : bytearray
+        Coefficient k+ of the waveform decomposition
+    k_c : bytearray
+        Coefficient k+ of the waveform decomposition
+
+    Returns
+    -------
+    a_tmp : ndarray
+        design matrix, size 2n x 4, where n is the number of frequencies
+
+    """
+
+    k_p_tot = np.concatenate((k_p, np.conj(k_p)))
+    k_c_tot = np.concatenate((k_c, np.conj(k_c)))
+
+    ac_plus = np.dot(uc, k_p_tot)  # C_func*Dxi_p
+    ac_cros = np.dot(uc, k_c_tot)  # C_func*Dxi_c
+
+    if not complex:
+        a_tmp = np.empty((np.int(2 * ac_plus.shape[0]), 4), dtype=np.float64)
+        a_tmp[:, 0] = np.concatenate((ac_plus.real, ac_plus.imag))
+        a_tmp[:, 1] = np.concatenate((ac_cros.real, ac_cros.imag))
+        a_tmp[:, 2] = np.concatenate((ac_plus.imag, -ac_plus.real))
+        a_tmp[:, 3] = np.concatenate((ac_cros.imag, -ac_cros.real))
+    else:
+        a_tmp = np.empty((ac_plus.shape[0], 4), dtype=np.complex128)
+        a_tmp[:, 0] = ac_plus  # C_func*Dxi_p
+        a_tmp[:, 1] = ac_cros  # C_func*Dxi_c
+        a_tmp[:, 2] = -1j * ac_plus  # S_func*Dxi_p
+        a_tmp[:, 3] = -1j * ac_cros  # S_func*Dxi_c
+
+    return a_tmp
 
 
 class GWwaveform(object):
@@ -73,20 +144,20 @@ class GWwaveform(object):
 
     """
 
-    def __init__(self, Phi_rot=0, armlength=2.5e9):
+    def __init__(self, phi_rot=0, armlength=2.5e9):
         """
 
 
         Parameters
         ----------
-        Phi_rot : scalar float
+        phi_rot : scalar float
             initial angle of LISA constellation
         armlength : scalar float
             Arm length (default is 2.5e9 m)
 
         """
 
-        self.Phi_rot = Phi_rot
+        self.phi_rot = phi_rot
         self.armlength = armlength
 
         self.R = LC.ua
@@ -96,289 +167,21 @@ class GWwaveform(object):
 class UCBWaveform(GWwaveform):
     """
     Class to compute the LISA response to an incoming gravitational wave.
-    
+
     """
 
-    def __init__(self, v_func, Phi_rot=0, armlength=2.5e9, nc=15):
+    def __init__(self, v_func, phi_rot=0, armlength=2.5e9, nc=15):
         """
-        
-        
+
+
         Parameters
         ----------
         v_func : callable
-            function of frequency giving the Fourier transform of exp(-j*Phi(t)),
-            where Phi(t) is the phase of the gravitatonal wave
+            function of frequency giving the Fourier transform of
+            exp(-j*Phi(t)), where Phi(t) is the phase of the gravitatonal wave
         fs : scalar float
             sampling frequency
-        Phi_rot : scalar float
-            initial angle of LISA constellation
-        armlength : scalar float
-            Arm length (default is 2.5e9 m)
-        nc : scalar integer
-            order of the Bessel function decomposition        
-        
-        
-        """
-
-        super().__init__(Phi_rot=Phi_rot, armlength=armlength)
-
-
-        # Name of intrinsic parameters
-        self.names = ['theta', 'phi', 'f_0', 'f_dot']
-        # Phase function
-        self.v_func = v_func
-        # For Fourier series decomposition:
-        self.M = 4
-        self.m_vect = np.arange(0, self.M+1)
-        self.nc = nc
-        self.jw2 = []
-
-    def indices_low_freq(self, channel):
-        """
-    
-        Returns the indices of the integrated gravitational strain signal for the
-        low frequency approximation of the tdi response, such that
-    
-        dTDI = (1-D^2)(1+D)(H_i - H_j)
-    
-        Parameters
-        ----------
-        channel : string
-            tdi channel among {'X1','Y1','Z1'}
-    
-        Returns
-        -------
-        i : scalar integer
-            index of first arm
-        j : scalar integer
-            index of second arm
-    
-    
-        """
-    
-        if channel == 'X1':
-            i = 2
-            j = 3
-    
-        elif channel == 'Y1':
-            i = 3
-            j = 1
-    
-        elif channel == 'Z1':
-            i = 1
-            j = 2
-    
-        return i, j
-
-    def o2i(self, x, nc):
-        """
-        convert Bessel order to vector index
-    
-        """
-    
-        return np.int(x+self.nc+4)
-
-    def bessel_decomp_pos(self, v_minus_list, Jw, e_vect, nc, m):
-        """
-    
-        This function calculates y_c(f) and y_s(f), basic quantities needed in the
-        frequency response to gravitational wave, ONLY KEEPING THE TERMS THAT
-        ARE SIGNIFICANT FOR POSITIVE FREQUENCIES.
-    
-        Parameters
-        ----------
-        v_minus : list of array_like
-            stored values of conj(v)(-f+kf_t)
-        Jw : list of complex scalar
-            stored values of jv(n, 2*np.pi*f_0*d0)*np.exp(-1j*n*varphi)
-        e_vect : list of complex scalars
-            stored values of np.exp(1j*n*varphi)
-        nc : scalar integer
-            order of the decomposition
-        m : scalar integer
-            positive or negative integer indicating the harmonic of f_T (yearly period)
-    
-        Returns
-        -------
-        w : numpy array
-            vector of values of w(f) (size N) calculated at given frequencies
-    
-        """
-    
-        # NEW BESSEL DECOMPOSITION:
-        n_vect = np.arange(-nc, nc+1)
-    
-        v_minus = [np.conj(v_minus_list[self.o2i(-m-n,nc)])*e_vect[np.int(n+nc)] for n in n_vect]
-    
-        y_c = sum([Jw[k]*1/2.*v_minus[k] for k in range(len(v_minus))])
-        #y_s = sum( [ -Jw[k]*1j/2.*v_minus[k] for k in range(len(v_minus)) ] )
-        #y_s = -1j*y_c
-        return y_c#,y_s
-
-
-    def u_matrices(self, f, params, ts, Tstart, Tend, nc=15, derivative=2):
-        """
-    
-        Compute the frequency matrix W involved in the calculation of the basis
-        functions
-    
-        .. math::
-    
-            \tilde{\dot{u}}^{(i)}_{c,\alpha}(f)  = Uc K^{ij}_{\alpha}
-    
-        Parameters
-        ----------
-        f : array_like or list of array_like
-            frequencies where to evalutate the function w(f)
-        params : array_like
-            vector of extrinsinc parameters: theta,phi,f_0,f_dot
-        v_func : callable
-            function of frequency giving the Fourier transform of exp(-j*Phi(t)),
-            where Phi(t) is the phase of the gravitatonal wave
-        ts : scalar float
-            Sampling time
-        Tstart : scalar float
-            Starting observation time
-        Tend: scalar float
-            End observation time
-        derivative : scalar integer
-            order of the derivative, integer >=0
-    
-        Returns
-        -------
-        Uc : 2d numpy array
-            matrix Uc(f) of size N x 5
-        Us : 2d numpy array
-            matrix Us(f) of size N x 5
-    
-        """
-    
-    
-        theta = params[0]
-        phi = params[1]
-        f_0 = params[2]
-        f_dot = params[3]
-    
-        d0 = self.R * np.sin(theta) / LC.c
-    
-        varphi = phi + np.pi/2
-    
-        # Precompute the Bessel coefficients
-        v_minus_list = [self.v_func(-f+k*self.f_T,f_0,f_dot,ts,Tstart,Tend) for k in range(-nc-self.M,nc+self.M+4)]
-    
-        n_vect = np.arange(-nc,nc+1)
-        e_vect = np.exp(1j*n_vect*varphi)
-    
-        Jw = [special.jv(n, 2*np.pi*f_0*d0) for n in n_vect]
-    
-#        U = [self.bessel_decomp_pos_c(v_minus_list,Jw,e_vect,nc,m) for m in -m_vect]
-#        U.extend([U[0]]) # Avoid computing m=0 twice
-#        U.extend([self.bessel_decomp_pos_c(v_minus_list,Jw,e_vect,nc,m) for m in m_vect[1:]])
-#    
-#        jw2 = (2*np.pi*1j*f)**derivative
-#        Uc = np.array([ jw2 * z[0] for z in U]).T
-#    
-#        return Uc
-    
-        U = [self.bessel_decomp_pos(v_minus_list,Jw,e_vect,nc,m) for m in -self.m_vect]
-        U.extend([U[0]]) # Avoid computing m=0 twice
-        U.extend([self.bessel_decomp_pos(v_minus_list,Jw,e_vect,nc,m) for m in self.m_vect[1:]])
-        #t2 = time.time()
-        #print("---- U decomposition took " + str(t2-t1) + " sec.")
-        
-        jw2 = (2*np.pi*1j*f)**derivative
-        Uc = np.array([jw2 * z for z in U]).T
-        #Us = np.array([ jw2 * z[1] for z in U]).T
-        #Us = -1j*Uc
-
-
-        return Uc#,Us
-
-    def design_matrix_freq(self, f, params, ts, Tstart, Tend, channel='X1'):
-        """
-        Compute design matrix such that the TDI variable (fist generation)
-        can be written as
-    
-        TDI(f) = A(theta,phi,f0,f_dot,f) beta(A_p,A_c,phi_0,psi)
-    
-        beta = (gamma_p,sigma_p,gamma_c,sigma_c)
-    
-        Parameters
-        ----------
-        f : array_like
-            frequencies where to compute the matrix
-        params : array_like
-            vector of extrinsinc parameters: theta,phi,f_0,f_dot
-        Tobs : scalar float
-            Observation Duration
-        ts : scalar float
-            sampling cadence
-        tdi : string
-            tdi channel among {'X1','X2','X3'}
-    
-    
-        Returns
-        -------
-        A : numpy array
-            model matrix of size (N x K)
-    
-    
-        """
-    
-        # Indices of arms to be considered for the TDI variable
-        i, j = self.indices_low_freq(channel)
-    
-        # Compute coefficients of the decomposition of basis functions u_alpha
-        k_p, k_c = k_coeffs(params, self.Phi_rot, i, j)
-    
-    
-    
-        # Compute model matrix in frequency domain (in fractional frequency)
-        #Uc,Us = self.u_matrices(f,params,ts,Tstart,Tend,nc = self.nc, derivative = 2)
-        Uc = self.u_matrices(f, params, ts, Tstart, Tend, nc = self.nc, derivative = 2)
-    
-        k_p_tot = np.concatenate((k_p, np.conj(k_p)))
-        k_c_tot = np.concatenate((k_c, np.conj(k_c)))
-    
-#        # Compute response in the slowly varying response approximation
-#        A_tmp = np.empty((len(f),4),dtype = np.complex128)
-#        A_tmp[:,0] = np.dot(Uc,k_p_tot) #C_func*Dxi_p
-#        A_tmp[:,1] = np.dot(Uc,k_c_tot) #C_func*Dxi_c
-#        A_tmp[:,2] = -1j* A_tmp[:,0] #S_func*Dxi_p
-#        A_tmp[:,3] = -1j*A_tmp[:,1] #S_func*Dxi_c
-
-        #gamma_p,gamma_c,sigma_p,sigma_c
-        A_tmp = np.empty((2*len(f), 4), dtype=np.float64)
-        Ac_plus = np.dot(Uc, k_p_tot) #C_func*Dxi_p
-        Ac_cros = np.dot(Uc, k_c_tot) #C_func*Dxi_c
-        A_tmp[:, 0] = np.concatenate((Ac_plus.real, Ac_plus.imag))
-        A_tmp[:, 1] = np.concatenate((Ac_cros.real, Ac_cros.imag))
-        A_tmp[:, 2] = np.concatenate((Ac_plus.imag, -Ac_plus.real))
-        A_tmp[:, 3] = np.concatenate((Ac_cros.imag, -Ac_cros.real))
-
-        A = (self.armlength/LC.c)**2*A_tmp
-    
-        return A
-
-
-class MBHBWaveform(GWwaveform):
-    """
-    Class to compute the LISA response to an incoming gravitational wave.
-
-    """
-
-    def __init__(self, Phi_rot=0, armlength=2.5e9, reduced=False):
-        """
-
-
-        Parameters
-        ----------
-        v_func : callable
-            function of frequency giving the Fourier transform of exp(-j*Phi(t)),
-            where Phi(t) is the phase of the gravitatonal wave
-        fs : scalar float
-            sampling frequency
-        Phi_rot : scalar float
+        phi_rot : scalar float
             initial angle of LISA constellation
         armlength : scalar float
             Arm length (default is 2.5e9 m)
@@ -388,7 +191,328 @@ class MBHBWaveform(GWwaveform):
 
         """
 
-        super().__init__(Phi_rot=Phi_rot, armlength=armlength)
+        super().__init__(phi_rot=phi_rot, armlength=armlength)
+
+        # Name of intrinsic parameters
+        self.names = ['theta', 'phi', 'f_0', 'f_dot']
+        # Phase function
+        self.v_func = v_func
+        # For Fourier series decomposition: m = 0, 1, .. 4
+        self.nc = nc
+        self.m_max = 4
+        self.m_vect = np.arange(0, self.m_max + 1)
+        self.jw2 = []
+
+    def o2i(self, x):
+        """
+        convert Bessel order to vector index
+        Example:
+        Order n corresponds to the n + nc + 4 th entry in the vector
+
+        n_arr = [- nc - 4, .. nc + 4]
+
+        """
+
+        return np.int(x + self.nc + 4)
+
+    def bessel_decomp_pos(self, v_minus_list, jw, e_vect, n_vect, m):
+        """
+
+        This function calculates y_c(f) and y_s(f), basic quantities needed in
+        the frequency response to gravitational wave,
+        ONLY KEEPING THE TERMS THAT ARE SIGNIFICANT FOR POSITIVE FREQUENCIES.
+
+        Parameters
+        ----------
+        v_minus : list of array_like
+            stored values of v(f + k f_t)
+        jw : list of complex scalar
+            stored values of jv(n, 2*np.pi*f_0*d0)
+        e_vect : list of complex scalars
+            stored values of np.exp(1j*n*varphi)
+        n_vect : array_like
+            array of indices from -nc to nc (possibly with some skipped)
+        m : scalar integer
+            positive or negative integer indicating the harmonic of f_T
+            (yearly period)
+
+        Returns
+        -------
+        w : numpy array
+            vector of values of w(f) (size N) calculated at given frequencies
+
+        """
+
+        # when v = FT(e^(-jPhi))
+        v_minus = [np.conj(v_minus_list[self.o2i(-m-n)])
+                   * e_vect[np.int(n + self.nc)] for n in n_vect]
+        # when v = FT(e^(jPhi))
+        # v_minus = [v_minus_list[self.o2i(n + m)] * e_vect[np.int(n + self.nc)]
+        #            for n in n_vect]
+
+        y_c = sum([jw[k]*1/2.*v_minus[k] for k in range(len(v_minus))])
+        y_s = -1j*y_c
+
+        return y_c, y_s
+
+    def u_matrices(self, f, params, ts, t_start, t_end, derivative=2):
+        """
+
+        Compute the frequency matrix W involved in the calculation of the basis
+        functions
+
+        .. math::
+
+            \tilde{\dot{u}}^{(i)}_{c,\alpha}(f) = Uc K^{ij}_{\alpha}
+
+        Parameters
+        ----------
+        f : array_like or list of array_like
+            frequencies where to evalutate the function w(f)
+        params : array_like
+            vector of extrinsinc parameters: theta, phi, f_0, f_dot
+        v_func : callable
+            function of frequency giving the Fourier transform of
+            exp(-j*Phi(t)), where Phi(t) is the phase of the gravitatonal wave
+        ts : scalar float
+            Sampling time
+        t_start : scalar float
+            Starting observation time
+        t_end: scalar float
+            End observation time
+        derivative : scalar integer
+            order of the derivative, integer >=0
+
+        Returns
+        -------
+        Uc : 2d numpy array
+            matrix Uc(f) of size N x 5
+        Us : 2d numpy array
+            matrix Us(f) of size N x 5
+
+        """
+
+        theta = params[0]
+        phi = params[1]
+        f_0 = params[2]
+        f_dot = params[3]
+
+        d0 = self.R * np.sin(theta) / LC.c
+
+        varphi = phi + np.pi/2
+
+        # Precompute the Bessel coefficients f, f_0, f_dot, ts, T1, T2
+        # when v = FT(e^(-jPhi))
+        # v_minus_list = [self.v_func(-f + k * self.f_T, f_0, f_dot, ts, t_start,
+        #                             t_end)
+        #                 for k in range(-self.nc - self.m_max,
+        #                                self.nc + self.m_max)]
+        # (f, f_0, f_dot, T, ts)
+        v_minus_list = [self.v_func(-f + k * self.f_T, f_0, f_dot, t_end, ts)
+                        for k in range(-self.nc - self.m_max,
+                                       self.nc + self.m_max + 1)]
+        # when v = FT(e^(+jPhi))
+        # v_minus_list = [self.v_func(f + k * self.f_T, f_0, f_dot, ts, t_start,
+        #                             t_end)
+        #                 for k in range(-self.nc - self.m_max,
+        #                                self.nc + self.m_max + 4)]
+
+        n_vect = np.arange(-self.nc, self.nc + 1)
+        e_vect = np.exp(1j*n_vect*varphi)
+
+        jw = [special.jv(n, 2*np.pi*f_0*d0) for n in n_vect]
+
+        # Valid only for positive frequencies:
+        u = [self.bessel_decomp_pos(v_minus_list, jw, e_vect, n_vect, m)
+             for m in - self.m_vect]
+        u.extend([u[0]])  # Avoid computing m=0 twice
+        u.extend([self.bessel_decomp_pos(v_minus_list, jw, e_vect, n_vect, m)
+                  for m in self.m_vect[1:]])
+
+        jomega = (2*np.pi*1j*f)**derivative
+        uc = np.array([jomega * z[0] for z in u]).T
+        us = np.array([jomega * z[1] for z in u]).T
+
+        return uc, us
+
+    def design_matrix_freq(self, uc, us, k_p, k_c):
+        """
+        Compute design matrix such that the TDI variable (fist generation)
+        can be written as
+
+        TDI(f) = A(theta,phi,f0,f_dot,f) beta(A_p,A_c,phi_0,psi)
+
+        beta = (gamma_p,sigma_p,gamma_c,sigma_c)
+
+        Parameters
+        ----------
+        f : array_like
+            frequencies where to compute the matrix
+        params : array_like
+            vector of extrinsinc parameters: theta, phi, f_0, f_dot
+        ts : scalar float
+            Sampling time
+        t_start : scalar float
+            Starting observation time
+        t_end: scalar float
+            End observation time
+        channel : string
+            tdi channel among {'X1','Y1','Z1'}
+            Can also be a list of channels, like ['X1','Y1','Z1']. In that case
+            the output is also a list of matrices.
+
+
+        Returns
+        -------
+        A : numpy array
+            model matrix of size (N x K)
+
+
+        """
+
+        # # Compute model matrix in frequency domain (in fractional frequency)
+        # uc = self.u_matrices(f, params, ts, t_start, t_end,
+        #                      derivative=derivative)
+        #
+        # return [form_design_matrix(uc, k_p[i], k_c[i], complex=complex)
+        #         for i in range(len(k_p))]
+
+        # # Indices of arms to be considered for the TDI variable
+        # i, j = pyFLR.indices_low_freq(tdi)
+        # N = len(f)
+        #
+        # # Compute coefficients of the decomposition of basis functions
+        # u_alpha k_p, k_c = k_coeffs(params,Phi_rot,i,j)
+
+        k_p_tot = np.concatenate((k_p, np.conj(k_p)))
+        k_c_tot = np.concatenate((k_c, np.conj(k_c)))
+
+        # Compute response in the slowly varying response approximation
+        a_tmp = np.empty((uc.shape[0], 4), dtype=np.complex128)
+        a_tmp[:, 0] = np.dot(uc, k_p_tot)  # C_func*Dxi_p
+        a_tmp[:, 1] = np.dot(uc, k_c_tot)  # C_func*Dxi_c
+        a_tmp[:, 2] = np.dot(us, k_p_tot)  # S_func*Dxi_p
+        a_tmp[:, 3] = np.dot(us, k_c_tot)  # S_func*Dxi_c
+        # a_mat = (armlength/LC.c)**2*a_tmp
+
+        return a_tmp
+
+    def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET'):
+        """
+        Compute LISA's response to the incoming galactic binary GW in the
+        frequency domain
+
+        Parameters
+        ----------
+        f : array_like
+            frequencies where to compute the matrix
+        params : array_like
+            vector of parameters: a0, incl, phi_0, psi, theta, phi, f_0, f_dot
+        tobs : scalar float
+            Observation Duration
+        ts : scalar float
+            sampling cadence
+        channel : string
+            tdi channel among {'X1','X2','X3'}
+        tref : float
+            starting time of the waveform
+
+        Returns
+        -------
+        ch_interp : list of numpy arrays
+            list containing the 3 TDI responses in channels A, E and T,
+            expressed in fractional frequency amplidudes,
+            such that ch_interp[i] corresponds to fft(ch[i]) without any
+            normalization
+
+        """
+
+        # Extract physical parameters
+        a0, incl, phi_0, psi, theta, phi, f_0, f_dot = params
+        # Compute constant amplitude coefficients
+        beta = coeffs.beta_gb(a0, incl, phi_0, psi)
+        # Vector of intrinsic parameters
+        param_intr = np.array([theta, phi, f_0, f_dot])
+
+        # domain and in each channel
+        if channel == 'phasemeters':
+            print(channel)
+            pre = (self.armlength / (4 * LC.c))
+            derivative = 1
+            # There is a mixing to convert it in the phasemeter measurements!
+            # i_mix = [2, 0, 1]
+            # 3 1 2
+            # theta,phi,f_0,f_dot
+
+            # Compute the required coefficients response depending on channel
+            kp3, kc3 = coeffs.k_coeffs_single(param_intr, self.phi_rot, 3)
+            kp1, kc1 = coeffs.k_coeffs_single(param_intr, self.phi_rot, 1)
+            kp2, kc2 = coeffs.k_coeffs_single(param_intr, self.phi_rot, 2)
+
+            k_p_list = [kp3, kp1, kp2]
+            k_c_list = [kc3, kc1, kc2]
+
+        elif (channel == 'TDIAET') | (channel == 'TDIXYZ'):
+            print(channel)
+            pre = (self.armlength / LC.c) ** 2
+            derivative = 2
+
+            # Compute the required coefficients response depending on channel
+            i, j = indices_low_freq('X1')  # 23
+            kp23, kc23 = coeffs.k_coeffs(params, self.phi_rot, i, j)
+            i, j = indices_low_freq('Y1')  # 31
+            kp31, kc31 = coeffs.k_coeffs(params, self.phi_rot, i, j)
+            i, j = indices_low_freq('Z1')  # 12
+            kp12, kc12 = coeffs.k_coeffs(params, self.phi_rot, i, j)
+
+            k_p_list = [kp23, kp31, kp12]
+            k_c_list = [kc23, kc31, kc12]
+
+        # Compute model matrix in frequency domain (in fractional frequency)
+        uc, us = self.u_matrices(f, param_intr, del_t, 0, tobs,
+                                 derivative=derivative)
+
+        mat_list = [self.design_matrix_freq(uc, us, k_p_list[i], k_c_list[i])
+                    for i in range(len(k_p_list))]
+
+        # Transform to complex number
+        ch_list = [pre * mat.dot(beta) for mat in mat_list]
+
+        if channel == 'TDIAET':
+            a, e, t = convert_xyz_to_aet(ch_list[0], ch_list[1], ch_list[2])
+            return a, e, t
+        else:
+            return ch_list[0], ch_list[1], ch_list[2]
+
+
+class MBHBWaveform(GWwaveform):
+    """
+    Class to compute the LISA response to an incoming gravitational wave.
+
+    """
+
+    def __init__(self, phi_rot=0, armlength=2.5e9, reduced=False):
+        """
+
+
+        Parameters
+        ----------
+        v_func : callable
+            function of frequency giving the Fourier transform of exp(-j*Phi(t)),
+            where Phi(t) is the phase of the gravitatonal wave
+        fs : scalar float
+            sampling frequency
+        phi_rot : scalar float
+            initial angle of LISA constellation
+        armlength : scalar float
+            Arm length (default is 2.5e9 m)
+        nc : scalar integer
+            order of the Bessel function decomposition
+
+
+        """
+
+        super().__init__(phi_rot=phi_rot, armlength=armlength)
 
         # Name of intrinsic parameters
         self.names = ['m1', 'm2', 'a1', 'a2', 'beta', 'psi', 'tc']
@@ -423,7 +547,7 @@ class MBHBWaveform(GWwaveform):
 
     def shift_time(self, f, xf, delay):
 
-        return xf*np.exp(-2j*np.pi*f*delay)
+        return xf * np.exp(-2j * np.pi * f * delay)
 
     def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET', ldc=False, tref=0):
         """
@@ -434,7 +558,7 @@ class MBHBWaveform(GWwaveform):
         f : array_like
             frequencies where to compute the matrix
         params : array_like
-            vector of extrinsinc parameters: theta,phi,f_0,f_dot
+            vector of parameters: phi0, m1, m2, a1, a2, dist, inc, lam, beta, psi, tc
         Tobs : scalar float
             Observation Duration
         ts : scalar float
@@ -480,7 +604,7 @@ class MBHBWaveform(GWwaveform):
                                                                                 fmax=0.5 / del_t, frqs=None, resf=None)
 
             ch_interp = [self.interpolate_waveform(fr, f, ch) for ch in [x, y, z]]
-            a, e, t = tdi.AET(ch_interp[0], ch_interp[1], ch_interp[2])
+            a, e, t = convert_xyz_to_aet(ch_interp[0], ch_interp[1], ch_interp[2])
 
             if (channel == 'TDIAET') | (channel == ['A', 'E', 'T']):
                 # print(channel)
@@ -499,9 +623,9 @@ class MBHBWaveform(GWwaveform):
                                          acc=1e-4, order_fresnel_stencil=0, approximant='IMRPhenomD',
                                          responseapprox='full', frozenLISA=False, TDIrescaled=False)
             signal_freq = lisa.GenerateLISASignal(wftdi, f)
-            ch_interp = [self.shift_time(f, signal_freq['ch1'],  tobs).conj() / del_t,
-                         self.shift_time(f, signal_freq['ch2'],  tobs).conj() / del_t,
-                         self.shift_time(f, signal_freq['ch3'],  tobs).conj() / del_t]
+            ch_interp = [self.shift_time(f, signal_freq['ch1'], tobs).conj() / del_t,
+                         self.shift_time(f, signal_freq['ch2'], tobs).conj() / del_t,
+                         self.shift_time(f, signal_freq['ch3'], tobs).conj() / del_t]
             # Devide by del_t to be consistent with the unnormalized DFT
 
         # Interpolate the response on required grid
@@ -519,7 +643,8 @@ class MBHBWaveform(GWwaveform):
 
         return a_mat
 
-    def design_matrix_freq(self, f, params_intr, del_t, tobs, channel='TDIAET', complex=False, tref=0):
+    def design_matrix_freq(self, f, params_intr, del_t, tobs, channel='TDIAET',
+                           complex=False, tref=0):
         """
         Compute design matrix such that the TDI variable (fist generation)
         can be written as
@@ -579,12 +704,11 @@ class MBHBWaveform(GWwaveform):
         params_1[self.i_dist] = 1e3
         params_2[self.i_dist] = 1e3
         # Inclination
-        params_1[self.i_inc] = 0 # 0.5 * np.pi
-        params_2[self.i_inc] = 0 # 0.5 * np.pi
+        params_1[self.i_inc] = 0  # 0.5 * np.pi
+        params_2[self.i_inc] = 0  # 0.5 * np.pi
         # Polarization angle
         params_1[self.i_psi] = 0.0
-        params_2[self.i_psi] = np.pi/4
-
+        params_2[self.i_psi] = np.pi / 4
 
         # amp = 2* G * mu / (dl * c**2)
 
@@ -646,7 +770,6 @@ def generate_lisa_signal(wftdi, freq=None, channels=None):
     if channels is None:
         channels = [1, 2]
 
-
     fs = wftdi['freq']
     amp = wftdi['amp']
     phase = wftdi['phase']
@@ -707,7 +830,8 @@ def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657, channels=None
     return ch_interp
 
 
-def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657, channels=None):
+def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657,
+                  channels=None):
     """
     Design matrix for reduced order likelihood
     Parameters
@@ -735,7 +859,7 @@ def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657, channels=Non
     params_1[i_dist] = 1e3
     params_2[i_dist] = 1e3
     # # Coalescence time
-    # params_1[i_tc] = tobs/2  # 0.5 * np.pi
+    # params_1[i_tc] = 0  # 0.5 * np.pi
     # params_2[i_tc] = tobs/2  # 0.5 * np.pi
     # Polarization angle
     params_1[i_psi] = 0.0
@@ -777,9 +901,7 @@ def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657, channels=Non
     # mat_list = [np.vstack((h * tr_int1[i - 1] * z, h2 * tr_int2[i - 1] * z)).conj().T for i in channels]
     mat_list = [np.array([h * tr_int1[i - 1] * z]).conj().T for i in channels]
 
-    return mat_list #, tr_int1, tr_int2
-
-
+    return mat_list  # , tr_int1, tr_int2
 
 # def design_matrix(par_intr, freq_data, tobs, tref=0, t_offset=52.657, channels=None, minf=1e-5, maxf=1., acc=1e-4,
 #                   dist=1e3, torb=0, LISAconst=pyresponse.LISAconstProposal, responseapprox='full',

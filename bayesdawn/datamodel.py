@@ -5,7 +5,7 @@ Created on Fri Feb  1 13:24:27 2019
 
 @author: qbaghi
 
-This module provide classes to perform missing data imputation steps based on 
+This module provide classes to perform missing data imputation steps based on
 Gaussian conditional model
 """
 
@@ -16,12 +16,13 @@ import numpy as np
 from scipy import signal
 import time
 from scipy import linalg as LA
-from mecm import mecm, matrixalgebra
+from mecm import mecm, matrixalgebra, noise
 import copy
 # FTT modules
 import pyfftw
 pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft
+import warnings
 # import librosa
 # from pycbc.filter.qtransform import qtiling, qplane
 # from scipy.interpolate import interp2d
@@ -149,6 +150,19 @@ class NdTimeSeries(ndarray):
 
 
 def time_series(object, del_t=1.0):
+    """
+    Transform a ndarray into a TimeSeries object
+
+
+    Parameters
+    ----------
+    object
+    del_t
+
+    Returns
+    -------
+
+    """
 
     out = object.view(NdTimeSeries) # dtype=dtype, copy=copy, order=order, subok=subok, ndmin=ndmin)
     out.set_sampling_time(del_t)
@@ -156,6 +170,42 @@ def time_series(object, del_t=1.0):
     # out = NdTimeSeries(object.shape, dtype=float, buffer=object, offset=0, strides=None, order=None, del_t=del_t)
 
     return out
+
+
+def cm_direct(s2, c, ind_mis, ind_obs, mask):
+
+    c_mo = c[np.ix_(ind_mis, ind_obs)]
+
+    return lambda v: c_mo.dot(v)
+
+
+def cm_fft(s2, c, ind_mis, ind_obs, mask):
+
+    return lambda v: matrixalgebra.matVectProd(v, ind_obs, ind_mis, mask, s2)
+
+
+def toeplitz(r, inds):
+
+    ix, iy = np.meshgrid(inds, inds)
+
+    indx = np.abs(ix - iy)
+
+    return np.vstack([r[indx[i, :]] for i in range(indx.shape[0])])
+    # c = np.asarray(c).ravel()
+    # if r is None:
+    #     r = c.conjugate()
+    # else:
+    #     r = np.asarray(r).ravel()
+    # # Form a 1D array of values to be used in the matrix, containing a reversed
+    # # copy of r[1:], followed by c.
+    # vals = np.concatenate((r[-1:0:-1], c))
+    # a, b = np.ogrid[0:len(c), len(r) - 1:-1:-1]
+    # indx = a + b
+    # # `indx` is a 2D array of indices into the 1D array `vals`, arranged so
+    # # that `vals[indx]` is the Toeplitz matrix.
+    # return vals[indx]
+
+
 
 
 class GaussianStationaryProcess(object):
@@ -222,6 +272,10 @@ class GaussianStationaryProcess(object):
         # If the method is exact (not nearest neighboors) you need the full autocovariance
         if self.method != 'nearest':
             self.n_max = len(mask)
+        else:
+            if self.n_max > 2000:
+                warnings.warn("The maximum size of gap + conditional is high.", UserWarning)
+
         # Indices of embedding segments around each gap
         # The edges of each segment is set such that there are Na + Nb observed
         # data around, unless another gap is present.
@@ -252,7 +306,7 @@ class GaussianStationaryProcess(object):
 
     def compute_preconditioner(self, autocorr):
         """
-        Precompute the pre-conditionner operator that looks like Coo
+        Precompute the pre-conditioner operator that looks like Coo
 
         Parameters
         ----------
@@ -266,7 +320,8 @@ class GaussianStationaryProcess(object):
 
         # Precompute solver
         print("Build preconditionner...")
-        self.solve = mecm.computePrecond(autocorr, self.mask, p=self.p, taper='Wendland2')
+        self.solve = mecm.compute_precond(autocorr, self.mask, p=self.p,
+                                          taper='Wendland2')
         print("Preconditionner built.")
 
     def impute(self, y_model, psd):
@@ -314,8 +369,9 @@ class GaussianStationaryProcess(object):
             PSD vector
         c_oo_inv : 2d numpy array
             Inverse of covariance matrix of observed data
-        c_mo : 2d numpy array
-            Matrix of covariance between missing data with observed data
+        c_mo : callable
+            function computing the product of Matrix of covariance between missing data with observed data with any
+            vector: Cmo.x
         ind_obs : array_like (size No)
             vector of chronological indices of the observed data points in the
             complete data vector
@@ -341,11 +397,20 @@ class GaussianStationaryProcess(object):
 
         # the size of the vector that is randomly drawn is
         # equal to the size of the mask.
-        # e = np.real(noise.generateNoiseFromDSP(np.sqrt(S_2N*2.), 1.)[0:M.shape[0]])
+        # e = np.real(noise.generateNoiseFromDSP(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
         e = np.random.multivariate_normal(np.zeros(mask.shape[0]), c[0:mask.shape[0], 0:mask.shape[0]])
 
         # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
         eps = e[ind_mis] + c_mo.dot(c_oo_inv.dot(z_o - e[ind_obs]))
+
+        return eps
+
+    def conditional_draw_fast(self, z_o, psd_2n, c_oo_inv, c_mo, ind_obs, ind_mis, mask):
+
+        e = np.real(noise.generateNoiseFromDSP(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
+
+        # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
+        eps = e[ind_mis] + c_mo(c_oo_inv.dot(z_o - e[ind_obs]))
 
         return eps
 
@@ -384,12 +449,10 @@ class GaussianStationaryProcess(object):
         y_mis_res = self.imputation(y - y_model, autocorr, s2)
         # Construct the full imputed data vector
         # at observed value this is the same
-        y_rec = np.zeros(self.n, dtype=np.float64)
-        y_rec[self.ind_obs] = y[self.ind_obs]
+        y_rec = y[:]
         y_rec[self.ind_mis] = y_mis_res + y_model[self.ind_mis]
         t2 = time.time()
         print("Missing data imputation took " + str(t2-t1))
-
         return y_rec
 
     def imputation(self, y, r, s2):
@@ -415,11 +478,6 @@ class GaussianStationaryProcess(object):
         """
 
         if self.method == 'nearest':
-
-            if self.n_max > 2000:
-                raise ValueError("The maximum size of gap + conditional set is too high.")
-
-            c = LA.toeplitz(r)
             # ======================================================================
             # For precomputations
             # ======================================================================
@@ -432,7 +490,18 @@ class GaussianStationaryProcess(object):
             # ======================================================================
             # Gap per gap imputation
             # ======================================================================
-            results = [self.single_imputation(y[indj], self.mask[indj], c, s2) for indj in self.indices]
+            if self.n_max <= 2000:
+                c = LA.toeplitz(r)
+                results = [self.single_imputation(y[indj], self.mask[indj], c,
+                                                  s2) for indj in self.indices]
+            else:
+                # If the number of points inside the gaps is too large, use a
+                # FFT-based method
+                results = [self.single_imputation_fast(y[indj],
+                                                       self.mask[indj],
+                                                       r,
+                                                       s2)
+                           for indj in self.indices]
             y_mis = np.concatenate(results)
             # y_rec = np.zeros(N, dtype = np.float64)
             # y_rec[self.ind_obs] = y[self.ind_obs]
@@ -440,12 +509,14 @@ class GaussianStationaryProcess(object):
         elif self.method == 'tapered':
             # Sparse approximation of the covariance
             print("Build preconditionner...")
-            self.solve = mecm.computePrecond(r, self.mask, p=self.p, taper='Wendland2')
+            self.solve = mecm.computePrecond(r, self.mask, p=self.p,
+                                             taper='Wendland2')
             print("Preconditionner built.")
             # Approximately solve the linear system C_oo x = eps
             u = self.solve(y[self.ind_obs])
             # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
-            y_mis = matrixalgebra.matVectProd(u, self.ind_obs, self.ind_mis, self.mask, s2)
+            y_mis = matrixalgebra.matVectProd(u, self.ind_obs, self.ind_mis,
+                                              self.mask, s2)
         elif self.method == 'PCG':
             # Precompute solver if necessary
             if self.solve is None:
@@ -453,19 +524,39 @@ class GaussianStationaryProcess(object):
             # First guess
             x0 = np.zeros(len(self.ind_obs))
             # Solve the linear system C_oo x = eps
-            u = matrixalgebra.PCGsolve(self.ind_obs, self.mask, s2, y[self.ind_obs], x0,
-                                       self.tol, self.n_it_max, self.solve, 'scipy')
+            u = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
+                                        y[self.ind_obs], x0,
+                                        self.tol, self.n_it_max, self.solve,
+                                        'scipy')
             # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
-            y_mis = matrixalgebra.matVectProd(u, self.ind_obs, self.ind_mis, self.mask, s2)
+            y_mis = matrixalgebra.matVectProd(u, self.ind_obs, self.ind_mis,
+                                              self.mask, s2)
 
         return y_mis
 
     def single_imputation(self, yj, maskj, c, psd_2n):
         """
+        Sample the missing data distribution conditionally on the observed
+        data, using direct brute-force computation.
 
-        Sample the missing data distribution conditionally on the observed data
+        Parameters
+        ----------
+        yj : ndarray
+            segment of masked data
+        maskj : ndarray
+            local mask
+        c : ndarray
+            covariance matrix of sized nj x nj
+        psd_2n : ndarray
+            psd computed on a Fourier grid of size 2nj
+
+        Returns
+        -------
+        out : ndarray
+            imputed missing data, of size len(np.where(maskj == 0)[0])
 
         """
+
         # Local indices of missing and observed data
         ind_obsj = np.where(maskj == 1)[0]
         ind_misj = np.where(maskj == 0)[0]
@@ -474,10 +565,43 @@ class GaussianStationaryProcess(object):
         #C_mm = C[np.ix_(ind_misj,ind_misj)]
         c_oo_inv = LA.inv(c[np.ix_(ind_obsj, ind_obsj)])
 
-        out = self.conditional_draw(yj[ind_obsj], psd_2n, c_oo_inv, c_mo, ind_obsj, ind_misj, maskj, c)
+        out = self.conditional_draw(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
+                                    ind_obsj, ind_misj, maskj, c)
         #out = conditionalDraw2(yj[ind_obsj],C_mm,c_mo,c_oo_inv)
 
         return out
 
+    def single_imputation_fast(self, yj, maskj, r, psd_2n):
+        """
+        Sample the missing data distribution conditionally on the observed data, computed usin g
 
+        Parameters
+        ----------
+        yj : ndarray
+            segment of masked data
+        maskj : ndarray
+            local mask
+        r : ndarray
+            autocovariance computed until lag n_max
+        psd_2n : ndarray
+            psd computed on a Fourier grid of size 2nj
 
+        Returns
+        -------
+        out : ndarray
+            imputed missing data, of size len(np.where(maskj == 0)[0])
+
+        """
+
+        # Local indices of missing and observed data
+        ind_obsj = np.where(maskj == 1)[0]
+        ind_misj = np.where(maskj == 0)[0]
+        # Covariance of observed data and its inverse
+        c_oo = toeplitz(r, ind_obsj)
+        c_oo_inv = LA.inv(c_oo)
+        # Covariance missing / observed data : matrix operator
+        c_mo = lambda v: matrixalgebra.matVectProd(v, ind_obsj, ind_misj,
+                                                   maskj, psd_2n)
+
+        return self.conditional_draw_fast(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
+                                          ind_obsj, ind_misj, maskj)

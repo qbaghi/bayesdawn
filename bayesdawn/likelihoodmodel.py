@@ -614,10 +614,10 @@ class LogLike(object):
 
         Parameters
         ----------
-        data : array_like
+        data : list of ndarrays
             TDI data A, E, T in the time domain, without any smooth windowing (except binary masking)
-        sn : ndarray
-            noise PSD computed at freq
+        sn : list of ndarrays
+            noise PSD computed at freq for each channel
         inds: array_like
             indices of the frequencies to consider in the Fourier frequency array
         tobs : float
@@ -634,7 +634,7 @@ class LogLike(object):
             rescaling factor for waveforms
         model_cls : bayesdawn.datamodel.GaussianStationaryModel instance
             data model used for missing data imputation
-        psd_cls : bayesdawn.psdmodel.PSD instance
+        psd_cls : list bayesdawn.psdmodel.PSD instance
             noise PSD model
 
 
@@ -689,7 +689,7 @@ class LogLike(object):
         # For missing data imputation
         self.model = model_cls
         # For noise PSD estimation
-        self.psd = psd_cls
+        self.psd_list = psd_cls
 
     def update_psd(self, y_gw_list):
         """
@@ -705,9 +705,9 @@ class LogLike(object):
         """
 
         # Estimate PSD parameters from the residuals in the time domain, in the first TDI channel.
-        self.psd.estimate(self.data[0] - y_gw_list[0], wind='hanning')
+        [self.psd_list[i].estimate(self.data[i] - y_gw_list[i], wind='hanning') for i in range(len(self.data))]
         # Calculate the spectrum in the estimation band
-        self.sn = self.psd.calculate(self.f[self.inds])
+        self.sn = [psd.calculate(self.f[self.inds]) for psd in self.psd_list]
 
     def update_missing_data(self, y_gw_list):
         """
@@ -725,13 +725,13 @@ class LogLike(object):
         """
 
         # Impute missing data
-        y_imp = self.model.impute(y_gw_list, [self.psd, self.psd])
+        y_imp = self.model.impute(y_gw_list, self.psd_list)
         # Transform back to Fourier domain, applying the windowing for complete time series, with re-scaling
         self.data_dft = [fft(y_imp0 * self.wd_full)[self.inds] * self.del_t * self.resc_full for y_imp0 in y_imp]
 
     def update_auxiliary_params(self, par, reduced=True):
 
-        if (self.psd is not None) | (self.model is not None):
+        if (self.psd_list is not None) | (self.model is not None):
             # Compute waveform template in the frequency domain
             if reduced:
                 at, et = self.compute_signal_reduced(par)
@@ -742,7 +742,7 @@ class LogLike(object):
             # Convert the signal in the time domain (factor 1 / del_t incluced)
             y_gw_list = [self.frequency_to_time(y_gw_fft_pos) for y_gw_fft_pos in [at, et]]
             # Update PSD if requested
-            if self.psd is not None:
+            if self.psd_list is not None:
                 self.update_psd(y_gw_list)
             if self.model is not None:
                 self.update_missing_data(y_gw_list)
@@ -761,8 +761,9 @@ class LogLike(object):
 
         """
 
-        ll_norm = - self.nf/2 * np.log(2 * np.pi * 2 * self.del_t) - 0.5 * np.sum(np.log(self.sn)) \
-                  - 0.5 * np.sum(np.abs(self.data_dft[0]) ** 2 / self.sn + np.abs(self.data_dft[1]) ** 2 / self.sn)
+        ll_norm = - self.nf/2 * np.log(2 * np.pi * 2 * self.del_t)
+        ll_norm += sum([- 0.5 * np.sum(np.log(self.sn[i]))
+                        - 0.5 * np.sum(np.abs(self.data_dft[i]) ** 2 / self.sn) for i in range(len(self.data_dft))])
 
         return ll_norm
 
@@ -819,12 +820,12 @@ class LogLike(object):
         at, et = self.compute_signal(par)
 
         # (h | y)
-        sna = np.sum(np.real(self.data_dft[0] * np.conjugate(at)) / self.sn)
-        sne = np.sum(np.real(self.data_dft[1] * np.conjugate(et)) / self.sn)
+        sna = np.sum(np.real(self.data_dft[0] * np.conjugate(at)) / self.sn[0])
+        sne = np.sum(np.real(self.data_dft[1] * np.conjugate(et)) / self.sn[1])
 
         # (h | h)
-        aa = np.sum(np.abs(at) ** 2 / self.sn)
-        ee = np.sum(np.abs(et) ** 2 / self.sn)
+        aa = np.sum(np.abs(at) ** 2 / self.sn[0])
+        ee = np.sum(np.abs(et) ** 2 / self.sn[1])
 
         # (h | y) - 1/2 (h | h)
         llA = 4.0 * self.df * (sna - 0.5*aa)
@@ -851,7 +852,7 @@ class LogLike(object):
         mat_list = lisaresp.design_matrix(params_intr, self.f[self.inds], self.tobs,
                                           tref=0, t_offset=self.t_offset, channels=self.channels)
         # Weighted design matrices
-        mat_list_weighted = [mat_list[i] / np.array([self.sn]).T for i in range(len(self.channels))]
+        mat_list_weighted = [mat_list[i] / np.array([self.sn[i]]).T for i in range(len(self.channels))]
         # Compute amplitudes
         amps = [LA.pinv(np.dot(mat_list_weighted[i].conj().T, mat_list[i])).dot(np.dot(mat_list_weighted[i].conj().T,
                                                                                        self.data_dft[i]))
@@ -893,12 +894,12 @@ class LogLike(object):
         # return np.real(ll + self.ll_norm)
 
         # (h | y)
-        sna = np.sum(np.real(self.data_dft[0] * np.conjugate(at)) / self.sn)
-        sne = np.sum(np.real(self.data_dft[1] * np.conjugate(et)) / self.sn)
+        sna = np.sum(np.real(self.data_dft[0] * np.conjugate(at)) / self.sn[0])
+        sne = np.sum(np.real(self.data_dft[1] * np.conjugate(et)) / self.sn[1])
 
         # (h | h)
-        aa = np.sum(np.abs(at) ** 2 / self.sn)
-        ee = np.sum(np.abs(et) ** 2 / self.sn)
+        aa = np.sum(np.abs(at) ** 2 / self.sn[0])
+        ee = np.sum(np.abs(et) ** 2 / self.sn[1])
 
         # (h | y) - 1/2 (h | h)
         ll_a = 4.0 * self.df * (sna - 0.5 * aa)

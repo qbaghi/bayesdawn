@@ -48,8 +48,7 @@ setup(
 
     keywords='bayesesian data analysis',
     packages=find_packages(),
-    python_requires='>=3.5',
-    install_requires=['numpy', 'scipy', 'pyfftw', 'ptemcee', 'h5py'],
+    python_requires='>=3.5', install_requires=['h5py', 'mecm', 'scipy', 'numpy']
 
 )
 
