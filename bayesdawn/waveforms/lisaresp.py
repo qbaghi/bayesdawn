@@ -251,9 +251,10 @@ class UCBWaveform(GWwaveform):
         #            for n in n_vect]
 
         y_c = sum([jw[k]*1/2.*v_minus[k] for k in range(len(v_minus))])
-        y_s = -1j*y_c
+        # y_s = -1j*y_c
 
-        return y_c, y_s
+        # return y_c, y_s
+        return y_c
 
     def u_matrices(self, f, params, ts, t_start, t_end, derivative=2):
         """
@@ -298,7 +299,6 @@ class UCBWaveform(GWwaveform):
         f_dot = params[3]
 
         d0 = self.R * np.sin(theta) / LC.c
-
         varphi = phi + np.pi/2
 
         # Precompute the Bessel coefficients f, f_0, f_dot, ts, T1, T2
@@ -322,20 +322,22 @@ class UCBWaveform(GWwaveform):
 
         jw = [special.jv(n, 2*np.pi*f_0*d0) for n in n_vect]
 
-        # Valid only for positive frequencies:
+        # List of ucm for all m, valid only for positive frequencies:
         u = [self.bessel_decomp_pos(v_minus_list, jw, e_vect, n_vect, m)
              for m in - self.m_vect]
-        u.extend([u[0]])  # Avoid computing m=0 twice
+        u.extend([u[0]])  # Avoid computing m=0 twice+
         u.extend([self.bessel_decomp_pos(v_minus_list, jw, e_vect, n_vect, m)
                   for m in self.m_vect[1:]])
 
         jomega = (2*np.pi*1j*f)**derivative
-        uc = np.array([jomega * z[0] for z in u]).T
-        us = np.array([jomega * z[1] for z in u]).T
+        # uc = np.array([jomega * z[0] for z in u]).T
+        # us = np.array([jomega * z[1] for z in u]).T
+        uc = np.array([jomega * z for z in u]).T
+        #  us = - 1j * uc
 
-        return uc, us
+        return uc  # , us
 
-    def design_matrix_freq(self, uc, us, k_p, k_c):
+    def design_matrix_freq(self, uc, k_p, k_c):
         """
         Compute design matrix such that the TDI variable (fist generation)
         can be written as
@@ -370,30 +372,23 @@ class UCBWaveform(GWwaveform):
 
         """
 
-        # # Compute model matrix in frequency domain (in fractional frequency)
-        # uc = self.u_matrices(f, params, ts, t_start, t_end,
-        #                      derivative=derivative)
-        #
-        # return [form_design_matrix(uc, k_p[i], k_c[i], complex=complex)
-        #         for i in range(len(k_p))]
-
-        # # Indices of arms to be considered for the TDI variable
-        # i, j = pyFLR.indices_low_freq(tdi)
-        # N = len(f)
-        #
-        # # Compute coefficients of the decomposition of basis functions
-        # u_alpha k_p, k_c = k_coeffs(params,Phi_rot,i,j)
-
         k_p_tot = np.concatenate((k_p, np.conj(k_p)))
         k_c_tot = np.concatenate((k_c, np.conj(k_c)))
 
-        # Compute response in the slowly varying response approximation
+        # # Compute response in the slowly varying response approximation
+        # a_tmp = np.empty((uc.shape[0], 4), dtype=np.complex128)
+        # a_tmp[:, 0] = np.dot(uc, k_p_tot)  # C_func*Dxi_p
+        # a_tmp[:, 1] = np.dot(uc, k_c_tot)  # C_func*Dxi_c
+        # a_tmp[:, 2] = np.dot(us, k_p_tot)  # S_func*Dxi_p
+        # a_tmp[:, 3] = np.dot(us, k_c_tot)  # S_func*Dxi_c
+        # # a_mat = (armlength/LC.c)**2*a_tmp
+
+        # Alternate way, using the fact that us = - 1j * uc:
         a_tmp = np.empty((uc.shape[0], 4), dtype=np.complex128)
         a_tmp[:, 0] = np.dot(uc, k_p_tot)  # C_func*Dxi_p
         a_tmp[:, 1] = np.dot(uc, k_c_tot)  # C_func*Dxi_c
-        a_tmp[:, 2] = np.dot(us, k_p_tot)  # S_func*Dxi_p
-        a_tmp[:, 3] = np.dot(us, k_c_tot)  # S_func*Dxi_c
-        # a_mat = (armlength/LC.c)**2*a_tmp
+        a_tmp[:, 2] = - 1j * a_tmp[:, 0]  # S_func*Dxi_p
+        a_tmp[:, 3] = - 1j * a_tmp[:, 1]  # S_func*Dxi_c
 
         return a_tmp
 
@@ -469,10 +464,14 @@ class UCBWaveform(GWwaveform):
             k_c_list = [kc23, kc31, kc12]
 
         # Compute model matrix in frequency domain (in fractional frequency)
-        uc, us = self.u_matrices(f, param_intr, del_t, 0, tobs,
-                                 derivative=derivative)
+        # uc, us = self.u_matrices(f, param_intr, del_t, 0, tobs,
+        #                          derivative=derivative)
+        uc = self.u_matrices(f, param_intr, del_t, 0, tobs,
+                             derivative=derivative)
 
-        mat_list = [self.design_matrix_freq(uc, us, k_p_list[i], k_c_list[i])
+        # mat_list = [self.design_matrix_freq(uc, us, k_p_list[i], k_c_list[i])
+        #             for i in range(len(k_p_list))]
+        mat_list = [self.design_matrix_freq(uc, k_p_list[i], k_c_list[i])
                     for i in range(len(k_p_list))]
 
         # Transform to complex number

@@ -162,6 +162,63 @@ def get_params(p_gw, sampling=False):
         return ps_sampl
 
 
+def sampling_to_ldc(p_sampl, intrinsic=False, phi1=0, phi2=0):
+    """
+    Convert sampling parameter to LDC standards
+
+    Parameters
+    ----------
+    p_sampl : array_like
+        Vector of sampling parameters
+    intrinsic : bool
+        whether p_sampl is restricted to instrinsic parameters only
+    phi1 : type
+        Polar angle of spin 1
+    phi2 : type
+        Polar angle of spin 2
+
+    Returns
+    -------
+    type
+        Description of returned object.
+
+    """
+
+    if not intrinsic:
+        mc, q, tc, chi1, chi2, log10dl, cosi, sb, lam, psi, phi0 = p_sampl
+        dl = 10**log10dl
+        incl = np.arccos(cosi)
+        # Convert chirp mass into individual masses
+        m1, m2 = compute_masses(mc, q)
+        # Convert Source latitude in SSB-frame
+        bet = np.arcsin(sb)
+        # Convert to LDC spin parameters
+        a1 = chi1 / np.cos(phi1)
+        a2 = chi2 / np.cos(phi2)
+
+        # # cosi =  - np.cos(theL)*np.sin(bet) - np.cos(bet)*np.sin(theL)*np.cos(lam - phiL)
+        # cosi = - np.cos(theL)*np.sin(bet) - np.cos(bet)*np.sin(theL)*(
+        #     np.cos(lam)*np.cos(phiL) + np.sin(lam)*np.sin(phiL))
+        # # down_psi = np.sin(theL)*np.sin(lam - phiL)
+        # # down_psi = np.sin(theL)*np.cos(phiL)* np.sin(lam) - np.sin(theL) * np.sin(phiL) *np.cos(lam)
+        # up_psi = -np.sin(bet)*np.sin(theL)*np.cos(lam - phiL) + np.cos(theL)*np.cos(bet)
+        # np.tan(psi) = up_psi / down_psi
+
+        return m1, m2, dl, a1, a2, tc, lam, bet
+
+    else:
+        mc, q, tc, chi1, chi2, sb, lam = p_sampl
+        # Convert chirp mass into individual masses
+        m1, m2 = compute_masses(mc, q)
+        # Convert Source latitude in SSB-frame
+        bet = np.arcsin(sb)
+        # Convert to LDC spin parameters
+        a1 = chi1 / np.cos(phi1)
+        a2 = chi2 / np.cos(phi2)
+
+        return m1, m2, a1, a2, tc, lam, bet
+
+
 def compute_frequency_vs_time(t, m_chirp, t_merger):
     """
 
@@ -214,4 +271,3 @@ def find_distorted_interval(mask, p_sampl, t0, del_t, margin=0):
     f2 = compute_frequency_vs_time(t2, m_chirp, t_merger - t0)
 
     return f1 * (1 - margin), f2 * (1 + margin)
-

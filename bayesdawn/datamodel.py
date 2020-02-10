@@ -101,7 +101,8 @@ class NdTimeSeries(ndarray):
         freq : numpy array
             frequency vector
         per : numpy array
-            periodogram of the time series expressed in A / Hz where A is the unit of x
+            periodogram of the time series expressed in A / Hz where A is the
+            unit of x
 
         """
 
@@ -110,7 +111,8 @@ class NdTimeSeries(ndarray):
 
         return np.abs(fft(self * w)) ** 2 / (k2 * self.fs)
 
-    def qtransform(self, delta_t=None, delta_f=None, logfsteps=None, frange=None, qrange=(4,64), mismatch=0.2,
+    def qtransform(self, delta_t=None, delta_f=None, logfsteps=None,
+                   frange=None, qrange=(4,64), mismatch=0.2,
                    return_complex=False):
         """ Return the interpolated 2d qtransform of this data
 
@@ -144,7 +146,8 @@ class NdTimeSeries(ndarray):
             The two dimensional interpolated qtransform of this time series.
         """
 
-        z = np.abs(librosa.cqt(self, sr=1/self.fs, fmin=1/self.tobs, hop_length=2**10, window='hann'))
+        z = np.abs(librosa.cqt(self, sr=1/self.fs, fmin=1/self.tobs,
+                               hop_length=2**10, window='hann'))
 
         return z
 
@@ -164,7 +167,7 @@ def time_series(object, del_t=1.0):
 
     """
 
-    out = object.view(NdTimeSeries) # dtype=dtype, copy=copy, order=order, subok=subok, ndmin=ndmin)
+    out = object.view(NdTimeSeries)  # dtype=dtype, copy=copy, order=order, subok=subok, ndmin=ndmin)
     out.set_sampling_time(del_t)
 
     # out = NdTimeSeries(object.shape, dtype=float, buffer=object, offset=0, strides=None, order=None, del_t=del_t)
@@ -206,8 +209,6 @@ def toeplitz(r, inds):
     # return vals[indx]
 
 
-
-
 class GaussianStationaryProcess(object):
     """
 
@@ -215,7 +216,9 @@ class GaussianStationaryProcess(object):
 
 
     """
-    def __init__(self, y, mask, method='nearest', na=150, nb=150, p=60, tol=1e-6, n_it_max=150):
+
+    def __init__(self, y, mask, method='nearest', na=150, nb=150, p=60,
+                 tol=1e-6, n_it_max=150):
         """
 
         Parameters
@@ -225,14 +228,16 @@ class GaussianStationaryProcess(object):
         mask : array_like
             binary mask
         method : str
-            method to use to perform imputation. 'nearest': nearest neighboors, approximate method.
+            method to use to perform imputation. 'nearest': nearest neighboors,
+            approximate method.
         na : scalar integer
             number of points to consider before each gap (for the conditional
             distribution of gap data)
         na : scalar integer
             number of points to consider after each gap
         p : int
-            number of points to keep before truncation for the preconditionner (only if 'PCG' method is chosen)
+            number of points to keep before truncation for the preconditionner
+            (only if 'PCG' method is chosen)
         """
 
         # Masked data
@@ -515,8 +520,8 @@ class GaussianStationaryProcess(object):
             # Approximately solve the linear system C_oo x = eps
             u = self.solve(y[self.ind_obs])
             # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
-            y_mis = matrixalgebra.matVectProd(u, self.ind_obs, self.ind_mis,
-                                              self.mask, s2)
+            y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
+                                                self.mask, s2)
         elif self.method == 'PCG':
             # Precompute solver if necessary
             if self.solve is None:
@@ -524,13 +529,14 @@ class GaussianStationaryProcess(object):
             # First guess
             x0 = np.zeros(len(self.ind_obs))
             # Solve the linear system C_oo x = eps
-            u = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
-                                        y[self.ind_obs], x0,
-                                        self.tol, self.n_it_max, self.solve,
-                                        'scipy')
+            u, info = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
+                                              y[self.ind_obs], x0,
+                                              self.tol, self.n_it_max,
+                                              self.solve,
+                                              'scipy')
             # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
-            y_mis = matrixalgebra.matVectProd(u, self.ind_obs, self.ind_mis,
-                                              self.mask, s2)
+            y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
+                                                self.mask, s2)
 
         return y_mis
 
@@ -600,8 +606,8 @@ class GaussianStationaryProcess(object):
         c_oo = toeplitz(r, ind_obsj)
         c_oo_inv = LA.inv(c_oo)
         # Covariance missing / observed data : matrix operator
-        c_mo = lambda v: matrixalgebra.matVectProd(v, ind_obsj, ind_misj,
-                                                   maskj, psd_2n)
+        c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
+                                                     maskj, psd_2n)
 
         return self.conditional_draw_fast(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
                                           ind_obsj, ind_misj, maskj)

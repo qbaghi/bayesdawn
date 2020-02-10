@@ -194,14 +194,14 @@ class MHSampler(object):
             log-probability distribution function to target
         """
 
-        
+
         self.logp = logp_tilde
         self.N_params = ndim
 
         # Current state
         self.x = np.zeros(self.N_params, dtype=np.float64)
         self.accepted = 0
-        
+
         # To save the samples
         self.x_samples = []
         self.logp_samples = []
@@ -214,7 +214,7 @@ class MHSampler(object):
             self.L_func = lambda x : self.L.conj().T.dot(x)
 
         else:
-            self.L_func = lambda x : x * np.sqrt(self.cov)       
+            self.L_func = lambda x : x * np.sqrt(self.cov)
 
     def sample(self, x, logp_x):
         """
@@ -313,13 +313,16 @@ class ExtendedPTMCMC(ptemcee.Sampler):
 
     def single_sample(self, it, n_it, n_update, n_thin, callback):
 
-        self.position, lnlike0, lnprob0 = self.sample(self.position, n_it, thin=n_thin, storechain=True)
+        self.position, lnlike0, lnprob0 = self.sample(self.position, n_it,
+                                                      thin=n_thin,
+                                                      storechain=True)
 
         if it % n_update == 0:
             print("Update of auxiliary parameters at iteration " + str(it))
             callback(self.position[0, 0, :])
 
-    def run(self, n_it, n_save, n_thin, callback=None, n_callback=1000, n_start_callback=0, pos0=None, save_path='./'):
+    def run(self, n_it, n_save, n_thin, callback=None, n_callback=1000,
+            n_start_callback=0, pos0=None, save_path='./'):
         """
 
         Parameters
