@@ -402,7 +402,15 @@ class UCBWaveform(GWwaveform):
         f : array_like
             frequencies where to compute the matrix
         params : array_like
-            vector of parameters: a0, incl, phi_0, psi, theta, phi, f_0, f_dot
+            vector of parameters:
+            amplitude a0 [GW strain],
+            inclination incl [rad],
+            initial phase phi_0 [rad],
+            polarization angle psi [rad],
+            colatitude theta [rad] = Ecliptic Latitude + pi/2
+            longitude phi [rad] = Ecliptic longitude - pi
+            frequency f_0 [Hz],
+            frequency derivative f_dot [Hz^2]
         tobs : scalar float
             Observation Duration
         ts : scalar float
@@ -420,6 +428,14 @@ class UCBWaveform(GWwaveform):
             such that ch_interp[i] corresponds to fft(ch[i]) without any
             normalization
 
+        Notes
+        -----
+        The Ecliptic latitude (or declination) should varies in the interval
+        [-pi/2, pi /2], therefore theta is in [0, pi]
+        Therefore, the colatitude theta is in the interval [-pi/2, pi /2]
+        The ecliptic longitude varies from 0 to 2pi.
+        Therefore the longitude phi varies in [-pi, pi]
+
         """
 
         # Extract physical parameters
@@ -431,14 +447,12 @@ class UCBWaveform(GWwaveform):
 
         # domain and in each channel
         if channel == 'phasemeters':
-            print(channel)
             pre = (self.armlength / (4 * LC.c))
             derivative = 1
             # There is a mixing to convert it in the phasemeter measurements!
             # i_mix = [2, 0, 1]
             # 3 1 2
             # theta,phi,f_0,f_dot
-
             # Compute the required coefficients response depending on channel
             kp3, kc3 = coeffs.k_coeffs_single(param_intr, self.phi_rot, 3)
             kp1, kc1 = coeffs.k_coeffs_single(param_intr, self.phi_rot, 1)
@@ -548,7 +562,8 @@ class MBHBWaveform(GWwaveform):
 
         return xf * np.exp(-2j * np.pi * f * delay)
 
-    def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET', ldc=False, tref=0):
+    def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET',
+                            ldc=False, tref=0):
         """
         Compute LISA's response to the incoming MBHB GW in the frequency domain
 

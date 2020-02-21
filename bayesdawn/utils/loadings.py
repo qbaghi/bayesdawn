@@ -36,7 +36,8 @@ def load_samples(hdf5_name):
 
 
 def load_simulation(hdf5_name,
-                    param_keylist=['m1', 'm2', 'xi1', 'xi2', 'tc', 'dist', 'inc', 'phi0', 'lam', 'beta', 'psi'],
+                    param_keylist=['m1', 'm2', 'xi1', 'xi2', 'tc', 'dist',
+                                   'inc', 'phi0', 'lam', 'beta', 'psi'],
                     signal_keylist=['tdi_a', 'tdi_e', 'tdi_ts']):
 
     # Load data

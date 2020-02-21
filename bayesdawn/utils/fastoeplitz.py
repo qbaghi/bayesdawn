@@ -1,9 +1,7 @@
 import numpy as np
-from numpy import linalg as LA
 from scipy import sparse
 # FTT modules
 import pyfftw
-import fftwisdom
 pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
 
@@ -261,7 +259,7 @@ def computeToepltizPrecond(R,p=10,taper = 'Wendland2'):
     """
 
     # Preconditionning : use sparse matrix
-    T_approx = mecm.buildSparseCov2(R,p,len(R),form="csc",taper = taper)
+    T_approx = mecm.build_sparse_cov2(R, p, len(R), form="csc", taper = taper)
     # Preconditionner
     solve =  sparse.linalg.factorized(T_approx)
 
@@ -325,8 +323,6 @@ def toepltizLinearOp(N,S_2N):
         vector of size N
 
     """
-
-
 
     T_func = lambda x: toepltizMatVectProd(x,S_2N)
     TH_func = lambda x: toepltizMatVectProd(x,S_2N)
