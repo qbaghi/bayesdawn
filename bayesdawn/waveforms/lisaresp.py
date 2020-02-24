@@ -13,8 +13,11 @@ except ImportError:
     print("Proceed without MLDC packages.")
 import LISAConstants as LC
 # from lisabeta.lisa import lisa
-import lisabeta.lisa.lisa as lisa
-import lisabeta.tools.pyspline as pyspline
+try:
+    import lisabeta.lisa.lisa as lisa
+    import lisabeta.tools.pyspline as pyspline
+except ImportError:
+    print("Proceed without lisabeta package.")
 import numpy as np
 from scipy import special
 from scipy.interpolate import InterpolatedUnivariateSpline as spline
