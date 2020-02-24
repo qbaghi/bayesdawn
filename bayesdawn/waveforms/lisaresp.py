@@ -7,7 +7,10 @@ Created on Fri Feb  1 15:09:36 2019
 """
 
 # For MBHB only, use MLDC code
-import GenerateFD_SignalTDIs
+try:
+    import GenerateFD_SignalTDIs
+except ImportError("MLDC packages not installed"):
+    print("Proceed without MLDC packages.")
 import LISAConstants as LC
 # from lisabeta.lisa import lisa
 import lisabeta.lisa.lisa as lisa
