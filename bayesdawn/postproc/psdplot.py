@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 import numpy as np
 from scipy import optimize
 import scipy.signal
@@ -168,5 +169,3 @@ def compute_psd_map(chain_psd, logp_psd, fs, N):
     S_map_up = np.exp(logS_map + logS_sig * 3)
 
     return fc, S_samples, S_map, S_map_low, S_map_up
-
-

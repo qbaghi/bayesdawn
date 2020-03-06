@@ -63,12 +63,14 @@ def xi_diff_coeffs(theta, phi, Phi_rot, i, j):
     theta : scalar float
         colatitude angle: theta = beta + pi/2 if beta is the ecliptic latitude
     phi : scalar float
-        longitude angle such taht phi = lam - pi where lam is the ecliptic longitude
+        longitude angle such taht phi = lam - pi where lam is the ecliptic
+        longitude
     Phi_rot : scalar float
         rotation angle between the initial configuration of the LISA triangle
         and the standard initial configuration (reference) which is so that
         at t=0 the triangle edge where S/C 1 is located poits downwards (wrt
-        ecliptic plane), S/C 2 is on the y<0 side and S/C 3 is on the third edge.
+        ecliptic plane), S/C 2 is on the y<0 side and S/C 3 is on the third
+        edge.
     i : integer float {1,2,3}
         index of first spacecraft
     j : integer float {1,2,3}
@@ -175,7 +177,8 @@ def xi_coeffs(theta, phi, phi_rot, i):
 
     xi = A_cs * ai
 
-    where xi is the projection functional xi_+(t) such that the strain on the barycentric frame projects as
+    where xi is the projection functional xi_+(t) such that the strain on the
+    barycentric frame projects as
     H(t,tau) = h_{B+}(tau) xi_+(t) + h_{Bx}(tau) xi_x(t)
 
     Parameters
@@ -183,12 +186,14 @@ def xi_coeffs(theta, phi, phi_rot, i):
     theta : scalar float
         colatitude angle: theta = beta + pi/2 if beta is the ecliptic latitude
     phi : scalar float
-        longitude angle such taht phi = lam - pi where lam is the ecliptic longitude
+        longitude angle such taht phi = lam - pi where lam is the ecliptic
+        longitude
     phi_rot : scalar float
         rotation angle between the initial configuration of the LISA triangle
         and the standard initial configuration (reference) which is so that
         at t=0 the triangle edge where S/C 1 is located poits downwards (wrt
-        ecliptic plane), S/C 2 is on the y<0 side and S/C 3 is on the third edge.
+        ecliptic plane), S/C 2 is on the y<0 side and S/C 3 is on the third
+        edge.
     i : integer float {1,2,3}
         index of spacecraft (or single-link channel)
 

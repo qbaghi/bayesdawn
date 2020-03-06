@@ -39,9 +39,11 @@ class NdTimeSeries(ndarray):
 
     # def __init__(self, object, del_t=1.0, dtype=None, copy=True, order='K', subok=False, ndmin=0):
 
-    def __init__(self, shape, dtype=float, buffer=None, offset=0, strides=None, order=None, del_t=1.0):
+    def __init__(self, shape, dtype=float, buffer=None, offset=0, strides=None,
+                 order=None, del_t=1.0):
 
-        ndarray.__init__(self, shape, dtype=dtype, buffer=buffer, offset=offset, strides=strides, order=order)
+        ndarray.__init__(self, shape, dtype=dtype, buffer=buffer,
+                         offset=offset, strides=strides, order=order)
         # super().__init__(object, dtype=dtype, copy=copy, order=order, subok=subok, ndmin=ndmin)
 
         self.del_t = del_t
@@ -167,10 +169,11 @@ def time_series(object, del_t=1.0):
 
     """
 
-    out = object.view(NdTimeSeries)  # dtype=dtype, copy=copy, order=order, subok=subok, ndmin=ndmin)
+    out = object.view(NdTimeSeries)
+    # dtype=dtype, copy=copy, order=order, subok=subok, ndmin=ndmin)
     out.set_sampling_time(del_t)
-
-    # out = NdTimeSeries(object.shape, dtype=float, buffer=object, offset=0, strides=None, order=None, del_t=del_t)
+    # out = NdTimeSeries(object.shape, dtype=float, buffer=object, offset=0,
+    # strides=None, order=None, del_t=del_t)
 
     return out
 

@@ -50,8 +50,10 @@ def log_evidence_estimate(logl, betas, fburnin=0.1):
     return util.thermodynamic_integration_log_evidence(betas[-1], mean_logls)
 
 
-def cornerplot(s_list, truths_vect, offset, rscales, labels, colors=['k', 'gray', 'b'], limits=None, fontsize=16,
-               bins=50, truth_color='cadetblue', figsize=(9, 8.5), linewidth=1, smooth=1.0, smooth1d=1.0,
+def cornerplot(s_list, truths_vect, offset, rscales, labels,
+               colors=['k', 'gray', 'b'], limits=None, fontsize=16,
+               bins=50, truth_color='cadetblue', figsize=(9, 8.5),
+               linewidth=1, smooth=1.0, smooth1d=1.0,
                plot_datapoints=False):
     """
 
@@ -1196,7 +1198,7 @@ if __name__ == '__main__':
 
     # =========================================================================
     # Grid of corner plots using sns
-    # =========================================================================       
+    # =========================================================================
     #    #,figsize=(10, 8))#,sharex=True)
     #    import seaborn as sns
     #    import pandas
@@ -1491,6 +1493,3 @@ if __name__ == '__main__':
     # df_bars = pandas.DataFrame(data=np.hstack(Y).T,
     #                            columns=['Complete data', 'Gapped data, windowing', 'Gapped data, DA method'],
     #                            index=delta_f)
-
-
-

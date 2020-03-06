@@ -58,8 +58,8 @@ def v_func_gb(f, f_0, f_dot, T, ts):
 def v_func_gb_seg(f, f_0, f_dot, ts, T1, T2):
     """
     function of frequency giving the Fourier transform of exp(-j*Phi(t)),
-    where Phi(t) is the phase of the gravitatonal wave, computed on a segment of
-    data starting at time T1 and ending at time T2
+    where Phi(t) is the phase of the gravitatonal wave, computed on a segment
+    of data starting at time T1 and ending at time T2
 
     Parameters
     ----------
@@ -176,8 +176,10 @@ def v_func_gb_conj(f, f_0, f_dot, ts, t1, t2):
     else:
         dT = t2 - t1
         f_shift = f_0 - f
+        out = dT * np.exp(np.pi * f_shift * 1j
+                          * (t2 + t1)) * np.sinc(f_shift * dT) / ts
 
-        return dT * np.exp(np.pi * f_shift * 1j * (t2 + t1)) * np.sinc(f_shift * dT) / ts
+        return out
     # return np.conj(v_func_gb(-f, f_0, f_dot, ts, t1, t2))
 
 
@@ -189,7 +191,7 @@ def v_func_GB_mono(f, f_0, f_dot, ts, T1, T2):
     return dT * np.exp(-np.pi*f_shift*1j*(T2+T1))*np.sinc(f_shift*dT) / ts
 
 
-def I0(f, T1, T2, ts):
+def integral0(f, T1, T2, ts):
     """
 
     Itegral of
@@ -198,11 +200,10 @@ def I0(f, T1, T2, ts):
     """
 
     dT = T2 - T1
-    #return -tw/2*np.exp(-1j*np.pi*f*(2*T-tw))*np.sinc(f*tw) / ts
     return - dT/2*np.exp(-1j*np.pi*f*(T1+T2))*np.sinc(f*dT) / ts
 
 
-def I1(f, T, tw, ts):
+def integral1(f, T, tw, ts):
     """
 
     Itegral of
@@ -210,8 +211,8 @@ def I1(f, T, tw, ts):
 
     """
 
-    return -1j*tw/4.*np.exp(1j*np.pi*(2*T-tw)*f)*( np.sinc(1/2.-f*tw)  \
-                  - np.sinc(1/2.+f*tw) ) / ts
+    return -1j*tw/4.*np.exp(1j*np.pi*(2*T-tw)*f)*(
+        np.sinc(1/2.-f*tw) - np.sinc(1/2.+f*tw)) / ts
 
 
 def v_func_GB_wind(f, f_0, f_dot, ts, T1, T2, tw):
@@ -252,8 +253,9 @@ def v_func_GB_wind(f, f_0, f_dot, ts, T1, T2, tw):
     """
     f_shift = f + f_0
 
-    I =  I0(f,T1,T1+tw,ts) - I1(f_shift,T1,tw,ts) \
-    + I0(f_shift,T1+tw,T2-tw,ts) \
-    + I0(f_shift,T2-tw,T2,ts) - I1(f_shift,T2,tw,ts)
+    integr = integral0(f, T1, T1+tw, ts) - integral1(f_shift, T1, tw, ts)
+    integr += integral0(f_shift, T1+tw, T2-tw, ts) + integral0(f_shift, T2-tw,
+                                                               T2, ts)
+    integr -= integral1(f_shift, T2, tw, ts)
 
-    return I
+    return integr

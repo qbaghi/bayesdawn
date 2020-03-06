@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 import load_mcmc_config
 # from . import resanalysis
 import resanalysis
@@ -467,8 +469,3 @@ if __name__=='__main__':
     fig2.savefig('/Users/qbaghi/Documents/articles/papers/papers/gaps/figures/time_series/time_series_gap_rec_inset.pdf')
     # plt.draw()
     plt.show()
-
-
-
-
-
