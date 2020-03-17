@@ -470,7 +470,7 @@ class UCBWaveform(GWwaveform):
         """
         # domain and in each channel
         if channel == 'phasemeters':
-            pre = (self.armlength / (2 * LC.c))
+            pre = (self.armlength / (4 * LC.c))
             derivative = 1
             # There is a mixing to convert it in the phasemeter measurements!
             # i_mix = [2, 0, 1]
