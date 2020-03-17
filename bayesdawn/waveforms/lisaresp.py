@@ -470,7 +470,7 @@ class UCBWaveform(GWwaveform):
         """
         # domain and in each channel
         if channel == 'phasemeters':
-            pre = (self.armlength / (4 * LC.c))
+            pre = (self.armlength / (2 * LC.c))
             derivative = 1
             # There is a mixing to convert it in the phasemeter measurements!
             # i_mix = [2, 0, 1]
@@ -563,8 +563,10 @@ class UCBWaveform(GWwaveform):
 
         # mat_list = [self.design_matrix_freq(uc, us, k_p_list[i], k_c_list[i])
         #             for i in range(len(k_p_list))]
-        mat_list = [self.single_design_matrix_freq(uc, k_p_list[i],
-                                                   k_c_list[i])
+        mat_list = [self.single_design_matrix_freq(uc,
+                                                   k_p_list[i],
+                                                   k_c_list[i],
+                                                   full=True)
                     for i in range(len(k_p_list))]
 
         # Transform to complex number
