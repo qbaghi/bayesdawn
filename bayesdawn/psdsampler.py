@@ -45,7 +45,7 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
         K2 : scalar float
             periodogram normalization. Should always be 
             sum(W**2) where W is the window function applied in the time domain.
-            If K2 is None, the length N of the data is taken.
+            If K2 is None, the length n_data of the data is taken.
         
         """
         if type(z_fft) == np.ndarray :
@@ -127,9 +127,9 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
         ----------
         noise_params : array_like
             noise parameters
-        residual_fft : array_like of size N
+        residual_fft : array_like of size n_data
             discrete Fourier transform of the model residuals
-        wd : array_like of size N
+        wd : array_like of size n_data
             apodization window (optional)
             
         Returns
@@ -159,9 +159,9 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 #        ----------
 #        noise_params : array_like
 #            noise parameters
-#        residual_fft : array_like of size N
+#        residual_fft : array_like of size n_data
 #            discrete Fourier transform of the model residuals
-#        wd : array_like of size N
+#        wd : array_like of size n_data
 #            apodization window (optional)
 #            
 #        Returns

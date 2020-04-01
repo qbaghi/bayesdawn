@@ -573,7 +573,7 @@ class LikelihoodModel(object):
         Parameters
         ----------
         ZI : 2d numpy array
-            inverse weighted normal matrix (A^* C^-1 A )^-1
+            inverse weighted normal matrix (a_mat^* C^-1 a_mat )^-1
         ApS : 2d numpy array
             weighted design matrix
         data_fft : array_like
@@ -619,18 +619,21 @@ class LikelihoodModel(object):
 
 class LogLike(object):
 
-    def __init__(self, data, sn, inds, tobs, del_t, normalized=False, t_offset=52.657, channels=None, scale=1.0,
+    def __init__(self, data, sn, inds, tobs, del_t, normalized=False,
+                 t_offset=52.657, channels=None, scale=1.0,
                  model_cls=None, psd_cls=None, wd=None, wd_full=None):
         """
 
         Parameters
         ----------
         data : list of ndarrays
-            TDI data A, E, T in the time domain, without any smooth windowing (except binary masking)
+            TDI data a_mat, E, T in the time domain, without any smooth
+            windowing (except binary masking)
         sn : list of ndarrays
             noise PSD computed at freq for each channel
         inds: array_like
-            indices of the frequencies to consider in the Fourier frequency array
+            indices of the frequencies to consider in the Fourier frequency
+            array
         tobs : float
             observation time
         del_t : float
@@ -676,17 +679,21 @@ class LogLike(object):
             self.wd_full = np.ones(data[0].shape[0])
         else:
             self.wd_full = wd_full
-        # Rescaling factor to compensate for the windowing, so that waveform template has the same power
+        # Rescaling factor to compensate for the windowing, so that waveform
+        # template has the same power
         self.resc = self.n_data / np.sum(self.wd)
         self.resc_full = self.n_data / np.sum(self.wd_full)
-        # Convert time data to frequency domain and restrict it to the band of interest
-        self.data_dft = [fft(self.wd * dat)[self.inds] * self.del_t * self.resc for dat in self.data]
+        # Convert time data to frequency domain and restrict it to the band of
+        # interest
+        self.data_dft = [fft(self.wd * dat)[self.inds] * self.del_t * self.resc
+                         for dat in self.data]
 
         if normalized:
             self.ll_norm = self.log_norm()
         else:
             self.ll_norm = 0
-        # The full set of parameters is m1, m2, chi1, chi2, tc, dist, incl, phi0, lam, bet, psi
+        # The full set of parameters is
+        # m1, m2, chi1, chi2, tc, dist, incl, phi0, lam, bet, psi
         # Indices of extrinsic parameters
         self.i_ext = [5, 6, 7, 10]
         # Indices of intrinsic parameters m1, m2, chi1, chi2, tc, bet, psi
@@ -708,15 +715,18 @@ class LogLike(object):
         Parameters
         ----------
         y_gw_list : list
-            list of waveform in the time domain for each channel. Should *not* have windowing of any kind.
+            list of waveform in the time domain for each channel.
+            Should *not* have windowing of any kind.
 
         Returns
         -------
 
         """
 
-        # Estimate PSD parameters from the residuals in the time domain, in the first TDI channel.
-        [self.psd_list[i].estimate(self.data[i] - y_gw_list[i], wind='hanning') for i in range(len(self.data))]
+        # Estimate PSD parameters from the residuals in the time domain,
+        # in the first TDI channel.
+        [self.psd_list[i].estimate(self.data[i] - y_gw_list[i], wind='hanning')
+         for i in range(len(self.data))]
         # Calculate the spectrum in the estimation band
         self.sn = [psd.calculate(self.f[self.inds]) for psd in self.psd_list]
 
@@ -737,8 +747,11 @@ class LogLike(object):
 
         # Impute missing data
         y_imp = self.model.impute(y_gw_list, self.psd_list)
-        # Transform back to Fourier domain, applying the windowing for complete time series, with re-scaling
-        self.data_dft = [fft(y_imp0 * self.wd_full)[self.inds] * self.del_t * self.resc_full for y_imp0 in y_imp]
+        # Transform back to Fourier domain, applying the windowing for complete
+        # time series, with re-scaling
+        resc = self.del_t * self.resc_full
+        self.data_dft = [fft(y_imp0 * self.wd_full)[self.inds] * resc
+                         for y_imp0 in y_imp]
 
     def update_auxiliary_params(self, par, reduced=True):
 
@@ -751,7 +764,8 @@ class LogLike(object):
 
             # y_gw_fft_list = [at, et]
             # Convert the signal in the time domain (factor 1 / del_t incluced)
-            y_gw_list = [self.frequency_to_time(y_gw_fft_pos) for y_gw_fft_pos in [at, et]]
+            y_gw_list = [self.frequency_to_time(y_gw_fft_pos)
+                         for y_gw_fft_pos in [at, et]]
             # Update PSD if requested
             if self.psd_list is not None:
                 self.update_psd(y_gw_list)
@@ -774,7 +788,8 @@ class LogLike(object):
 
         ll_norm = - self.nf/2 * np.log(2 * np.pi * 2 * self.del_t)
         ll_norm += sum([- 0.5 * np.sum(np.log(self.sn[i]))
-                        - 0.5 * np.sum(np.abs(self.data_dft[i]) ** 2 / self.sn) for i in range(len(self.data_dft))])
+                        - 0.5 * np.sum(np.abs(self.data_dft[i]) ** 2 / self.sn)
+                        for i in range(len(self.data_dft))])
 
         return ll_norm
 
@@ -796,14 +811,16 @@ class LogLike(object):
         params = physics.like_to_waveform(par)
 
         # Compute waveform template
-        ch = lisaresp.lisabeta_template(params, self.f[self.inds], self.tobs, tref=0, t_offset=self.t_offset,
+        ch = lisaresp.lisabeta_template(params, self.f[self.inds], self.tobs,
+                                        tref=0, t_offset=self.t_offset,
                                         channels=self.channels)
 
         return [ch_i * self.scale for ch_i in ch]
 
     def frequency_to_time(self, y_gw_fft_pos):
         """
-        Compute the waveform in the time domain from the waveform values in the frequency domain evaluated at positive
+        Compute the waveform in the time domain from the waveform values in the
+        frequency domain evaluated at positive
         Fourier frequencies
         """
 
@@ -819,7 +836,8 @@ class LogLike(object):
         Parameters
         ----------
         par : array_like
-            vector of waveform parameters in the following order: [Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0]
+            vector of waveform parameters in the following order:
+            [Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0]
 
 
         Returns
@@ -860,13 +878,18 @@ class LogLike(object):
         params_intr = physics.like_to_waveform_intr(par_intr)
 
         # Design matrices for each channel
-        mat_list = lisaresp.design_matrix(params_intr, self.f[self.inds], self.tobs,
-                                          tref=0, t_offset=self.t_offset, channels=self.channels)
+        mat_list = lisaresp.design_matrix(params_intr, self.f[self.inds],
+                                          self.tobs,
+                                          tref=0, t_offset=self.t_offset,
+                                          channels=self.channels)
         # Weighted design matrices
-        mat_list_weighted = [mat_list[i] / np.array([self.sn[i]]).T for i in range(len(self.channels))]
+        mat_list_weighted = [mat_list[i] / np.array([self.sn[i]]).T
+                             for i in range(len(self.channels))]
         # Compute amplitudes
-        amps = [LA.pinv(np.dot(mat_list_weighted[i].conj().T, mat_list[i])).dot(np.dot(mat_list_weighted[i].conj().T,
-                                                                                       self.data_dft[i]))
+        amps = [LA.pinv(np.dot(mat_list_weighted[i].conj().T,
+                               mat_list[i])).dot(
+                                   np.dot(mat_list_weighted[i].conj().T,
+                                          self.data_dft[i]))
                 for i in range(len(self.channels))]
         # amps = [LA.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, self.data[i]))
         #         for i in range(len(self.channels))]
@@ -882,7 +905,8 @@ class LogLike(object):
         Parameters
         ----------
         par_intr : array_like
-            vector of intrinsic waveform parameters in the following order: [Mc, q, tc, chi1, chi2, sb, lam]
+            vector of intrinsic waveform parameters in the following order:
+            [Mc, q, tc, chi1, chi2, sb, lam]
 
         Returns
         -------
@@ -891,18 +915,6 @@ class LogLike(object):
 
         # Compute the signal in the frequency domain
         at, et = self.compute_signal_reduced(par_intr)
-        # params_intr = physics.like_to_waveform_intr(par_intr)
-        #
-        # # Design matrices for each channel
-        # mat_list = lisaresp.design_matrix(params_intr, self.f[self.inds], self.tobs, tref=0, t_offset=self.t_offset,
-        #                                   channels=self.channels)
-        # Weighted design matrices
-        # mat_list_weighted = [mat_list[i] / np.array([self.sn]).T for i in range(2)]
-        # z = [mat_list_weighted[i].conj().T.dot(self.data[i]) for i in range(2)]
-        # ll = sum([0.5 * z[i].conj().T.dot(LA.pinv(mat_list[i].conj().T.dot(mat_list_weighted[i]))).dot(z[i])
-        #           for i in range(2)])
-
-        # return np.real(ll + self.ll_norm)
 
         # (h | y)
         sna = np.sum(np.real(self.data_dft[0] * np.conjugate(at)) / self.sn[0])

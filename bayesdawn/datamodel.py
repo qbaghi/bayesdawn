@@ -18,11 +18,12 @@ import time
 from scipy import linalg as LA
 from mecm import mecm, matrixalgebra, noise
 import copy
+import warnings
 # FTT modules
 import pyfftw
-pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft
-import warnings
+pyfftw.interfaces.cache.enable()
+
 # import librosa
 # from pycbc.filter.qtransform import qtiling, qplane
 # from scipy.interpolate import interp2d
@@ -103,7 +104,7 @@ class NdTimeSeries(ndarray):
         freq : numpy array
             frequency vector
         per : numpy array
-            periodogram of the time series expressed in A / Hz where A is the
+            periodogram of the time series expressed in a_mat / Hz where a_mat is the
             unit of x
 
         """
@@ -309,7 +310,7 @@ class GaussianStationaryProcess(object):
                                                                     self.n_ends[self.n_gaps - 2]])),
                                                      np.int(np.min([self.n_ends[self.n_gaps - 1] + nb, self.n])))]
         # self.indices = [np.arange(np.int(np.max([self.N_starts[j]- Na,0])),
-        # np.int(np.min([self.N_ends[j]+Nb,N]))) for j in range(len(self.N_starts))]
+        # np.int(np.min([self.N_ends[j]+Nb,n_data]))) for j in range(len(self.N_starts))]
         self.solve = None
 
     def compute_preconditioner(self, autocorr):
@@ -386,7 +387,7 @@ class GaussianStationaryProcess(object):
         ind_mis : array_like (size No)
             vector of chronological indices of the missing data points in the
             complete data vector
-        mask : numpy array (size N)
+        mask : numpy array (size n_data)
             mask vector (with entries equal to 0 or 1)
 
         Returns
@@ -433,7 +434,7 @@ class GaussianStationaryProcess(object):
         y : ndarray or list
             masked data y = mask * x
         y_model : array_like
-            vector of modelled signal (size N)
+            vector of modelled signal (size n_data)
         psd : PSD_spline instance
             class to compute the noise PSD
 
@@ -471,7 +472,7 @@ class GaussianStationaryProcess(object):
         Parameters
         ----------
         y : array_like
-            observed residuals (size N)
+            observed residuals (size n_data)
         r : array_like
             autocovariance function until lag N_max
         s2 : array_like
@@ -511,7 +512,7 @@ class GaussianStationaryProcess(object):
                                                        s2)
                            for indj in self.indices]
             y_mis = np.concatenate(results)
-            # y_rec = np.zeros(N, dtype = np.float64)
+            # y_rec = np.zeros(n_data, dtype = np.float64)
             # y_rec[self.ind_obs] = y[self.ind_obs]
             # y_rec[self.ind_mis] = y_mis
         elif self.method == 'tapered':

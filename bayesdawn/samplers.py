@@ -223,7 +223,7 @@ class MHSampler(object):
 
         Reference
         ---------
-        Kevin Murphy, Machine Learning: A Probabilistic Perspective, 2012
+        Kevin Murphy, Machine Learning: a_mat Probabilistic Perspective, 2012
 
         """
 
@@ -259,17 +259,19 @@ class MHSampler(object):
         """
         self.set_cov(cov0)
         self.accepted = 0
-        x_samples = np.zeros((Ns,self.N_params), dtype=np.float64)
+        x_samples = np.zeros((Ns, self.N_params), dtype=np.float64)
         logp_samples = np.zeros((Ns), dtype=np.float64)
         x_samples[0, :] = x0
         logp_samples[0] = self.logp(x0)
 
         if not verbose:
-            for s in range(1,Ns):
-                x_samples[s,:],logp_samples[s] = self.sample(x_samples[s-1,:],logp_samples[s-1])
+            for s in range(1, Ns):
+                x_samples[s,:],logp_samples[s] = self.sample(x_samples[s-1,:],
+                                                             logp_samples[s-1])
         else:
-            for s in range(1,Ns):
-                x_samples[s,:],logp_samples[s] = self.sample(x_samples[s-1,:],logp_samples[s-1])
+            for s in range(1, Ns):
+                x_samples[s,:],logp_samples[s] = self.sample(x_samples[s-1,:],
+                                                             logp_samples[s-1])
                 if (s%100 == 0):
                     print("Iteration " + str(s) + " completed.")
                     print("Accepted: " + str(self.accepted))
@@ -350,7 +352,9 @@ class ExtendedPTMCMC(ptemcee.Sampler):
         # Initialization of parameter values
         if pos0 is None:
             lo, hi = self._likeprior.logpargs
-            pos = np.random.uniform(lo, hi, size=(self.ntemps, self.nwalkers, len(hi)))
+            pos = np.random.uniform(lo, hi, size=(self.ntemps,
+                                                  self.nwalkers,
+                                                  len(hi)))
         else:
             pos = pos0[:]
 
@@ -362,18 +366,18 @@ class ExtendedPTMCMC(ptemcee.Sampler):
         self.position = pos[:]
         it = 0
 
-        for pos, lnlike0, lnprob0 in self.sample(pos, n_it, thin=n_thin, storechain=True):
+        for pos, lnlike0, lnprob0 in self.sample(pos, n_it,
+                                                 thin=n_thin,
+                                                 storechain=True):
 
             if (it % n_save == 0) & (it != 0):
                 print("Save data at iteration " + str(it) + "...")
 
                 file_object = open(save_path + 'chain.p', "wb")
                 pickle.dump(self.chain[:, :, 0:it, :], file_object)
-                # np.save(file_object, self.chain[:, :, self.chain[0, 0, :, 0] != 0, :])
                 file_object.close()
                 file_object = open(save_path + 'lnprob.p', "wb")
                 pickle.dump(self.logprobability[:, :, 0:it], file_object)
-                # np.save(file_object, self.logprobability[:, :, self.logprobability[0, 0, :] != 0])
                 file_object.close()
                 print("Data saved.")
 
@@ -405,9 +409,9 @@ class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
     def update_log_prior(self, log_prior, log_prior_args):
         pass
 
-    def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None, save_path='./', param_names=None):
-        # dsampl.run_nested(dlogz_init=0.01, nlive_init=1000, nlive_batch=500, wt_kwargs={'pfrac': 1.0},
-        #                   stop_kwargs={'pfrac': 1.0})
+    def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None,
+            save_path='./', param_names=None):
+
         print("The main nested sampling loop begins...")
         for it, res in enumerate(self.sample(maxiter=n_it)):
             if (it % n_update == 0) & (callback is not None):
@@ -416,8 +420,10 @@ class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
                 callback(self.results.samples[0, :])
             if (it % n_save == 0) & (it != 0):
                 print("Save data at iteration " + str(it))
-                df = pd.DataFrame(self.results.samples[-n_save:, :], columns=param_names)
-                df.to_hdf(save_path, 'chain', append=True, mode='a', format='table')
+                df = pd.DataFrame(self.results.samples[-n_save:, :],
+                                  columns=param_names)
+                df.to_hdf(save_path, 'chain',
+                          append=True, mode='a', format='table')
 
         print("Adding the final set of live points")
         for it_final, res in enumerate(self.add_live_points()):
@@ -427,33 +433,6 @@ class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
 
 _SAMPLERS = dynesty.dynesty._SAMPLERS
 _SAMPLERS['extended'] = ExtendedNestedSampler
-
-# def extended_nested_sampler(loglikelihood, prior_transform, ndim, nlive=500, sample='auto', periodic=None,
-#                   update_interval=None, first_update=None,
-#                   npdim=None, rstate=None, queue_size=None, pool=None,
-#                   use_pool=None, live_points=None,
-#                   logl_args=None, logl_kwargs=None,
-#                   ptform_args=None, ptform_kwargs=None,
-#                   gradient=None, grad_args=None, grad_kwargs=None,
-#                   compute_jac=False,
-#                   enlarge=None, bootstrap=0, vol_dec=0.5, vol_check=2.0,
-#                   walks=25, facc=0.5, slices=5, fmove=0.9, max_move=100,
-#                   **kwargs):
-#
-#     sampler = NestedSampler(loglikelihood, prior_transform, ndim, nlive=nlive,
-#                   bound='extended', sample=sample, periodic=periodic,
-#                   update_interval=update_interval, first_update=first_update,
-#                   npdim=npdim, rstate=rstate, queue_size=queue_size, pool=pool,
-#                   use_pool=use_pool, live_points=live_points,
-#                   logl_args=logl_args, logl_kwargs=logl_kwargs,
-#                   ptform_args=ptform_args, ptform_kwargs=ptform_kwargs,
-#                   gradient=gradient, grad_args=grad_args, grad_kwargs=grad_kwargs,
-#                   compute_jac=compute_jac,
-#                   enlarge=enlarge, bootstrap=bootstrap, vol_dec=vol_dec, vol_check=vol_check,
-#                   walks=walks, facc=facc, slices=slices, fmove=fmove, max_move=max_move,
-#                   **kwargs)
-#
-#     return sampler
 
 
 def extended_nested_sampler(*args, **kwargs):
@@ -466,21 +445,6 @@ def extended_dynamic_nested_sampler(*args, **kwargs):
     return DynamicNestedSampler(*args, **kwargs)
 
 
-# DynamicNestedSampler(loglikelihood, prior_transform, ndim,
-#                          bound='multi', sample='auto',
-#                          periodic=None, reflective=None,
-#                          update_interval=None, first_update=None,
-#                          npdim=None, rstate=None, queue_size=None, pool=None,
-#                          use_pool=None, logl_args=None, logl_kwargs=None,
-#                          ptform_args=None, ptform_kwargs=None,
-#                          gradient=None, grad_args=None, grad_kwargs=None,
-#                          compute_jac=False,
-#                          enlarge=None, bootstrap=0,
-#                          vol_dec=0.5, vol_check=2.0,
-#                          walks=25, facc=0.5,
-#                          slices=5, fmove=0.9, max_move=100,
-#                          **kwargs)
-
 def save_object(obj, file_path):
 
     file_object = open(file_path, "wb")
@@ -488,9 +452,11 @@ def save_object(obj, file_path):
     file_object.close()
 
 
-def run_and_save(sampler, nlive=50, n_save=1000, n_iter=100000, file_path="initial_save.p", dynamic=False):
+def run_and_save(sampler, nlive=50, n_save=1000, n_iter=100000,
+                 file_path="initial_save.p", dynamic=False):
     """
-    External function allowing us to run a Dynamic Nested Sampler from Dynesty while regularly saving the results
+    External function allowing us to run a Dynamic Nested Sampler from Dynesty
+    while regularly saving the results
 
     Parameters
     ----------
@@ -527,15 +493,21 @@ def run_and_save(sampler, nlive=50, n_save=1000, n_iter=100000, file_path="initi
         # Add batches until we hit the stopping criterion.
         it = 0
         while True:
-            stop = stopping_function(sampler.results, stop_kwargs={'pfrac': 1.0})  # evaluate stop
+            # evaluate stop
+            stop = stopping_function(sampler.results,
+                                     stop_kwargs={'pfrac': 1.0})
             if not stop:
-                logl_bounds = weight_function(sampler.results, wt_kwargs={'pfrac': 1.0})  # derive bounds
-                for results in sampler.sample_batch(logl_bounds=logl_bounds, maxiter=n_iter):
+                # derive bounds
+                logl_bounds = weight_function(sampler.results,
+                                              wt_kwargs={'pfrac': 1.0})
+                for results in sampler.sample_batch(logl_bounds=logl_bounds,
+                                                    maxiter=n_iter):
                     it += 1
                     # If it is a multiple of n_save, save data
                     if it % n_save == 0:
                         print("Saving results at iteration " + str(it))
-                        save_object(sampler.results, file_path + "batch_save.p")
+                        save_object(sampler.results,
+                                    file_path + "batch_save.p")
                     else:
                         pass
                 sampler.combine_runs()  # add new samples to previous results
@@ -549,7 +521,8 @@ def run_and_save(sampler, nlive=50, n_save=1000, n_iter=100000, file_path="initi
 
         # The main nested sampling loop.
         print("Main nested sampling loop starts...")
-        for it, res in enumerate(sampler.sample(maxiter=n_iter, save_samples=True)):
+        for it, res in enumerate(sampler.sample(maxiter=n_iter,
+                                                save_samples=True)):
             # If it is a multiple of n_save, run the callback function
             if (it % n_save == 0) & (it != 0):
                 print("Saving results at iteration " + str(it))
