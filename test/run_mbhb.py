@@ -79,14 +79,15 @@ if __name__ == '__main__':
 
     # Restrict the frequency band to high SNR region, and exclude distorted
     # frequencies due to gaps
+    f_minimum = config['Model'].getfloat('MinimumFrequency')
+    f_maximum = config['Model'].getfloat('MaximumFrequency')
+
     if (config["TimeWindowing"].getboolean('gaps')) \
             & (not config["Imputation"].getboolean('imputation')):
         f1, f2 = physics.find_distorted_interval(mask, p_sampl, t_offset,
                                                  del_t, margin=0.4)
         f1 = np.max([f1, 0])
         f2 = np.min([f2, 1 / (2 * del_t)])
-        f_minimum = config['Model'].getfloat('MinimumFrequency')
-        f_maximum = config['Model'].getfloat('MaximumFrequency')
         inds = np.where((f_minimum <= freq_d)
                         & (freq_d <= f_maximum)
                         & ((freq_d <= f1) | (freq_d >= f2)))[0]
