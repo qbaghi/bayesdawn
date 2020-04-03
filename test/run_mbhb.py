@@ -295,7 +295,7 @@ if __name__ == '__main__':
         result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
                              config['Sampler'].getint('SavingNumber'),
                              int(config["Sampler"]["thinningNumber"]),
-                             callback=ll_cls.update_auxiliary_params,
+                             callback=callback_function,
                              n_callback=n_callback,
                              n_start_callback=n_start_callback,
                              pos0=None,
