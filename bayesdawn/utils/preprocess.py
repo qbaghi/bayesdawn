@@ -59,7 +59,9 @@ def preprocess_ldc_data(p, td, config):
         i2 = np.int(td.shape[0])
         t_offset = 52.657
 
-    tm, xd, yd, zd, q = preprocess(config, td, i1, i2, scale=config["InputData"].getfloat("rescale"))
+    scale = config["InputData"].getfloat("rescale")
+    tm, xd, yd, zd, q = preprocess(config, td, i1, i2,
+                                   scale=scale)
 
     return tm, xd, yd, zd, q, t_offset, tobs, del_t, p_sampl
 

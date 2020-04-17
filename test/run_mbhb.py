@@ -118,28 +118,34 @@ if __name__ == '__main__':
         sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
 
     else:
-        psd_cls = None
+
+        psd_cls = [psdmodel.PSDTheoretical(tm.shape[0], 1 / del_t, ch,
+                                           scale=1.0, fmin=None, fmax=None)
+                   for ch in ['A', 'E']]
+        sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
+
+        # psd_cls = None
         # # One-sided PSD
         # sa = tdi.noisepsd_AE(freq_d[inds], model='Proposal', includewd=None)
         # sn = [sa, sa]
         # Select a chunk of data free of signal
-        t_end = config["InputData"].getfloat("EndTime")
-        ind_noise = np.where(tdi_data[t_end > tdi_data[:, 0], 0])[0]
-        ad_noise, ed_noise, td_noise = ldctools.convert_XYZ_to_AET(
-            tdi_data[ind_noise, 1],
-            tdi_data[ind_noise, 2],
-            tdi_data[ind_noise, 3])
-        data_ae_noise = [ad_noise, ed_noise]
-        del ad_noise, ed_noise, td_noise
-
-        psd_cls = [psdmodel.PSDSpline(data_ae_noise[0].shape[0], 1 / del_t,
-                                      J=config["PSD"].getint("knotNumber"),
-                                      D=config["PSD"].getint("SplineOrder"),
-                                      fmin=1 / (del_t * tm.shape[0]) * 1.05,
-                                      fmax=1 / (del_t * 2))
-                   for dat in data_ae_time]
-        [psd_cls[i].estimate(data_ae_noise[i]) for i in range(len(psd_cls))]
-        sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
+        # t_end = config["InputData"].getfloat("EndTime")
+        # ind_noise = np.where(tdi_data[t_end > tdi_data[:, 0], 0])[0]
+        # ad_noise, ed_noise, td_noise = ldctools.convert_XYZ_to_AET(
+        #     tdi_data[ind_noise, 1],
+        #     tdi_data[ind_noise, 2],
+        #     tdi_data[ind_noise, 3])
+        # data_ae_noise = [ad_noise, ed_noise]
+        # del ad_noise, ed_noise, td_noise
+        #
+        # psd_cls = [psdmodel.PSDSpline(data_ae_noise[0].shape[0], 1 / del_t,
+        #                               J=config["PSD"].getint("knotNumber"),
+        #                               D=config["PSD"].getint("SplineOrder"),
+        #                               fmin=1 / (del_t * tm.shape[0]) * 1.05,
+        #                               fmax=1 / (del_t * 2))
+        #            for dat in data_ae_time]
+        # [psd_cls[i].estimate(data_ae_noise[i]) for i in range(len(psd_cls))]
+        # sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
 
     if config["Imputation"].getboolean("imputation"):
         print("Missing data imputation enabled.")

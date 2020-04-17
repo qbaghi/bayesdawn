@@ -16,6 +16,7 @@ from scipy import optimize
 pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
 
+
 # TODO: rewrite spline interpolation with LSQUnivariateSpline from scipy.interpolate
 
 # ==============================================================================
@@ -23,8 +24,8 @@ from pyfftw.interfaces.numpy_fft import fft, ifft
 # ==============================================================================
 
 def least_squares(mat, y):
-
-    return la.pinv(mat.conjugate().transpose().dot(mat)).dot(mat.conjugate().transpose().dot(y))
+    return la.pinv(mat.conjugate().transpose().dot(mat)).dot(
+        mat.conjugate().transpose().dot(y))
 
 
 def find_closest_points(f_target, f):
@@ -34,7 +35,7 @@ def find_closest_points(f_target, f):
 
     """
 
-    inds = [np.argmin(np.abs(f-f0)) for f0 in f_target]
+    inds = [np.argmin(np.abs(f - f0)) for f0 in f_target]
 
     return inds
 
@@ -63,7 +64,7 @@ def spline_loglike(beta, per, a_mat):
 
     psdmodel = a_mat.dot(beta)
 
-    return - 0.5*np.sum( np.log(psdmodel) + per/psdmodel )
+    return - 0.5 * np.sum(np.log(psdmodel) + per / psdmodel)
 
 
 def spline_loglike_grad(beta, per, A):
@@ -87,9 +88,9 @@ def spline_loglike_grad(beta, per, A):
 
     """
 
-    psdmodel = np.dot(A,beta)
+    psdmodel = np.dot(A, beta)
 
-    grad_ll = - 0.5*np.dot(A.T, 1/psdmodel * (1 - per/psdmodel))
+    grad_ll = - 0.5 * np.dot(A.T, 1 / psdmodel * (1 - per / psdmodel))
 
     return grad_ll
 
@@ -119,15 +120,15 @@ def spline_loglike_hessian(beta, per, A):
 
     """
 
-    psdmodel = np.dot(A,beta)
+    psdmodel = np.dot(A, beta)
 
-    E = 1/psdmodel**2 * ( -1 + 2 * per/psdmodel)
+    E = 1 / psdmodel ** 2 * (-1 + 2 * per / psdmodel)
 
-    AE = np.array([A[:,j]*E for j in range(A.shape[1])]).T
+    AE = np.array([A[:, j] * E for j in range(A.shape[1])]).T
 
-    hessian = - 0.5 * np.dot( A.T , AE )
+    hessian = - 0.5 * np.dot(A.T, AE)
 
-    #grad_ll = np.array([np.sum( spl.derivatives() )])
+    # grad_ll = np.array([np.sum( spl.derivatives() )])
 
     return hessian
 
@@ -144,7 +145,6 @@ def newton_raphson(beta_0, grad_func, hess_func, maxiter=1000, tol=1e-4):
     beta_old = beta_0
 
     while (i < maxiter) & (eps > tol):
-
         beta = beta_old - la.inv(hess_func(beta_old)).dot(grad_func(beta_old))
         eps = la.norm(beta - beta_old) / la.norm(beta_old)
         beta_old = copy.deepcopy(beta)
@@ -200,13 +200,13 @@ def spline_matrix(x, knots, D):
     """
 
     # Size of the matrix
-    #K = D + 1 + len(knots)
+    # K = D + 1 + len(knots)
 
     # Polynomial
-    A = [x**d for d in range(D+1)]
+    A = [x ** d for d in range(D + 1)]
 
     # Truncated polynomial
-    A2 = [np.concatenate((np.zeros(len(x[x < xi])), (x[x >= xi]-xi)**D))
+    A2 = [np.concatenate((np.zeros(len(x[x < xi])), (x[x >= xi] - xi) ** D))
           for xi in knots]
     A.extend(A2)
 
@@ -245,57 +245,90 @@ class PSD(object):
         # Flexible interpolation of the estimated PSD
         self.log_psd_fn = None
 
-    def periodogram(self, y_fft, K2=None):
+    def periodogram(self, y_fft, k2=None):
         """
-        Simple periodogram with no windowing
-        """
-        if K2 is None:
-            per = np.abs(y_fft)**2/len(y_fft)
-        else:
-            per = np.abs(y_fft)**2/K2
+        Simple periodogram with no windowing.
+        Given as one-sided PSD [A / Hz]
 
-        return per
+        Parameters
+        ----------
+        y_fft : ndarray
+            Fourier-transformed data, possibly pre-windowed.
+            If so, the normalization factor K2 should be provided to
+            account for the windowing.
+        k2 : float (optional)
+            If None, assume that no windowing has been applied to the data.
+            Else, should be equal to sum(wd**2) where wd is the window vector.
+
+        Returns
+        -------
+        per : ndarray
+            periodogram scaled in Units / Hz. Consisten with one-sided
+            power spectral density.
+
+        """
+        if k2 is None:
+            per = np.abs(y_fft) ** 2 / len(y_fft)
+        else:
+            per = np.abs(y_fft) ** 2 / k2
+
+        return per * 2 / self.fs
 
     def psd_fn(self, x):
         return np.exp(self.log_psd_fn(np.log(x)))
 
     def calculate(self, arg):
         """
-        Calculate the spectrum = PSD * fs / 2 at frequencies x
+
+        Calculate the power spectral density at an arbitrary frequency
+        from the estimation.
+
+        Parameters
+        ----------
+        arg : ndarray or int
+            frequency array where to compute the PSD, or data size N.
+            If N is given, computes the PSD on the Fourier grid of size N,
+            for both positive and negative frequencies.
+
+        Returns
+        -------
+        spectr_sym : ndarray
+            one-sided power spectral density expressed in [Units / Hz]
+            WE DROPPEP THE FACTOR OF fs / 2!
 
         """
 
         if (type(arg) == np.int) | (type(arg) == np.int64):
             n_data = arg
             # Symmetrize the estimates
-            if n_data % 2 == 0: # if n_data is even
+            if n_data % 2 == 0:  # if n_data is even
                 # Compute PSD from f=0 to f = fs/2
                 if n_data == self.N:
                     n = self.n
                     f_tot = np.abs(np.concatenate(([self.f[1]],
-                                                   self.f[1:n+2])))
+                                                   self.f[1:n + 2])))
                 else:
                     f = np.fft.fftfreq(n_data) * self.fs
                     n = np.int((n_data - 1) / 2.)
-                    f_tot = np.abs(np.concatenate(([f[1]], f[1:n+2])))
+                    f_tot = np.abs(np.concatenate(([f[1]], f[1:n + 2])))
 
                 spectr = self.psd_fn(f_tot)
-                spectr_sym = np.concatenate((spectr[0:n+1],
-                                             spectr[1:n+2][::-1]))
+                spectr_sym = np.concatenate((spectr[0:n + 1],
+                                             spectr[1:n + 2][::-1]))
 
-            else: # if n_data is odd
+            else:  # if n_data is odd
                 if n_data == self.N:
                     n = self.n
                     f_tot = np.abs(np.concatenate(([self.f[1]],
-                                                   self.f[1:n+1])))
+                                                   self.f[1:n + 1])))
                 else:
                     f = np.fft.fftfreq(n_data) * self.fs
                     n = np.int((n_data - 1) / 2.)
-                    f_tot = np.abs(np.concatenate(([f[1]], f[1:n+1])))
+                    f_tot = np.abs(np.concatenate(([f[1]], f[1:n + 1])))
 
                 spectr = self.psd_fn(f_tot)
-                spectr_sym = np.concatenate((spectr[0:n+1],
-                                             spectr[1:n+1][::-1]))
+                spectr_sym = np.concatenate((spectr[0:n + 1],
+                                             spectr[1:n + 1][::-1]))
 
         elif type(arg) == np.ndarray:
 
@@ -314,7 +347,7 @@ class PSD(object):
 
         """
 
-        return np.real(ifft(self.calculate(2*N))[0:N])
+        return np.real(ifft(self.calculate(2 * N))[0:N])
 
 
 # ==============================================================================
@@ -330,7 +363,7 @@ class PSDSpline(PSD):
         # Number of knots for the log-PSD spline model
         self.J = J
         # Create a dictionary corresponding to each data length
-        self.logf = {n_data:np.log(self.f[1:self.n + 1])}
+        self.logf = {n_data: np.log(self.f[1:self.n + 1])}
         # Set the knot grid
         if f_knots is None:
             self.f_knots = self.choose_knots()
@@ -352,28 +385,34 @@ class PSDSpline(PSD):
         # PSD at positive Fourier frequencies
         self.logS = []
         # Control frequencies
-        self.logfc = np.concatenate((np.log(self.f_knots), [np.log(self.fs/2)]))
+        self.logfc = np.concatenate(
+            (np.log(self.f_knots), [np.log(self.fs / 2)]))
         self.logSc = []
         # Spline extension
         self.ext = ext
         # # Variance function values at control frequencies
-        # self.varlogSc = np.array([3.60807571e-01, 8.90158814e-02, 1.45631966e-02, 3.55646693e-03,
-        #                           1.09926717e-03, 4.15894275e-04, 1.86984136e-04, 9.73883423e-05,
-        #                           5.74981099e-05, 3.77721249e-05, 2.71731280e-05, 2.11167300e-05,
-        #                           1.75209167e-05, 1.53672320e-05, 1.41269765e-05, 1.35137347e-05,
-        #                           1.33692054e-05, 1.36074455e-05, 1.41863625e-05, 1.50926724e-05,
-        #                           1.63338849e-05, 1.79341767e-05, 1.99325803e-05, 2.23827563e-05,
-        #                           2.53543168e-05, 2.89370991e-05, 3.32545462e-05, 3.85055177e-05,
-        #                           4.50144967e-05, 5.26798764e-05, 4.86680827e-04])
-        #
+        # self.varlogSc = np.array(
+        #     [3.60807571e-01, 8.90158814e-02, 1.45631966e-02, 3.55646693e-03,
+        #      1.09926717e-03, 4.15894275e-04, 1.86984136e-04, 9.73883423e-05,
+        #      5.74981099e-05, 3.77721249e-05, 2.71731280e-05, 2.11167300e-05,
+        #      1.75209167e-05, 1.53672320e-05, 1.41269765e-05, 1.35137347e-05,
+        #      1.33692054e-05, 1.36074455e-05, 1.41863625e-05, 1.50926724e-05,
+        #      1.63338849e-05, 1.79341767e-05, 1.99325803e-05, 2.23827563e-05,
+        #      2.53543168e-05, 2.89370991e-05, 3.32545462e-05, 3.85055177e-05,
+        #      4.50144967e-05, 5.26798764e-05, 4.86680827e-04])
+
         # # Spline estimator of the variance of the log-PSD estimate
-        # self.logvar_fn = interpolate.interp1d(self.logfc[1:], self.varlogSc[1:], kind='cubic', fill_value="const")
+        # self.logvar_fn = interpolate.interp1d(self.logfc[1:],
+        #                                       self.varlogSc[1:],
+        #                                       kind='cubic',
+        #                                       fill_value="const")
 
     def set_knots(self, f_knots):
 
         self.f_knots = f_knots
         self.logf_knots = np.log(self.f_knots)
-        self.logfc = np.concatenate((np.log(self.f_knots), [np.log(self.fs / 2)]))
+        self.logfc = np.concatenate(
+            (np.log(self.f_knots), [np.log(self.fs / 2)]))
 
     def choose_knots(self):
         """
@@ -401,16 +440,16 @@ class PSDSpline(PSD):
 
         base = 10
         # base = np.exp(1)
-        ns = - np.log(self.fmax)/np.log(base)
-        n0 = - np.log(self.fmin)/np.log(base)
+        ns = - np.log(self.fmax) / np.log(base)
+        n0 = - np.log(self.fmin) / np.log(base)
         jvect = np.arange(0, self.J)
         alpha_guess = 0.8
 
-        targetfunc = lambda x: n0 - (1-x**(self.J))/(1-x) - ns
+        targetfunc = lambda x: n0 - (1 - x ** (self.J)) / (1 - x) - ns
         result = optimize.fsolve(targetfunc, alpha_guess)
         alpha = result[0]
-        n_knots = n0 - (1-alpha**jvect)/(1-alpha)
-        f_knots = base**(-n_knots)
+        n_knots = n0 - (1 - alpha ** jvect) / (1 - alpha)
+        f_knots = base ** (-n_knots)
 
         return f_knots
 
@@ -431,7 +470,9 @@ class PSDSpline(PSD):
             w = wind[:]
         elif wind == 'hanning':
             w = np.hanning(len(y))
-        per = np.abs(fft(y * w)) ** 2 / np.sum(w ** 2)
+
+        k2 = np.sum(w ** 2)
+        per = self.periodogram(fft(y * w), k2=k2)
 
         # Compute the spline parameter vector for the log-PSD model
         self.estimate_from_periodogram(per)
@@ -448,10 +489,11 @@ class PSDSpline(PSD):
 
         # If there is only one periodogram
         if type(y_fft) == np.ndarray:
-            per = self.periodogram(y_fft, K2=k2)
+            per = self.periodogram(y_fft, k2=k2)
         # Otherwise calculate the periodogram for each data set:
         elif type(y_fft) == list:
-            per = [self.periodogram(y_fft[i], K2=k2[i]) for i in range(len(y_fft))]
+            per = [self.periodogram(y_fft[i], k2=k2[i]) for i in
+                   range(len(y_fft))]
 
         self.estimate_from_periodogram(per)
 
@@ -468,9 +510,11 @@ class PSDSpline(PSD):
             self.beta = self.log_psd_fn.get_coeffs()
         elif type(per) == list:
             # If there are several periodograms, average the estimates
-            spl_list = [self.spline_lsqr(I0) for I0 in per if self.fs / len(I0) < self.f_knots[0]]
-            self.beta = sum([spl.get_coeffs for spl in spl_list])/len(per)
-            self.log_psd_fn = interpolate.BSpline(spl_list[0].get_knots(), self.beta, self.D)
+            spl_list = [self.spline_lsqr(I0) for I0 in per if
+                        self.fs / len(I0) < self.f_knots[0]]
+            self.beta = sum([spl.get_coeffs for spl in spl_list]) / len(per)
+            self.log_psd_fn = interpolate.BSpline(spl_list[0].get_knots(),
+                                                  self.beta, self.D)
 
         # Estimate psd at positive Fourier log-frequencies
         self.logS = self.log_psd_fn(self.logf[self.N])
@@ -506,18 +550,20 @@ class PSDSpline(PSD):
         NI = len(per)
 
         if NI not in list(self.logf.keys()):
-            f = np.fft.fftfreq(NI)*self.fs
+            f = np.fft.fftfreq(NI) * self.fs
             self.logf[NI] = np.log(f[f > 0])
         else:
             f = np.concatenate(([0], np.exp(self.logf[NI])))
 
-        n = np.int((NI-1)/2.)
+        n = np.int((NI - 1) / 2.)
         z = per[1:n + 1]
         v = np.log(z) - self.C0
 
         # Spline estimator of the log-PSD
-        inds_est = np.where((self.f_min_est <= f[1:self.n + 1]) & (f[1:self.n + 1] <= self.f_max_est))[0]
-        spl = interpolate.LSQUnivariateSpline(self.logf[NI][inds_est], v[inds_est],
+        inds_est = np.where((self.f_min_est <= f[1:self.n + 1]) & (
+                    f[1:self.n + 1] <= self.f_max_est))[0]
+        spl = interpolate.LSQUnivariateSpline(self.logf[NI][inds_est],
+                                              v[inds_est],
                                               self.logf_knots,
                                               k=self.D,
                                               ext=self.ext)
@@ -539,27 +585,30 @@ class PSDPowerLaw(PSD):
         # Set the knot grid
         if f_knots is None:
             # self.f_knots = self.choose_knots()
-            self.f_knots = self.fmin * (self.fmax / self.fmin) ** (np.arange(0, self.n_knots) / (self.n_knots - 1))
+            self.f_knots = self.fmin * (self.fmax / self.fmin) ** (
+                        np.arange(0, self.n_knots) / (self.n_knots - 1))
         else:
             self.f_knots = f_knots
         # Find the corresponding Fourier indices
         # self.ind_knots = np.unique(np.array(self.f_knots / (self.fs / self.n)).round().astype(np.int))
-        self.ind_knots = [np.where(f0 <= self.f < f0)[0] for f0 in self.f_knots]
+        self.ind_knots = [np.where(f0 <= self.f < f0)[0] for f0 in
+                          self.f_knots]
         # Redefine exact knots
         # self.f_knots = self.f[self.ind_knots]
         # self.f_knots[self.f_knots == 0] = self.f[1]
         # Spline order
         self.C0 = -0.57721
         # Create a dictionary corresponding to each data length
-        self.logf = {n:np.log(self.f[1:self.n+1])}
+        self.logf = {n: np.log(self.f[1:self.n + 1])}
         # Control frequencies
-        self.logfc = np.concatenate((np.log(self.f_knots), [np.log(self.fs/2)]))
+        self.logfc = np.concatenate(
+            (np.log(self.f_knots), [np.log(self.fs / 2)]))
         self.logSc = []
         # Prepare design matrix
         self.mat_list = self.build_matrix(self.f_knots)
 
     def build_matrix(self, x):
-        return np.hstack([np.array([x**i]).T for i in self.d])
+        return np.hstack([np.array([x ** i]).T for i in self.d])
 
     def choose_knots(self):
         """
@@ -579,16 +628,16 @@ class PSDPowerLaw(PSD):
 
         base = 10
         # base = np.exp(1)
-        ns = - np.log(self.fmax)/np.log(base)
-        n0 = - np.log(self.fmin)/np.log(base)
+        ns = - np.log(self.fmax) / np.log(base)
+        n0 = - np.log(self.fmin) / np.log(base)
         jvect = np.arange(0, self.n_knots)
         alpha_guess = 0.8
 
-        targetfunc = lambda x: n0 - (1-x**(self.n_knots))/(1-x) - ns
+        targetfunc = lambda x: n0 - (1 - x ** (self.n_knots)) / (1 - x) - ns
         result = optimize.fsolve(targetfunc, alpha_guess)
         alpha = result[0]
-        n_knots = n0 - (1-alpha**jvect)/(1-alpha)
-        f_knots = base**(-n_knots)
+        n_knots = n0 - (1 - alpha ** jvect) / (1 - alpha)
+        f_knots = base ** (-n_knots)
 
         return f_knots
 
@@ -626,10 +675,11 @@ class PSDPowerLaw(PSD):
 
         # If there is only one periodogram
         if type(y_fft) == np.ndarray:
-            per = self.periodogram(y_fft, K2=k2)
+            per = self.periodogram(y_fft, k2=k2)
         # Otherwise calculate the periodogram for each data set:
         elif type(y_fft) == list:
-            per = [self.periodogram(y_fft[i], K2=k2[i]) for i in range(len(y_fft))]
+            per = [self.periodogram(y_fft[i], k2=k2[i]) for i in
+                   range(len(y_fft))]
 
         self.estimate_from_periodogram(per)
 
@@ -655,7 +705,8 @@ class PSDPowerLaw(PSD):
         z_list = [per[inds] for inds in self.ind_knots]
         v_list = [np.log(z) - self.C0 for z in z_list]
         # beta = la.pinv(self.mat.conjugate().transpose().dot(self.mat)).dot(self.mat.conjugate().transpose().dot(z))
-        beta = [least_squares(self.mat[self.ind_knots[i], i], v_list[i]) for i in np.arange(len(v_list))]
+        beta = [least_squares(self.mat[self.ind_knots[i], i], v_list[i]) for i
+                in np.arange(len(v_list))]
 
         return np.array(beta)
 
@@ -671,7 +722,8 @@ class PSDPowerLaw(PSD):
             self.beta = self.fit_lsqr(per)
         elif type(per) == list:
             # If there are several periodograms, average the estimates
-            self.beta = [self.fit_lsqr(I0) for I0 in per if self.fs / len(I0) < self.f_knots[0]]
+            self.beta = [self.fit_lsqr(I0) for I0 in per if
+                         self.fs / len(I0) < self.f_knots[0]]
 
         # Estimate psd at positive Fourier log-frequencies
         # self.logS = self.log_psd_fn(self.logf[self.n_data])
@@ -709,8 +761,8 @@ def scaled_gamma_distribution(mu, var):
 
     """
 
-    nu = 4 + 2 * mu**2 / var
-    s2 = (nu-2)/nu * mu
+    nu = 4 + 2 * mu ** 2 / var
+    s2 = (nu - 2) / nu * mu
 
     return nu, s2
 
@@ -725,59 +777,66 @@ def log_normal_distribution(mu_X, var_X):
 
     """
     # Log-normal distribution mean and variance
-    mu_Y = np.exp( mu_X + 0.5 * var_X )
-    var_Y = np.exp( 2*mu_X + var_X ) * (np.exp(var_X) - 1 )
+    mu_Y = np.exp(mu_X + 0.5 * var_X)
+    var_Y = np.exp(2 * mu_X + var_X) * (np.exp(var_X) - 1)
 
     return mu_Y, var_Y
 
 
-def theoretical_spectrum_func(f_sampling, channel, scale=1.0):
+def theoretical_spectrum_func(channel, scale=1.0):
+    """
+
+    Parameters
+    ----------
+    channel : str
+        channel in {A, E, T}
+    scale : float
+        scale factor applied to the data, such that
+        data_rescaled = data * scale
+
+    Returns
+    -------
+    psd_fn : callable
+        PSD function in the requested channel
+        [rescaled Fractional Frequency / Hz]
+
+    """
 
     if channel == 'a_mat':
-        PSD_fn = lambda x: tdi.noisepsd_AE(x, model='SciRDv1') * f_sampling / 2 / scale**2
+        psd_fn = lambda x: tdi.noisepsd_AE(x, model='SciRDv1') * scale ** 2
     elif channel == 'E':
-        PSD_fn = lambda x: tdi.noisepsd_AE(x, model='SciRDv1') * f_sampling / 2 / scale**2
+        psd_fn = lambda x: tdi.noisepsd_AE(x, model='SciRDv1') * scale ** 2
     elif channel == 'T':
-        PSD_fn = lambda x: tdi.noisepsd_T(x, model='SciRDv1') * f_sampling / 2 / scale**2
+        psd_fn = lambda x: tdi.noisepsd_T(x, model='SciRDv1') * scale ** 2
 
-    return PSD_fn
+    return psd_fn
 
 
-class PSDTheoretical(object):
+class PSDTheoretical(PSD):
     """
-    Power spectral density class providing methods to compute the theoretical PSD of TDI data streams
+    Power spectral density class providing methods to compute the theoretical
+    PSD of TDI data streams
     """
 
-    def __init__(self, N, fs, fmin=None, fmax=None, channels=['a_mat'], scale=1.0):
-        self.channels = channels
-        self.psd_list = [PSD(N, fs, fmin=fmin, fmax=fmax) for ch in channels]
+    def __init__(self, n_data, fs, channel, scale=1.0, J=30, D=3,
+                 fmin=None, fmax=None, f_knots=None, ext=3):
 
-        for i in range(len(channels)):
-            self.psd_list[i].psd_fn = theoretical_spectrum_func(fs, channels[i], scale=scale)
-            self.psd_list[i].log_psd_fn = lambda x: np.log(self.psd_list[i].psd_fn(np.exp(x)))
+        PSD.__init__(self, n_data, fs, fmin=fmin, fmax=fmax)
+        self.channel = channel
+        self.scale = scale
+        self.log_psd_fn = lambda x: np.log(self.psd_fn(np.exp(x)))
 
-    def calculate(self, arg):
-        """
+    def psd_fn(self, x):
 
-        Parameters
-        ----------
-        arg : int or ndarray
-            size of Fourier grid or vector of frequencies
-
-        Returns
-        -------
-        spectrum : list of ndarrays
-            list of psd estimates for all channels
-
-        """
-        return [psd.calculate(arg) for psd in self.psd_list]
-
-    # def set_periodogram(self, z_fft, K2):
-    #
-    #     [psd.set_periodogram(z_fft, K2) for psd in self.psd_list]
+        if self.channel == 'A':
+            return tdi.noisepsd_AE(x, model='SciRDv1') / self.scale ** 2
+        elif self.channel == 'E':
+            return tdi.noisepsd_AE(x, model='SciRDv1') / self.scale ** 2
+        elif self.channel == 'T':
+            return tdi.noisepsd_T(x, model='SciRDv1') / self.scale ** 2
 
     def sample(self, npsd):
-        sampling_result = [psd.sample_psd(npsd) for psd in self.psd_list]
+        sampling_result = self.sample_psd(npsd)
         sample_list = [samp[0] for samp in sampling_result]
         logp_values_list = [samp[1] for samp in sampling_result]
 

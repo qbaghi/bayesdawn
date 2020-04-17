@@ -321,7 +321,8 @@ class LikelihoodModel(object):
 
         """
 
-        # Inverse Fourier transform back in time domain (can be a numpy array or a list of arrays)
+        # Inverse Fourier transform back in time domain (can be a numpy array
+        # or a list of arrays)
         y_gw = self.compute_time_signal(params)
         # Draw the missing data (can be a numpy array or a list of arrays)
         y_rec = self.data_model.imputation(y_gw, self.psd_model.psd_list)
@@ -729,6 +730,7 @@ class LogLike(object):
          for i in range(len(self.data))]
         # Calculate the spectrum in the estimation band
         self.sn = [psd.calculate(self.f[self.inds]) for psd in self.psd_list]
+        # It is currently x fs / 2. Should correct for that.
 
     def update_missing_data(self, y_gw_list):
         """
@@ -857,10 +859,10 @@ class LogLike(object):
         ee = np.sum(np.abs(et) ** 2 / self.sn[1])
 
         # (h | y) - 1/2 (h | h)
-        llA = 4.0 * self.df * (sna - 0.5*aa)
-        llE = 4.0 * self.df * (sne - 0.5*ee)
+        ll_a = 4.0 * self.df * (sna - 0.5*aa)
+        ll_e = 4.0 * self.df * (sne - 0.5*ee)
 
-        return llA + llE + self.ll_norm
+        return ll_a + ll_e + self.ll_norm
 
     def compute_signal_reduced(self, par_intr):
         """

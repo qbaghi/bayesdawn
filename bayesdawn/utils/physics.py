@@ -5,6 +5,10 @@ import LISAConstants as LC
 import lisabeta.lisa.ldctools as ldctools
 import pyFDresponse as FD_Resp
 from bayesdawn.gaps import gapgenerator
+# Global variables
+c_light = 299792458.0
+pc = 3.085677581491367e+16
+year = 31557600.0
 
 
 def compute_masses(mc, q):
@@ -27,7 +31,8 @@ def compute_masses(mc, q):
     """
 
     ma = (q / ((q + 1.) ** 2)) ** (-3.0 / 5.0)
-    mb = ((q / ((q + 1.) ** 2)) ** (-6.0 / 5.0) - 4.0 * (q / ((q + 1.) ** 2)) ** (-1.0 / 5.0)) ** 0.5
+    mb = ((q / ((q + 1.) ** 2)) ** (-6.0 / 5.0)
+          - 4.0 * (q / ((q + 1.) ** 2)) ** (-1.0 / 5.0)) ** 0.5
 
     m1 = 0.5 * mc * (ma + mb)
     m2 = 0.5 * mc * (ma - mb)
@@ -88,7 +93,8 @@ def waveform_to_like(params):
     q = m1 / m2
 
     # transforming into sampling parameters
-    par = np.array([mc, q, tc, chi1, chi2, np.log10(dl), np.cos(incl), np.sin(bet), lam, psi, phi0])
+    par = np.array([mc, q, tc, chi1, chi2, np.log10(dl),
+                    np.cos(incl), np.sin(bet), lam, psi, phi0])
 
     return par
 
@@ -100,12 +106,14 @@ def like_to_waveform_intr(par_intr):
     ----------
     par : array_like
         parameter vector for sampling the posterior:
-        Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0
+        Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam,
+        psi, phi0
 
     Returns
     -------
     params : array_like
-       parameter vector for LISABeta waveform: m1, m2, chi1, chi2, del_t, dist, incl, phi0, lam, bet, psi
+       parameter vector for LISABeta waveform: m1, m2, chi1, chi2, del_t, dist,
+       incl, phi0, lam, bet, psi
 
     """
 
@@ -136,7 +144,7 @@ def get_params(p_gw, sampling=False):
 
     """
     # print (pGW.get('Mass1')*1.e-6, pGW.get('Mass2')*1.e-6)
-    m1 = p_gw.get('Mass1') ### Assume masses redshifted
+    m1 = p_gw.get('Mass1')  # Assume masses redshifted
     m2 = p_gw.get('Mass2')
     tc = p_gw.get('CoalescenceTime')
     chi1 = p_gw.get('Spin1') * np.cos(p_gw.get('PolarAngleOfSpin1'))
@@ -144,9 +152,9 @@ def get_params(p_gw, sampling=False):
     phi0 = p_gw.get('PhaseAtCoalescence')
     z = p_gw.get("Redshift")
     DL = Cosmology.DL(z, w=0)[0]
-    dist = DL * 1.e6 * LC.pc
-    print ("DL = ", DL*1.e-3, "Gpc")
-    print ("Compare DL:", p_gw.getConvert('Distance', LC.convDistance, 'mpc'))
+    dist = DL * 1.e6 * pc
+    print("DL = ", DL*1.e-3, "Gpc")
+    print("Compare DL:", p_gw.getConvert('Distance', LC.convDistance, 'mpc'))
 
     bet, lam, incl, psi = ldctools.GetSkyAndOrientation(p_gw)
 
@@ -157,7 +165,8 @@ def get_params(p_gw, sampling=False):
         Mc = FD_Resp.funcMchirpofm1m2(m1, m2)
         q = m1 / m2
         # transforming into sampling parameters
-        ps_sampl = np.array([Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl), np.sin(bet), lam, psi, phi0])
+        ps_sampl = np.array([Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl),
+                             np.sin(bet), lam, psi, phi0])
 
         return ps_sampl
 
@@ -187,7 +196,6 @@ def sampling_to_ldc(p_sampl, intrinsic=False, phi1=0, phi2=0):
     if not intrinsic:
         mc, q, tc, chi1, chi2, log10dl, cosi, sb, lam, psi, phi0 = p_sampl
         dl = 10**log10dl
-        incl = np.arccos(cosi)
         # Convert chirp mass into individual masses
         m1, m2 = compute_masses(mc, q)
         # Convert Source latitude in SSB-frame
@@ -242,9 +250,10 @@ def compute_frequency_vs_time(t, m_chirp, t_merger):
     """
 
     # Convert merger time from seconds to years
-    t_merger_years = t_merger / LC.year
+    t_merger_years = t_merger / year
 
-    # Compute starting frequency (source frequency at t=0 [Hz]) as a function of time to merger
+    # Compute starting frequency (source frequency at t=0 [Hz]) as a function
+    # of time to merger
     f_start = FD_Resp.funcNewtonianfoft(m_chirp, t_merger_years)
 
     # Convert chirp mass in kg
