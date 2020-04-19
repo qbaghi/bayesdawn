@@ -118,11 +118,13 @@ if __name__ == '__main__':
         sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
 
     else:
-
+        # Compute the spectra once for all
         psd_cls = [psdmodel.PSDTheoretical(tm.shape[0], 1 / del_t, ch,
                                            scale=1.0, fmin=None, fmax=None)
                    for ch in ['A', 'E']]
         sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
+        # Then set the PSD class to None to prevent its update
+        psd_cls = None
 
         # psd_cls = None
         # # One-sided PSD

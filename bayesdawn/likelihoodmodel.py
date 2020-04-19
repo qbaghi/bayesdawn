@@ -408,8 +408,6 @@ class LikelihoodModel(object):
         ----------
         params : array_like
             vector of parameters
-        callback : callable
-            function to be called at every n_save iteration
 
         Returns
         -------
