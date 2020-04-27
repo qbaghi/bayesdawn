@@ -18,7 +18,7 @@ def v_func_gb(f, f_0, f_dot, T, ts):
     Parameters
     ----------
     f : array_like
-        vector frequencies (size N) where to evalutate the function w(f)
+        vector frequencies (size n_data) where to evalutate the function w(f)
     f_0 : scalar float
         wave frequency
     f_dot : scalar float
@@ -33,26 +33,52 @@ def v_func_gb(f, f_0, f_dot, T, ts):
     Returns
     -------
     v : numpy array
-        vector of values of v (size N) calculated at given frequencies
+        vector of values of v (size n_data) calculated at given frequencies
 
     """
 
-    if f_dot!=0:
-        #return exp_square_fourier_trunc(f+f_0,np.pi*f_dot,T,ts)
-
+    if f_dot != 0:
         f_shift = f + f_0
-        a = np.pi*f_dot
-        coeff = np.exp(3j*np.pi/4) / np.sqrt(a)
+        a = np.pi * f_dot
+        coeff = np.exp(3j * np.pi / 4) / np.sqrt(a)
         common_factor = - np.exp(1j*np.pi/4)/(2*np.sqrt(a))*np.sqrt(np.pi) \
-        *np.exp(1j*np.pi**2 * f_shift**2 / a )
+                        * np.exp(1j*np.pi**2 * f_shift**2 / a)
 
-        erfi_0 = special.erfi( coeff * (np.pi*f_shift) )
-        erfi_T = special.erfi( coeff * (a*T+np.pi*f_shift) )
+        erfi_0 = special.erfi(coeff * (np.pi*f_shift))
+        erfi_T = special.erfi(coeff * (a*T+np.pi*f_shift))
 
         return common_factor*(erfi_T - erfi_0)/ts
 
     else:
         return np.exp(-1j*np.pi*(f_0+f)*T)*np.sinc((f_0+f)*T)*T/ts
+
+
+def v_func_gb_star(f, f_0, f_dot, T, ts):
+    """
+    function of frequency giving the Fourier transform of exp(+j*Phi(t)),
+    where Phi(t) is the phase of the gravitatonal wave
+
+    Parameters
+    ----------
+    f : array_like
+        vector frequencies (size n_data) where to evalutate the function w(f)
+    f_0 : scalar float
+        wave frequency
+    f_dot : scalar float
+        wave frequency derivative
+    T : scalar float
+        integration time
+    ts : scalar float
+        sampling time (cadence)
+
+    Returns
+    -------
+    v : numpy array
+        vector of values of v (size n_data) calculated at given frequencies
+
+    """
+
+    return np.conjugate(v_func_gb(-f, f_0, f_dot, T, ts))
 
 
 def v_func_gb_seg(f, f_0, f_dot, ts, T1, T2):
@@ -64,7 +90,7 @@ def v_func_gb_seg(f, f_0, f_dot, ts, T1, T2):
     Parameters
     ----------
     f : array_like
-        vector frequencies (size N) where to evalutate the function w(f)
+        vector frequencies (size n_data) where to evalutate the function w(f)
     f_0 : scalar float
         wave frequency
     f_dot : scalar float
@@ -80,7 +106,7 @@ def v_func_gb_seg(f, f_0, f_dot, ts, T1, T2):
     Returns
     -------
     v : numpy array
-        vector of values of v (size N) calculated at given frequencies
+        vector of values of v (size n_data) calculated at given frequencies
 
     """
 
@@ -112,7 +138,7 @@ def window_tf(f, T_start, T_end):
     Parameters
     ----------
     f : array_like
-        vector frequencies (size N) where to evalutate the function w(f)
+        vector frequencies (size n_data) where to evalutate the function w(f)
     T_start : numpy 1d array
         vector of times at which each gap starts
     T_end : numpy 1d array
@@ -140,7 +166,7 @@ def v_func_gb_conj(f, f_0, f_dot, ts, t1, t2):
     Parameters
     ----------
     f : array_like
-        vector frequencies (size N) where to evalutate the function w(f)
+        vector frequencies (size n_data) where to evalutate the function w(f)
     f_0 : scalar float
         wave frequency
     f_dot : scalar float
@@ -158,7 +184,7 @@ def v_func_gb_conj(f, f_0, f_dot, ts, t1, t2):
     Returns
     -------
     v : numpy array
-        vector of values of v (size N) calculated at given frequencies
+        vector of values of v (size n_data) calculated at given frequencies
 
     """
 
@@ -230,7 +256,7 @@ def v_func_GB_wind(f, f_0, f_dot, ts, T1, T2, tw):
     Parameters
     ----------
     f : array_like
-        vector frequencies (size N) where to evalutate the function w(f)
+        vector frequencies (size n_data) where to evalutate the function w(f)
     f_0 : scalar float
         wave frequency
     T : scalar float
@@ -248,7 +274,7 @@ def v_func_GB_wind(f, f_0, f_dot, ts, T1, T2, tw):
     Returns
     -------
     v : numpy array
-        vector of values of v (size N) calculated at given frequencies
+        vector of values of v (size n_data) calculated at given frequencies
 
     """
     f_shift = f + f_0

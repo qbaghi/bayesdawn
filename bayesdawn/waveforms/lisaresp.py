@@ -9,9 +9,9 @@ Created on Fri Feb  1 15:09:36 2019
 # For MBHB only, use MLDC code
 try:
     import GenerateFD_SignalTDIs
+    import LISAConstants as LC
 except ImportError:
     print("Proceed without MLDC packages.")
-import LISAConstants as LC
 # from lisabeta.lisa import lisa
 try:
     import lisabeta.lisa.lisa as lisa
@@ -21,8 +21,11 @@ except ImportError:
 import numpy as np
 from scipy import special
 from scipy.interpolate import InterpolatedUnivariateSpline as spline
-
 from . import coeffs
+import pyfftw
+from ..utils import physics
+from pyfftw.interfaces.numpy_fft import fft, ifft, rfft
+pyfftw.interfaces.cache.enable()
 
 # Global variables
 # Indices of parameters in the full parameter vector
@@ -103,8 +106,8 @@ def convert_xyz_to_aet(x, y, z):
 
 def form_design_matrix(uc, k_p, k_c, complex=False):
     """
-    Construct the design matrix A such that the GW signal can be written as
-    s = A * beta
+    Construct the design matrix a_mat such that the GW signal can be written as
+    s = a_mat * beta
 
     Parameters
     ----------
@@ -167,7 +170,7 @@ class GWwaveform(object):
         self.armlength = armlength
 
         self.R = LC.ua
-        self.f_T = 1. / LC.year
+        self.f_t = 1. / LC.year
 
 
 class UCBWaveform(GWwaveform):
@@ -245,7 +248,7 @@ class UCBWaveform(GWwaveform):
         Returns
         -------
         w : numpy array
-            vector of values of w(f) (size N) calculated at given frequencies
+            vector of values of w(f) (size n_data) calculated at given frequencies
 
         """
 
@@ -293,9 +296,9 @@ class UCBWaveform(GWwaveform):
         Returns
         -------
         Uc : 2d numpy array
-            matrix Uc(f) of size N x 5
+            matrix Uc(f) of size n_data x 5
         Us : 2d numpy array
-            matrix Us(f) of size N x 5
+            matrix Us(f) of size n_data x 5
 
         """
 
@@ -308,7 +311,7 @@ class UCBWaveform(GWwaveform):
         varphi = phi + np.pi/2
 
         # Precompute the Bessel coefficients f, f_0, f_dot, ts, T1, T2
-        v_minus_list = [self.v_func(-f + k * self.f_T, f_0, f_dot, t_end, ts)
+        v_minus_list = [self.v_func(-f + k * self.f_t, f_0, f_dot, t_end, ts)
                         for k in range(-self.nc - self.m_max,
                                        self.nc + self.m_max + 1)]
 
@@ -338,7 +341,7 @@ class UCBWaveform(GWwaveform):
         Compute design matrix such that the measurements y
         can be written as
 
-        y(f) = A(theta,phi,f0,f_dot,f) beta(A_p,A_c,phi_0,psi)
+        y(f) = a_mat(theta,phi,f0,f_dot,f) beta(A_p,A_c,phi_0,psi)
 
         beta = (gamma_p,sigma_p,gamma_c,sigma_c)
 
@@ -357,8 +360,8 @@ class UCBWaveform(GWwaveform):
 
         Returns
         -------
-        A : numpy array
-            model matrix of size (N x K)
+        a_mat : numpy array
+            model matrix of size (n_data x K)
 
 
         """
@@ -531,7 +534,7 @@ class UCBWaveform(GWwaveform):
         Returns
         -------
         ch_interp : list of numpy arrays
-            list containing the 3 TDI responses in channels A, E and T,
+            list containing the 3 TDI responses in channels a_mat, E and T,
             expressed in fractional frequency amplidudes,
             such that ch_interp[i] corresponds to fft(ch[i]) without any
             normalization
@@ -670,6 +673,296 @@ class UCBWaveform(GWwaveform):
         return g_p_list, g_c_list
 
 
+# ------------------------------------------------------------------------------
+class UCBWaveformFull(GWwaveform):
+    """
+    Class to compute the LISA response to an incoming gravitational wave.
+
+    """
+
+    def __init__(self, v_func, del_t, tobs,
+                 phi_rot=0, armlength=2.5e9, nc=2**9, arm_list=None,
+                 e=0):
+        """
+
+
+        Parameters
+        ----------
+        v_func : callable
+            function of frequency giving the Fourier transform of
+            exp(+j*Phi(t)), where Phi(t) is the phase of the gravitatonal wave
+        fs : scalar float
+            sampling frequency
+        phi_rot : scalar float
+            initial angle of LISA constellation
+        armlength : scalar float
+            Arm length (default is 2.5e9 m)
+        nc : scalar integer
+            order of the Bessel function decomposition
+        arm_list : list of callables
+            list of armlength function wrt time
+
+        """
+
+        super().__init__(phi_rot=phi_rot, armlength=armlength)
+
+        # Name of intrinsic parameters
+        self.names = ['theta', 'phi', 'f_0', 'f_dot']
+        # Phase function
+        self.v_func = v_func
+        # For the number of time samples in the Fourier series
+        self.nc = nc
+        # Sampling time
+        self.del_t = del_t
+        # Observation duration
+        self.tobs = tobs
+        # Cosine and sine of LISA orbital phase
+        self.dt = None
+        self.t_samples = []
+        self.cosphit_mat = []
+        self.sinphit_mat = []
+        self.cs_mat = []
+        # Precompute them at time samples
+        self.precompute_lisa_phase()
+        # List of arm lengths functions vs time
+        if arm_list is None:
+            self.arm_list = [self.armlength for i in range(3)]
+        else:
+            self.arm_list = [arm(self.t_samples) for arm in arm_list]
+        # Eccentricity
+        self.e = e
+
+    def precompute_lisa_phase(self):
+        """
+        Compute terms in Phi_T(t) on a minimal grid in the time domain.
+        """
+        f_sample = 2 * self.nc
+        self.t_samples, self.dt = np.linspace(0, self.tobs, f_sample + 2,
+                                              endpoint=False, retstep=True)
+
+        self.cosphit_mat = np.array([np.cos(2*np.pi*m*self.f_t*self.t_samples)
+                                     for m in range(5)]).T
+        self.sinphit_mat = np.array([np.sin(2*np.pi*m*self.f_t*self.t_samples)
+                                     for m in range(5)]).T
+        self.cs_mat = np.hstack((self.cosphit_mat, self.sinphit_mat))
+
+    def compute_modulation(self, theta, phi, i, channel='phasemeters'):
+
+        if channel == 'phasemeters':
+            # Compute the required coefficients response depending on channel
+            k_pi, k_ci = coeffs.xi_coeffs(theta, phi, self.phi_rot, i)
+        # Compute modulation functions
+        xi_pi = self.cs_mat.dot(k_pi)
+        xi_ci = self.cs_mat.dot(k_ci)
+
+        return xi_pi, xi_ci
+
+    def compute_slow_part(self, theta, phi, f_0, f_dot, i,
+                          channel='phasemeters'):
+        """
+        Compute the slow-varying part of the response in OB i
+        in the time domain, such that
+
+        s_i = Re{ A_slow_i(t) e^{j Phi(t)} }
+
+        Parameters
+        ----------
+        theta : scalar float
+            colatitude angle: theta = beta + pi/2 if beta is the ecliptic
+            latitude [rad]
+        phi : scalar float
+            longitude angle such taht phi = lam - pi where lam is the ecliptic
+            longitude [rad]
+        f_0 : scalar float
+            wave frequency [Hz]
+        i : int
+            index of the considered arm among {1, 2, 3}
+
+        Returns
+        -------
+        a_slow : ndarray
+            design matrix of size 2nc x 2
+
+        """
+
+        # Compute modulation function
+        xpi, xci = self.compute_modulation(theta, phi, i, channel=channel)
+        # Compute prefractor
+        a, b = coeffs.kn_coeffs(theta, phi, self.phi_rot, i)
+        kni = self.cosphit_mat[:, 0:3].dot(a) + self.sinphit_mat[:, 0:3].dot(b)
+
+        # Modulation phase, i.e. k . r_0
+        d = - self.R * np.sin(theta) * (
+                self.cosphit_mat[:, 1] * np.cos(phi)
+                + self.sinphit_mat[:, 1] * np.sin(phi)) / physics.c_light
+
+        # Direct formulation
+        prefact = 1 / (2 * (1 - kni))
+        dt_re = d * (1 - f_dot * (d + 2 * self.t_samples) / (2 * f_0))
+        d_new = d + self.arm_list[i - 1] / physics.c_light
+        dt_em = d_new * (1 - f_dot * (d_new + 2 * self.t_samples) / (2 * f_0))
+        phasing = (np.exp(-2j * np.pi * f_0 * dt_re)
+                   - np.exp(-2j * np.pi * f_0 * dt_em))
+
+        # Sinc formulation
+        # pref = np.pi * f_0 * self.arm_list[i-1] / LC.c
+        # prefact = 1j * pref * np.sinc(pref * (1 - kni))
+        # Copmute
+        # # Compute the phase perturbation
+        # delta_phi = np.pi * d * (2 * f_0 + f_dot * (2 * self.t_samples - d))
+        # # Compute slow part design matrix (for a+, ax)
+        # pref = np.array([prefact * np.exp(-1j * delta_phi)]).T
+
+        # # Computation of the phasing term
+        # ar, br = coeffs.kn_bar_coeffs(theta, phi, self.phi_rot, i)
+        # kn_bar_i = self.cosphit_mat[:, 0:3].dot(ar)\
+        #            + self.sinphit_mat[:, 0:3].dot(br)
+        # kr_bar_i = kr0 + 2 * self.e * self.R * kn_bar_i
+        # kr_bar_i = kr0[:]
+        # d = (2 * kr_bar_i + self.arm_list[i-1]) / LC.c
+        # phasing = np.exp(-1j * np.pi * f_0 * d)
+
+        return np.array([prefact * phasing]).T * np.array([xpi, xci]).T
+        # return np.array([prefact * phasing * xpi, prefact * phasing * xci]).T
+
+    def design_matrix_freq(self, f, param_intr, channel='phasemeters'):
+        """
+        Compute the list of frequency-domain design matrix mat[i] such that
+        LISA's response
+        to GW in OB i is
+
+        s_i(f) = mat[i] * beta
+
+        Parameters
+        ----------
+        f : array_like
+            frequencies where to compute the matrix
+        param_intr : array_like
+            vector of intrinsic parameters:
+            colatitude theta [rad] = Ecliptic Latitude + pi/2
+            longitude phi [rad] = Ecliptic longitude - pi
+            frequency f_0 [Hz],
+            frequency derivative f_dot [Hz^2]
+        channel : string
+            type of channel: {'TDIAET', 'phasemeters'}
+
+        Returns
+        -------
+        mat_list : list of numpy arrays
+            list containing the design matrices
+
+
+        """
+
+        # Extract instrinsic parameters
+        theta, phi, f_0, f_dot = param_intr
+        # Compute slow part of nc x 2 design matrices in time domain
+        index_list = [3, 1, 2]
+        a_slow_list = [self.compute_slow_part(theta, phi, f_0, f_dot, i,
+                                              channel=channel)
+                       for i in index_list]
+        # Compute its FFC to get Fourier series coefficients
+        # (list ot nc x 2 matrices)
+        c_list = fft(np.array(a_slow_list), axis=1) / self.t_samples.size
+        # Compute corresponding frequency vector
+        f_vect = np.fft.fftfreq(c_list[0].shape[0],
+                                d=self.tobs / c_list[0].shape[0])
+
+        # Form the grid of frequency differences
+        f_grid = np.array([f]) - np.array([f_vect]).T
+        v_list = self.v_func(f_grid, f_0, f_dot, self.tobs, self.del_t)
+        # v_list = [self.v_func(f - f_vect[k], f_0, f_dot, self.tobs, self.del_t)
+        #           for k in range(c_list[0].shape[0])]
+
+        a_mat_list = [self.compute_series(v_list, c_list[i]) / 2
+                      for i in range(len(c_list))]
+
+        return a_mat_list
+
+    # @staticmethod
+    def compute_series(self, v_list, c):
+        """Short summary.
+
+        Parameters
+        ----------
+        v_list : list of ndarrays
+            list of nc values v(f - n / Tobs) where v is the exponential GW
+            phase for frequencies f. Each list item is an array of
+            size nf
+        c : ndarray
+            Fourier series coefficients of a_slow, size nc x 2
+
+        Returns
+        -------
+        series: ndarray
+            Array of size nf x 2 giving the Fourier-series approximation
+            of a_slow(f) in the frequency domain.
+
+        """
+
+        # For n = -2nc..2nc, get a 2nc x nf x 2 array
+        return np.sum(c * np.array([v_list]).T, axis=1)
+
+    def compute_signal_freq(self, f, params, channel='phasemeters'):
+        """
+        Compute LISA's response to the incoming galactic binary GW in the
+        frequency domain
+
+        Parameters
+        ----------
+        f : array_like
+            frequencies where to compute the matrix
+        params : array_like
+            vector of parameters:
+            amplitude a0 [GW strain],
+            inclination incl [rad],
+            initial phase phi_0 [rad],
+            polarization angle psi [rad],
+            colatitude theta [rad] = Ecliptic Latitude + pi/2
+            longitude phi [rad] = Ecliptic longitude - pi
+            frequency f_0 [Hz],
+            frequency derivative f_dot [Hz^2]
+        channel : string
+            tdi channel among {'X1','X2','X3'}
+
+        Returns
+        -------
+        ch_interp : list of numpy arrays
+            list containing the 3 TDI responses in channels a_mat, E and T,
+            expressed in fractional frequency amplidudes,
+            such that ch_interp[i] corresponds to fft(ch[i]) without any
+            normalization
+
+        Notes
+        -----
+        The Ecliptic latitude (or declination) should varies in the interval
+        [-pi/2, pi /2], therefore theta is in [0, pi]
+        Therefore, the colatitude theta is in the interval [-pi/2, pi /2]
+        The ecliptic longitude varies from 0 to 2pi.
+        Therefore the longitude phi varies in [-pi, pi]
+
+        """
+
+        # Extract physical parameters
+        a0, incl, phi_0, psi, theta, phi, f_0, f_dot = params
+        # Compute the constant extrinsinc amplitude coefficients
+        h0_p = a0 * (1 + np.cos(incl) ** 2)
+        h0_c = 2 * a0 * np.cos(incl)
+        # Compute complex amplitudes
+        a_p = h0_p * np.exp(1j * phi_0)
+        a_c = 1j * h0_c * np.exp(1j * phi_0)
+        # Compute complex vector of effective amplitudes
+        beta = np.array([a_p * np.cos(2 * psi) + a_c * np.sin(2 * psi),
+                         a_c * np.cos(2 * psi) - a_p * np.sin(2 * psi)])
+        # Compute design matrices
+        param_intr = np.array([theta, phi, f_0, f_dot])
+        mat_list = np.array(self.design_matrix_freq(f, param_intr,
+                                                    channel=channel))
+
+        return mat_list.dot(beta)
+
+
+# ------------------------------------------------------------------------------
 class MBHBWaveform(GWwaveform):
     """
     Class to compute the LISA response to an incoming gravitational wave.
@@ -759,7 +1052,7 @@ class MBHBWaveform(GWwaveform):
         Returns
         -------
         ch_interp : list of numpy arrays
-            list containing the 3 TDI responses in channels A, E and T,
+            list containing the 3 TDI responses in channels a_mat, E and T,
             expressed in fractional frequency amplidudes,
             such that ch_interp[i] corresponds to fft(ch[i]) without any
             normalization
@@ -788,11 +1081,11 @@ class MBHBWaveform(GWwaveform):
         #     ch_interp = [self.interpolate_waveform(fr, f, ch) for ch in [x, y, z]]
         #     a, e, t = convert_xyz_to_aet(ch_interp[0], ch_interp[1], ch_interp[2])
         #
-        #     if (channel == 'TDIAET') | (channel == ['A', 'E', 'T']):
+        #     if (channel == 'TDIAET') | (channel == ['a_mat', 'E', 'T']):
         #         # print(channel)
         #         # a, e, t = convert_xyz_to_aet(ch_interp[0], ch_interp[1], ch_interp[2])
         #         ch_interp = [a / del_t, e / del_t, t / del_t]
-        #     elif channel == ['A']:
+        #     elif channel == ['a_mat']:
         #         ch_interp = a / del_t
         #     elif channel == ['E']:
         #         ch_interp = e / del_t
@@ -832,7 +1125,7 @@ class MBHBWaveform(GWwaveform):
         Compute design matrix such that the TDI variable (fist generation)
         can be written as
 
-        TDI(f) = A(theta,phi,f0,f_dot,f) beta(A_p,A_c,phi_0,psi)
+        TDI(f) = a_mat(theta,phi,f0,f_dot,f) beta(A_p,A_c,phi_0,psi)
 
         beta = (gamma_p,sigma_p,gamma_c,sigma_c)
 
@@ -856,8 +1149,8 @@ class MBHBWaveform(GWwaveform):
 
         Returns
         -------
-        A : numpy array
-            model matrix of size (N x K)
+        a_mat : numpy array
+            model matrix of size (n_data x K)
 
 
         """

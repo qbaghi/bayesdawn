@@ -47,7 +47,103 @@ def k_coeffs(params, Phi_rot, i, j):
     return k_p, k_c
 
 
-def xi_diff_coeffs(theta, phi, Phi_rot, i, j):
+def phi_rot_i_func(i, phi_rot):
+
+    return (i - 1) * 2 * np.pi / 3 - phi_rot
+
+
+def kn_coeffs(theta, phi, phi_rot, i):
+    """
+    compute the coefficients a b c such that
+
+    k.n_i = a cos(phi_t) + b * sin(phi_t) + c
+
+    where k is the wave propagation vector and n_i is the arm unit vector.
+
+    Parameters
+    ----------
+    theta : scalar float
+        colatitude angle: theta = beta + pi/2 if beta is the ecliptic latitude
+    phi : scalar float
+        longitude angle such taht phi = lam - pi where lam is the ecliptic
+        longitude
+    phi_rot : scalar float
+        rotation angle between the initial configuration of the LISA triangle
+        and the standard initial configuration (reference) which is so that
+        at t=0 the triangle edge where S/C 1 is located poits downwards (wrt
+        ecliptic plane), S/C 2 is on the y<0 side and S/C 3 is on the third
+        edge.
+    i : integer float {1,2,3}
+        index of first spacecraft
+
+    """
+
+    # phi_i = (2 * i + 1) * np.pi / 3 - phi_rot
+    phi_i = (phi_rot_i_func(i + 2, phi_rot) + phi_rot_i_func(i + 1, phi_rot))/2
+
+    a = np.zeros(3, dtype=np.float64)
+    b = np.zeros(3, dtype=np.float64)
+
+    # m = 0
+    a[0] = 3 / 4 * np.sin(theta) * np.sin(phi_i - phi)
+    # m = 1
+    a[1] = np.sqrt(3) / 2 * np.cos(theta) * np.sin(phi_i)
+    b[1] = - np.sqrt(3) / 2 * np.cos(theta) * np.cos(phi_i)
+    # m = 2
+    a[2] = - np.sin(theta) / 4 * np.sin(phi + phi_i)
+    b[2] = np.sin(theta) / 4 * np.cos(phi + phi_i)
+
+    return a, b
+
+
+def kn_bar_coeffs(theta, phi, phi_rot, i):
+    """
+    compute the coefficients a b c such that
+
+    k.\bar{r}_i = a cos(phi_t) + b * sin(phi_t) + c
+
+    where k is the wave propagation vector and \bar{r}_i is the mean S/C
+    position vector between S/C i and i+1, defined as
+
+    \bar{n}_{i+2} = (n_{i} + n_{i+1})/2
+
+    Parameters
+    ----------
+    theta : scalar float
+        colatitude angle: theta = beta + pi/2 if beta is the ecliptic latitude
+    phi : scalar float
+        longitude angle such taht phi = lam - pi where lam is the ecliptic
+        longitude
+    phi_rot : scalar float
+        rotation angle between the initial configuration of the LISA triangle
+        and the standard initial configuration (reference) which is so that
+        at t=0 the triangle edge where S/C 1 is located poits downwards (wrt
+        ecliptic plane), S/C 2 is on the y<0 side and S/C 3 is on the third
+        edge.
+    i : integer float {1,2,3}
+        index of first spacecraft
+
+    """
+
+    # phi_i = (2 * i + 1) * np.pi / 3 - phi_rot
+    phi_i = (phi_rot_i_func(i, phi_rot) + phi_rot_i_func(i - 1, phi_rot))/2
+
+    a = np.zeros(3, dtype=np.float64)
+    b = np.zeros(3, dtype=np.float64)
+
+    # m = 0
+    a[0] = - 3 / 8 * np.sin(theta) * np.cos(phi - phi_i)
+    # m = 1
+    a[1] = - np.sqrt(3) / 4 * np.cos(theta) * np.cos(phi_i)
+    b[1] = - np.sqrt(3) / 4 * np.cos(theta) * np.sin(phi_i)
+    # m = 2
+    a[2] = np.sin(theta) / 8 * np.cos(phi + phi_i)
+    b[2] = np.sin(theta) / 8 * np.sin(phi + phi_i)
+
+    return a, b
+
+
+def xi_diff_coeffs(theta, phi, phi_rot, i, j):
     """
     Create the python function to compute the coefficient vector ai_diff in
 
@@ -65,7 +161,7 @@ def xi_diff_coeffs(theta, phi, Phi_rot, i, j):
     phi : scalar float
         longitude angle such taht phi = lam - pi where lam is the ecliptic
         longitude
-    Phi_rot : scalar float
+    phi_rot : scalar float
         rotation angle between the initial configuration of the LISA triangle
         and the standard initial configuration (reference) which is so that
         at t=0 the triangle edge where S/C 1 is located poits downwards (wrt
@@ -86,7 +182,7 @@ def xi_diff_coeffs(theta, phi, Phi_rot, i, j):
 
     """
 
-    Phi_plus = (i + j + 1) * 4 * np.pi / 3 - 2 * Phi_rot
+    Phi_plus = (i + j + 1) * 4 * np.pi / 3 - 2 * phi_rot
     Phi_minus = 2 * (i - j) * np.pi / 3
 
     costheta = np.cos(theta)
@@ -257,10 +353,10 @@ def xi_coeffs(theta, phi, phi_rot, i):
 
 def beta_gb(a0, incl, phi_0, psi):
     """
-    Create symbolic mathematical expression giving the vector beta of parameters
-    in the matrix decomposition of the TDI response:
+    Create symbolic mathematical expression giving the vector beta of
+    parameters in the matrix decomposition of the TDI response:
 
-    TDI(t) = A(theta,phi,f0,f_dot,t) beta(A_p,A_c,phi_0,psi)
+    TDI(t) = a_mat(theta,phi,f0,f_dot,t) beta(a_p,a_c,phi_0,psi)
 
     Parameters
     ----------
@@ -281,19 +377,19 @@ def beta_gb(a0, incl, phi_0, psi):
         vector of source parameters in the linear decomposition of the TDI
     """
 
-    A_p = a0 * (1 + np.cos(incl) ** 2)
-    A_c = -2 * a0 * np.cos(incl)
+    a_p = a0 * (1 + np.cos(incl) ** 2)
+    a_c = -2 * a0 * np.cos(incl)
 
-    C_p = A_p * np.cos(phi_0)
-    S_p = - A_p * np.sin(phi_0)
-    C_c = A_c * np.sin(phi_0)
-    S_c = A_c * np.cos(phi_0)
+    c_p = a_p * np.cos(phi_0)
+    s_p = - a_p * np.sin(phi_0)
+    c_c = a_c * np.sin(phi_0)
+    s_c = a_c * np.cos(phi_0)
 
     beta = np.array(
-        [C_p * np.cos(2 * psi) + C_c * np.sin(2 * psi),
-         - C_p * np.sin(2 * psi) + C_c * np.cos(2 * psi),
-         S_p * np.cos(2 * psi) + S_c * np.sin(2 * psi),
-         - S_p * np.sin(2 * psi) + S_c * np.cos(2 * psi)])
+        [c_p * np.cos(2 * psi) + c_c * np.sin(2 * psi),
+         - c_p * np.sin(2 * psi) + c_c * np.cos(2 * psi),
+         s_p * np.cos(2 * psi) + s_c * np.sin(2 * psi),
+         - s_p * np.sin(2 * psi) + s_c * np.cos(2 * psi)])
 
     return beta
 
