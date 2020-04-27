@@ -444,7 +444,7 @@ class UCBWaveform(GWwaveform):
         # If phasemeter model is required, there should be 6 matrices
         # (one for each link)
         if channel == 'phasemeters':
-            # You have to inlcude primed channels: h3, h1, h2
+            # You have to include primed channels: h3, h1, h2
             mat_list.extend([mat_list[2], mat_list[0], mat_list[1]])
 
         return mat_list
@@ -700,7 +700,8 @@ class UCBWaveformFull(GWwaveform):
         nc : scalar integer
             order of the Bessel function decomposition
         arm_list : list of callables
-            list of armlength function wrt time
+            list of armlength function wrt time, in the order:
+            L1, L2, L3, L1', L2', L3'
 
         """
 
@@ -727,10 +728,16 @@ class UCBWaveformFull(GWwaveform):
         # List of arm lengths functions vs time
         if arm_list is None:
             self.arm_list = [self.armlength for i in range(3)]
+            self.arm_list_prime = [self.armlength for i in range(3)]
         else:
-            self.arm_list = [arm(self.t_samples) for arm in arm_list]
+            self.arm_list = [arm(self.t_samples) for arm in arm_list[0:3]]
+            self.arm_list_prime = [arm(self.t_samples)
+                                   for arm in arm_list[3:6]]
         # Eccentricity
         self.e = e
+        # List of arm indices measured on each optical bench i
+        self.index_list = [3, 1, 2, 2, 3, 1]
+        self.prime_list = [False, False, False, True, True, True]
 
     def precompute_lisa_phase(self):
         """
@@ -758,7 +765,7 @@ class UCBWaveformFull(GWwaveform):
         return xi_pi, xi_ci
 
     def compute_slow_part(self, theta, phi, f_0, f_dot, i,
-                          channel='phasemeters'):
+                          channel='phasemeters', prime=False):
         """
         Compute the slow-varying part of the response in OB i
         in the time domain, such that
@@ -796,10 +803,15 @@ class UCBWaveformFull(GWwaveform):
                 self.cosphit_mat[:, 1] * np.cos(phi)
                 + self.sinphit_mat[:, 1] * np.sin(phi)) / physics.c_light
 
-        # Direct formulation
-        prefact = 1 / (2 * (1 - kni))
+        if not prime:
+            d_new = d + self.arm_list[i - 1] / physics.c_light
+            prefact = 1 / (2 * (1 - kni))
+        else:
+            d_new = d + self.arm_list_prime[i - 1] / physics.c_light
+            prefact = 1 / (2 * (1 + kni))
+        # Reception time
         dt_re = d * (1 - f_dot * (d + 2 * self.t_samples) / (2 * f_0))
-        d_new = d + self.arm_list[i - 1] / physics.c_light
+        # Emission time
         dt_em = d_new * (1 - f_dot * (d_new + 2 * self.t_samples) / (2 * f_0))
         phasing = (np.exp(-2j * np.pi * f_0 * dt_re)
                    - np.exp(-2j * np.pi * f_0 * dt_em))
@@ -849,7 +861,7 @@ class UCBWaveformFull(GWwaveform):
         Returns
         -------
         mat_list : list of numpy arrays
-            list containing the design matrices
+            list containing the design matrices of size nf x 2
 
 
         """
@@ -857,10 +869,15 @@ class UCBWaveformFull(GWwaveform):
         # Extract instrinsic parameters
         theta, phi, f_0, f_dot = param_intr
         # Compute slow part of nc x 2 design matrices in time domain
-        index_list = [3, 1, 2]
-        a_slow_list = [self.compute_slow_part(theta, phi, f_0, f_dot, i,
-                                              channel=channel)
-                       for i in index_list]
+        # index_list = [3, 1, 2]
+        # a_slow_list = [self.compute_slow_part(theta, phi, f_0, f_dot, i,
+        #                                       channel=channel)
+        #                for i in index_list]
+        a_slow_list = [self.compute_slow_part(theta, phi, f_0, f_dot,
+                                              self.index_list[j],
+                                              channel=channel,
+                                              prime=self.prime_list[j])
+                       for j in range(len(self.index_list))]
         # Compute its FFC to get Fourier series coefficients
         # (list ot nc x 2 matrices)
         c_list = fft(np.array(a_slow_list), axis=1) / self.t_samples.size
@@ -876,6 +893,11 @@ class UCBWaveformFull(GWwaveform):
 
         a_mat_list = [self.compute_series(v_list, c_list[i]) / 2
                       for i in range(len(c_list))]
+
+        # # Extend with 3 primed channels: h3, h1, h2
+        # if channel == 'phasemeters':
+        #     # You have to include primed channels: h3, h1, h2
+        #     a_mat_list.extend([a_mat_list[2], a_mat_list[0], a_mat_list[1]])
 
         return a_mat_list
 
