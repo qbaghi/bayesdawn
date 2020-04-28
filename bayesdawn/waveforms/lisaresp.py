@@ -673,7 +673,7 @@ class UCBWaveform(GWwaveform):
         return g_p_list, g_c_list
 
 
-# ------------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
 class UCBWaveformFull(GWwaveform):
     """
     Class to compute the LISA response to an incoming gravitational wave.
@@ -684,7 +684,6 @@ class UCBWaveformFull(GWwaveform):
                  phi_rot=0, armlength=2.5e9, nc=2**9, arm_list=None,
                  e=0):
         """
-
 
         Parameters
         ----------
@@ -702,6 +701,8 @@ class UCBWaveformFull(GWwaveform):
         arm_list : list of callables
             list of armlength function wrt time, in the order:
             L1, L2, L3, L1', L2', L3'
+        e : float
+            LISA's orbit excentricity
 
         """
 
@@ -738,6 +739,22 @@ class UCBWaveformFull(GWwaveform):
         # List of arm indices measured on each optical bench i
         self.index_list = [3, 1, 2, 2, 3, 1]
         self.prime_list = [False, False, False, True, True, True]
+
+    def update_arm_list(self, arm_list):
+        """
+
+        Parameters
+        ----------
+        arm_list : list of callables
+            list of armlength function wrt time, in the order:
+            L1, L2, L3, L1', L2', L3'
+
+
+        """
+        # List of arm lengths functions vs time
+        self.arm_list = [arm(self.t_samples) for arm in arm_list[0:3]]
+        self.arm_list_prime = [arm(self.t_samples)
+                               for arm in arm_list[3:6]]
 
     def precompute_lisa_phase(self):
         """
