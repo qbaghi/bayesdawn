@@ -186,7 +186,7 @@ def spline_matrix(x, knots, D):
     ----------
     x : numpy array of size n_data
         abscisse points where to compute the spline
-    knots : numpy array of size J-1
+    knots : numpy array of size n_knots-1
         knots of the spline (asbisse of segments nodes)
     D : scalar integer
         degree of the spline
@@ -200,7 +200,7 @@ def spline_matrix(x, knots, D):
     """
 
     # Size of the matrix
-    # K = D + 1 + len(knots)
+    # K = d + 1 + len(knots)
 
     # Polynomial
     A = [x ** d for d in range(D + 1)]
@@ -355,13 +355,40 @@ class PSD(object):
 # ==============================================================================
 class PSDSpline(PSD):
 
-    def __init__(self, n_data, fs, J=30, D=3,
+    def __init__(self, n_data, fs, n_knots=30, d=3,
                  fmin=None, fmax=None, f_knots=None, ext=3):
+        """
+
+        Parameters
+        ----------
+        n_data : int
+            size of analyzed data
+        fs : float
+            sampling frequency of analyzed data
+        n_knots : int
+            number of spline knots
+        d : int
+            degree of the splines
+        fmin : float
+            minimum frequency where to estimate the PSD
+        fmax : float
+            maximum frequency where to estimate the PSD
+        f_knots : ndarray
+            knot frequencies (if provided, then discard J)
+        ext : extint or str, optional
+            Controls the extrapolation mode for elements not in the interval
+            defined by the knot sequence.
+                if ext=0 or ‘extrapolate’, return the extrapolated value.
+                if ext=1 or ‘zeros’, return 0
+                if ext=2 or ‘raise’, raise a ValueError
+                if ext=3 of ‘const’, return the boundary value
+            The default value is 3.
+        """
 
         PSD.__init__(self, n_data, fs, fmin=fmin, fmax=fmax)
 
         # Number of knots for the log-PSD spline model
-        self.J = J
+        self.J = n_knots
         # Create a dictionary corresponding to each data length
         self.logf = {n_data: np.log(self.f[1:self.n + 1])}
         # Set the knot grid
@@ -378,7 +405,7 @@ class PSDSpline(PSD):
 
         self.logf_knots = np.log(self.f_knots)
         # Spline order
-        self.D = D
+        self.D = d
         self.C0 = -0.57721
         # Spline coefficient vector
         self.beta = []
@@ -428,7 +455,7 @@ class PSDSpline(PSD):
 
         Parameters
         ----------
-        J : scalar integer
+        n_knots : scalar integer
             number of knots
         fmin : scalar float
             minimum frequency knot
@@ -527,7 +554,7 @@ class PSDSpline(PSD):
         # self.varlogSc = self.logvar_fn(self.logfc)
         self.logSc = self.log_psd_fn(self.logfc)
 
-    def spline_lsqr(self, per):
+    def spline_lsqr(self, per, freq=None):
         """
 
         Fit a spline to the log periodogram using least-squares
@@ -536,37 +563,44 @@ class PSDSpline(PSD):
         ----------
         per : ndarray
             periodogram
-        ext : extint or str, optional
-            Controls the extrapolation mode for elements not in the interval defined by the knot sequence.
-                if ext=0 or ‘extrapolate’, return the extrapolated value.
-                if ext=1 or ‘zeros’, return 0
-                if ext=2 or ‘raise’, raise a ValueError
-                if ext=3 of ‘const’, return the boundary value
-            The default value is 3.
+        freq :
 
 
         """
 
-        NI = len(per)
+        if freq is None:
+            # If the frequencies where per is computed are not given
+            NI = len(per)
+            if NI not in list(self.logf.keys()):
+                f = np.fft.fftfreq(NI) * self.fs
+                self.logf[NI] = np.log(f[f > 0])
+            else:
+                f = np.concatenate(([0], np.exp(self.logf[NI])))
 
-        if NI not in list(self.logf.keys()):
-            f = np.fft.fftfreq(NI) * self.fs
-            self.logf[NI] = np.log(f[f > 0])
+            n = np.int((NI - 1) / 2.)
+            z = per[1:n + 1]
+            v = np.log(z) - self.C0
+
+            # Spline estimator of the log-PSD
+            inds_est = np.where((self.f_min_est <= f[1:self.n + 1]) & (
+                        f[1:self.n + 1] <= self.f_max_est))[0]
+            spl = interpolate.LSQUnivariateSpline(self.logf[NI][inds_est],
+                                                  v[inds_est],
+                                                  self.logf_knots,
+                                                  k=self.D,
+                                                  ext=self.ext)
+
         else:
-            f = np.concatenate(([0], np.exp(self.logf[NI])))
-
-        n = np.int((NI - 1) / 2.)
-        z = per[1:n + 1]
-        v = np.log(z) - self.C0
-
-        # Spline estimator of the log-PSD
-        inds_est = np.where((self.f_min_est <= f[1:self.n + 1]) & (
-                    f[1:self.n + 1] <= self.f_max_est))[0]
-        spl = interpolate.LSQUnivariateSpline(self.logf[NI][inds_est],
-                                              v[inds_est],
-                                              self.logf_knots,
-                                              k=self.D,
-                                              ext=self.ext)
+            # If the frequencies are given
+            v = np.log(per) - self.C0
+            # Spline estimator of the log-PSD
+            inds_est = np.where((self.f_min_est <= freq)
+                                & (freq <= self.f_max_est))[0]
+            spl = interpolate.LSQUnivariateSpline(np.log(freq)[inds_est],
+                                                  v[inds_est],
+                                                  self.logf_knots,
+                                                  k=self.D,
+                                                  ext=self.ext)
 
         return spl
 

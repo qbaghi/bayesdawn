@@ -47,7 +47,7 @@ def indices_low_freq(channel):
     Returns the indices of the integrated gravitational strain signal for the
     low frequency approximation of the tdi response, such that
 
-    dTDI = (1-D^2)(1+D)(H_i - H_j)
+    dTDI = (1-d^2)(1+d)(H_i - H_j)
 
     Parameters
     ----------
@@ -797,22 +797,81 @@ class UCBWaveformFull(GWwaveform):
         # Compute prefractor
         a, b = coeffs.kn_coeffs(theta, phi, self.phi_rot, i)
         kni = self.cosphit_mat[:, 0:3].dot(a) + self.sinphit_mat[:, 0:3].dot(b)
-
-        # Modulation phase, i.e. k . r_0
-        d = - self.R * np.sin(theta) * (
+        # Compute k . r_0
+        kr0 = - self.R * np.sin(theta) * (
                 self.cosphit_mat[:, 1] * np.cos(phi)
-                + self.sinphit_mat[:, 1] * np.sin(phi)) / physics.c_light
+                + self.sinphit_mat[:, 1] * np.sin(phi))
+
+        # # Compute k.r_i
+        # # In FD waveform
+        # a, b = coeffs.ku_coeffs(theta, phi, self.phi_rot, i)
+        # kui = self.cosphit_mat[:, 0:3].dot(a) + self.sinphit_mat[:, 0:3].dot(b)
+        # # Modulation phase, i.e. k . r_0
+        # d = - self.R * np.sin(theta) * (
+        #         self.cosphit_mat[:, 1] * np.cos(phi)
+        #         + self.sinphit_mat[:, 1] * np.sin(phi)) / physics.c_light
+        # d_re = d + (2 * self.R * self.e * kui) / physics.c_light
+        #
+        # if not prime:
+        #     # Compute coefficients for k.n_{i+2}
+        #     a2, b2 = coeffs.ku_coeffs(theta, phi,
+        #                               self.phi_rot, coeffs.cyclic_perm(i + 2))
+        #     # k.n_{i+2}
+        #     ku_em = self.cosphit_mat[:,
+        #             0:3].dot(a2) + self.sinphit_mat[:, 0:3].dot(b2)
+        #     d_em = d + (2 * self.R * self.e * ku_em
+        #                 + self.arm_list[i - 1]) / physics.c_light
+        #     prefact = 1 / (2 * (1 - kni))
+        # else:
+        #     # Compute coefficients for k.n_{i+1}
+        #     a2, b2 = coeffs.ku_coeffs(theta, phi,
+        #                               self.phi_rot, coeffs.cyclic_perm(i + 1))
+        #     # k.n_{i+1}
+        #     ku_em = self.cosphit_mat[:,
+        #             0:3].dot(a2) + self.sinphit_mat[:, 0:3].dot(b2)
+        #     d_em = d + (2 * self.R * self.e * ku_em
+        #                 + self.arm_list_prime[i - 1]) / physics.c_light
+        #     prefact = 1 / (2 * (1 + kni))
 
         if not prime:
-            d_new = d + self.arm_list[i - 1] / physics.c_light
-            prefact = 1 / (2 * (1 - kni))
+            # Reception index
+            i_re = coeffs.cyclic_perm(i + 1)
+            # Emission index
+            i_em = coeffs.cyclic_perm(i + 2)
+            # Armlength
+            arm_length = self.arm_list[i - 1]
+            # Response denominator
+            denom = 2 * (1 - kni)
+
         else:
-            d_new = d + self.arm_list_prime[i - 1] / physics.c_light
-            prefact = 1 / (2 * (1 + kni))
+            # Reception index
+            i_re = coeffs.cyclic_perm(i + 2)
+            # Emission index
+            i_em = coeffs.cyclic_perm(i + 1)
+            # Armlength
+            arm_length = self.arm_list_prime[i - 1]
+            # Response denominator
+            denom = 2 * (1 + kni)
+
         # Reception time
-        dt_re = d * (1 - f_dot * (d + 2 * self.t_samples) / (2 * f_0))
+        # --------------
+        a_re, b_re = coeffs.ku_coeffs(theta, phi, self.phi_rot, i_re)
+        ku_re = self.cosphit_mat[:,
+                0:3].dot(a_re) + self.sinphit_mat[:, 0:3].dot(b_re)
+        d_re = (kr0 + 2 * self.e * self.R * ku_re) / physics.c_light
+
         # Emission time
-        dt_em = d_new * (1 - f_dot * (d_new + 2 * self.t_samples) / (2 * f_0))
+        # -------------
+        a_em, b_em = coeffs.ku_coeffs(theta, phi, self.phi_rot, i_em)
+        ku_em = self.cosphit_mat[:,
+                0:3].dot(a_em) + self.sinphit_mat[:, 0:3].dot(b_em)
+        d_em = (kr0 + 2 * self.R * self.e * ku_em + arm_length)/physics.c_light
+
+        # Reception time
+        dt_re = d_re * (1 - f_dot * (d_re + 2 * self.t_samples) / (2 * f_0))
+        # Emission time
+        dt_em = d_em * (1 - f_dot * (d_em + 2 * self.t_samples) / (2 * f_0))
+
         phasing = (np.exp(-2j * np.pi * f_0 * dt_re)
                    - np.exp(-2j * np.pi * f_0 * dt_em))
 
@@ -833,8 +892,8 @@ class UCBWaveformFull(GWwaveform):
         # kr_bar_i = kr0[:]
         # d = (2 * kr_bar_i + self.arm_list[i-1]) / LC.c
         # phasing = np.exp(-1j * np.pi * f_0 * d)
-
-        return np.array([prefact * phasing]).T * np.array([xpi, xci]).T
+        return np.array([phasing / denom]).T * np.array([xpi, xci]).T
+        # return np.array([prefact * phasing]).T * np.array([xpi, xci]).T
         # return np.array([prefact * phasing * xpi, prefact * phasing * xci]).T
 
     def design_matrix_freq(self, f, param_intr, channel='phasemeters'):

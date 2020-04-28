@@ -143,6 +143,52 @@ def kn_bar_coeffs(theta, phi, phi_rot, i):
     return a, b
 
 
+def ku_coeffs(theta, phi, phi_rot, i):
+    """
+    compute the coefficients a b c such that
+
+    k.{u}_i = sum_{m} a_m cos(m phi_t) + b_m * sin(m phi_t)
+
+    where k is the wave propagation vector and \bar{u}_i is the unit vector
+    giving the position of S/C i wrt to LISA's barycenter such that:
+    r_i = r_0 + 2 R e u_i
+
+    Parameters
+    ----------
+    theta : scalar float
+        colatitude angle: theta = beta + pi/2 if beta is the ecliptic latitude
+    phi : scalar float
+        longitude angle such taht phi = lam - pi where lam is the ecliptic
+        longitude
+    phi_rot : scalar float
+        rotation angle between the initial configuration of the LISA triangle
+        and the standard initial configuration (reference) which is so that
+        at t=0 the triangle edge where S/C 1 is located poits downwards (wrt
+        ecliptic plane), S/C 2 is on the y<0 side and S/C 3 is on the third
+        edge.
+    i : integer float {1,2,3}
+        index of first spacecraft
+
+    """
+
+    # phi_i = (2 * i + 1) * np.pi / 3 - phi_rot
+    phi_rot_i = phi_rot_i_func(i, phi_rot)
+
+    a = np.zeros(3, dtype=np.float64)
+    b = np.zeros(3, dtype=np.float64)
+
+    # m = 0
+    a[0] = 3 / 4 * np.sin(theta) * np.cos(phi - phi_rot_i)
+    # m = 1
+    a[1] = np.sqrt(3) / 2 * np.cos(theta) * np.cos(phi_rot_i)
+    b[1] = np.sqrt(3) / 2 * np.cos(theta) * np.sin(phi_rot_i)
+    # m = 2
+    a[2] = - np.sin(theta) / 4 * np.cos(phi + phi_rot_i)
+    b[2] = - np.sin(theta) / 4 * np.sin(phi + phi_rot_i)
+
+    return a, b
+
+
 def xi_diff_coeffs(theta, phi, phi_rot, i, j):
     """
     Create the python function to compute the coefficient vector ai_diff in
@@ -406,3 +452,24 @@ def beta_gb_complex(a0, incl, phi_0, psi):
     beta_c = beta[1] - 1j*beta[3]
 
     return np.array([beta_p, beta_c])
+
+
+def cyclic_perm(i):
+    """
+    Function realizing cyclic permutations for L_i
+    such that i={1,2,3}
+    For example if i = 4 it becomes i=1
+    and if i=-1 it becomes i=3
+    """
+    # Implements circular permutations
+    if i > 0:
+        j = i
+        while j > 3:
+            j = j - 3
+
+    elif i < 0:
+        j = i
+        while j < -3:
+            j = j + 4
+
+    return np.int(j)
