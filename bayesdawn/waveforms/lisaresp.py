@@ -892,6 +892,10 @@ class UCBWaveformFull(GWwaveform):
         phasing = (np.exp(-2j * np.pi * f_0 * dt_re)
                    - np.exp(-2j * np.pi * f_0 * dt_em))
 
+        # If v_func is monochromatic, we must include the f_dot dependence
+        # of the GW phase in the slow part:
+        phasing *= np.exp(1j * np.pi * f_dot * self.t_samples**2)
+
         # Sinc formulation
         # pref = np.pi * f_0 * self.arm_list[i-1] / LC.c
         # prefact = 1j * pref * np.sinc(pref * (1 - kni))
@@ -963,7 +967,10 @@ class UCBWaveformFull(GWwaveform):
 
         # Form the grid of frequency differences
         f_grid = np.array([f]) - np.array([f_vect]).T
-        v_list = self.v_func(f_grid, f_0, f_dot, self.tobs, self.del_t)
+        # Assume that v_func includes f_dot dependence
+        # v_list = self.v_func(f_grid, f_0, f_dot, self.tobs, self.del_t)
+        # Assume that v_func is monochromatic
+        v_list = self.v_func(f_grid, f_0, self.tobs, self.del_t)
         # v_list = [self.v_func(f - f_vect[k], f_0, f_dot, self.tobs, self.del_t)
         #           for k in range(c_list[0].shape[0])]
 

@@ -10,6 +10,36 @@ import numpy as np
 from scipy import special
 
 
+def v_func_gb_mono(f, f_0, tobs, ts):
+    """
+    function of frequency giving the Fourier transform of exp(j*Phi(t)),
+    where Phi(t) is the phase of a monochromatic galactic binary
+    gravitatonal wave
+
+    Parameters
+    ----------
+    f : array_like
+        vector frequencies (size n_data) where to evalutate the function w(f)
+    f_0 : scalar float
+        wave frequency
+    T : scalar float
+        integration time
+    ts : scalar float
+        sampling time (cadence)
+
+
+
+    Returns
+    -------
+    v : numpy array
+        vector of values of v (size n_data) calculated at given frequencies
+
+    """
+
+    return np.exp(1j * np.pi *
+                  (f_0 - f) * tobs) * np.sinc((f_0 - f) * tobs) * tobs / ts
+
+
 def v_func_gb(f, f_0, f_dot, T, ts):
     """
     function of frequency giving the Fourier transform of exp(-j*Phi(t)),
@@ -209,12 +239,12 @@ def v_func_gb_conj(f, f_0, f_dot, ts, t1, t2):
     # return np.conj(v_func_gb(-f, f_0, f_dot, ts, t1, t2))
 
 
-def v_func_GB_mono(f, f_0, f_dot, ts, T1, T2):
-
-    dT = T2 - T1
-    f_shift = f + f_0
-
-    return dT * np.exp(-np.pi*f_shift*1j*(T2+T1))*np.sinc(f_shift*dT) / ts
+# def v_func_gb_mono(f, f_0, f_dot, ts, T1, T2):
+#
+#     dT = T2 - T1
+#     f_shift = f + f_0
+#
+#     return dT * np.exp(-np.pi*f_shift*1j*(T2+T1))*np.sinc(f_shift*dT) / ts
 
 
 def integral0(f, T1, T2, ts):
