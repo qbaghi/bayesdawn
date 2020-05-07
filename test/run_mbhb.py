@@ -57,7 +57,7 @@ if __name__ == '__main__':
     p, tdi_data = loadings.load_ldc_data(config["InputData"]["FilePath"])
 
     # =========================================================================
-    # Pre-processing data: anti-aliasing and filtering
+    # Pre-processing data: anti-aliasing, filtering and rescaling
     # =========================================================================
     preproc_data = preprocess.preprocess_ldc_data(p, tdi_data, config)
     tm, xd, yd, zd, q, t_offset, tobs, del_t, p_sampl = preproc_data
@@ -106,11 +106,12 @@ if __name__ == '__main__':
     # =========================================================================
     # Auxiliary parameter classes
     # =========================================================================
+    scale = config["InputData"].getfloat("rescale")
     if config["PSD"].getboolean("estimation"):
         print("PSD estimation enabled.")
         psd_cls = [psdmodel.PSDSpline(tm.shape[0], 1 / del_t,
-                                      J=config["PSD"].getint("knotNumber"),
-                                      D=config["PSD"].getint("SplineOrder"),
+                                      n_knots=config["PSD"].getint("knotNumber"),
+                                      d=config["PSD"].getint("SplineOrder"),
                                       fmin=1 / (del_t * tm.shape[0]) * 1.05,
                                       fmax=1 / (del_t * 2))
                    for dat in data_ae_time]
@@ -120,7 +121,7 @@ if __name__ == '__main__':
     else:
         # Compute the spectra once for all
         psd_cls = [psdmodel.PSDTheoretical(tm.shape[0], 1 / del_t, ch,
-                                           scale=1.0, fmin=None, fmax=None)
+                                           scale=scale, fmin=None, fmax=None)
                    for ch in ['A', 'E']]
         sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
         # Then set the PSD class to None to prevent its update
@@ -141,8 +142,8 @@ if __name__ == '__main__':
         # del ad_noise, ed_noise, td_noise
         #
         # psd_cls = [psdmodel.PSDSpline(data_ae_noise[0].shape[0], 1 / del_t,
-        #                               J=config["PSD"].getint("knotNumber"),
-        #                               D=config["PSD"].getint("SplineOrder"),
+        #                               n_knots=config["PSD"].getint("knotNumber"),
+        #                               d=config["PSD"].getint("SplineOrder"),
         #                               fmin=1 / (del_t * tm.shape[0]) * 1.05,
         #                               fmax=1 / (del_t * 2))
         #            for dat in data_ae_time]
@@ -168,7 +169,6 @@ if __name__ == '__main__':
     # Instantiate likelihood class
     # =========================================================================
     normalized = config['Model'].getboolean('normalized')
-    scale = config["InputData"].getfloat("rescale")
 
     ll_cls = likelihoodmodel.LogLike(data_ae_time, sn, inds, tobs, del_t * q,
                                      normalized=normalized,

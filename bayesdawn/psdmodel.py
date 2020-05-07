@@ -863,11 +863,11 @@ class PSDTheoretical(PSD):
     def psd_fn(self, x):
 
         if self.channel == 'A':
-            return tdi.noisepsd_AE(x, model='SciRDv1') / self.scale ** 2
+            return tdi.noisepsd_AE(x, model='SciRDv1') * self.scale ** 2
         elif self.channel == 'E':
-            return tdi.noisepsd_AE(x, model='SciRDv1') / self.scale ** 2
+            return tdi.noisepsd_AE(x, model='SciRDv1') * self.scale ** 2
         elif self.channel == 'T':
-            return tdi.noisepsd_T(x, model='SciRDv1') / self.scale ** 2
+            return tdi.noisepsd_T(x, model='SciRDv1') * self.scale ** 2
 
     def sample(self, npsd):
         sampling_result = self.sample_psd(npsd)
