@@ -644,7 +644,7 @@ class LogLike(object):
         channels : list of ints
             TDI channels to consider
         scale : float
-            rescaling factor for waveforms
+            rescaling factor for waveforms (data must already be rescaled)
         model_cls : bayesdawn.datamodel.GaussianStationaryModel instance
             data model used for missing data imputation
         psd_cls : list bayesdawn.psdmodel.PSD instance

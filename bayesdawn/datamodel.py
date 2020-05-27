@@ -398,7 +398,7 @@ class GaussianStationaryProcess(object):
 
         References
         ----------
-        J. Stroud et al, Bayesian and Maximum Likelihood Estimation for Gaussian
+        n_knots. Stroud et al, Bayesian and Maximum Likelihood Estimation for Gaussian
         Processes on an Incomplete Lattice, 2014
 
 

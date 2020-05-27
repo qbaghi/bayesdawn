@@ -4,7 +4,6 @@
 # This code provides routines for PSD estimation using a peace-continuous model
 # that assumes that the logarithm of the PSD is linear per peaces.
 import copy
-
 import numpy as np
 # FTT modules
 import pyfftw
@@ -18,6 +17,18 @@ from pyfftw.interfaces.numpy_fft import fft, ifft
 
 
 # TODO: rewrite spline interpolation with LSQUnivariateSpline from scipy.interpolate
+class MyLSQUnivariateSpline(interpolate.LSQUnivariateSpline):
+    
+    def __init__(self, *args, **kwargs):
+        
+        interpolate.LSQUnivariateSpline.__init__(self, *args, **kwargs)
+        
+    def set_coeffs(self, coeffs):
+        """Set spline coefficients."""
+        data = self._data
+        k, n = data[5], data[7]
+        data[9][:n-k-1] = coeffs
+        self._data = data
 
 # ==============================================================================
 # SPLINES
@@ -219,17 +230,46 @@ def spline_matrix(x, knots, D):
     return A_mat
 
 
+def choose_frequency_knots(n_knots, freq_min=1e-5, freq_max=1.0, base=10):
+    # Choose the frequency knots
+    ns = - np.log(freq_min) / np.log(base)
+    n0 = - np.log(freq_max) / np.log(base)
+    jvect = np.arange(0, n_knots)
+    alpha_guess = 0.8
+    targetfunc = lambda x: n0 - (1 - x ** (n_knots)) / (1 - x) - ns
+    result = optimize.fsolve(targetfunc, alpha_guess)
+    alpha = result[0]
+    n_knots = n0 - (1 - alpha ** jvect) / (1 - alpha)
+    f_knots = base ** (-n_knots)
+    f_knots = f_knots[(f_knots > freq_min) & (f_knots < freq_max)]
+    
+    return np.unique(np.sort(f_knots))
+
+
 # =============================================================================
 # General PSD CLASS
 # =============================================================================
 class PSD(object):
 
     def __init__(self, n_data, fs, fmin=None, fmax=None):
+        """Instantiate the PSD estimator class.
+
+        Parameters
+        ----------
+        n_data : int
+            size of analyzed data
+        fs : float
+            sampling frequency of analyzed data
+        fmin : float
+            minimum frequency where to estimate the PSD
+        fmax : float
+            maximum frequency where to estimate the PSD
+        """
 
         # Sampling frequency
         self.fs = fs
         # Size of the sample
-        self.N = n_data
+        self.n_data = n_data
         self.f = np.fft.fftfreq(n_data) * fs
         self.n = np.int((n_data - 1) / 2.)
 
@@ -275,6 +315,21 @@ class PSD(object):
         return per * 2 / self.fs
 
     def psd_fn(self, x):
+        """
+        
+        Returns the value of the PSD estimate at frequency x
+
+        Parameters
+        ----------
+        x : array_like
+            frequency
+
+        Returns
+        -------
+        psd : ndarray
+            PSD values
+            
+        """
         return np.exp(self.log_psd_fn(np.log(x)))
 
     def calculate(self, arg):
@@ -303,7 +358,7 @@ class PSD(object):
             # Symmetrize the estimates
             if n_data % 2 == 0:  # if n_data is even
                 # Compute PSD from f=0 to f = fs/2
-                if n_data == self.N:
+                if n_data == self.n_data:
                     n = self.n
                     f_tot = np.abs(np.concatenate(([self.f[1]],
                                                    self.f[1:n + 2])))
@@ -317,7 +372,7 @@ class PSD(object):
                                              spectr[1:n + 2][::-1]))
 
             else:  # if n_data is odd
-                if n_data == self.N:
+                if n_data == self.n_data:
                     n = self.n
                     f_tot = np.abs(np.concatenate(([self.f[1]],
                                                    self.f[1:n + 1])))
@@ -374,7 +429,7 @@ class PSDSpline(PSD):
         fmax : float
             maximum frequency where to estimate the PSD
         f_knots : ndarray
-            knot frequencies (if provided, then discard J)
+            knot frequencies (if provided, then discard n_knots)
         ext : extint or str, optional
             Controls the extrapolation mode for elements not in the interval
             defined by the knot sequence.
@@ -388,7 +443,7 @@ class PSDSpline(PSD):
         PSD.__init__(self, n_data, fs, fmin=fmin, fmax=fmax)
 
         # Number of knots for the log-PSD spline model
-        self.J = n_knots
+        self.n_knots = n_knots
         # Create a dictionary corresponding to each data length
         self.logf = {n_data: np.log(self.f[1:self.n + 1])}
         # Set the knot grid
@@ -398,7 +453,7 @@ class PSDSpline(PSD):
             self.f_max_est = self.f[self.n]
         else:
             self.f_knots = f_knots
-            self.J = len(self.f_knots)
+            self.n_knots = len(self.f_knots)
 
             self.f_min_est = copy.deepcopy(self.fmin)
             self.f_max_est = copy.deepcopy(self.fmax)
@@ -410,15 +465,16 @@ class PSDSpline(PSD):
         # Spline coefficient vector
         self.beta = []
         # PSD at positive Fourier frequencies
-        self.logS = []
+        self.logs = []
         # Control frequencies
         self.logfc = np.concatenate(
             (np.log(self.f_knots), [np.log(self.fs / 2)]))
-        self.logSc = []
+        self.logsc = []
         # Spline extension
         self.ext = ext
-        # # Variance function values at control frequencies
-        # self.varlogSc = np.array(
+        # Variance function values at control frequencies
+        self.varlogsc = np.pi**3 / 6 * np.ones(self.n_knots + 1)
+        # self.varlogsc = np.array(
         #     [3.60807571e-01, 8.90158814e-02, 1.45631966e-02, 3.55646693e-03,
         #      1.09926717e-03, 4.15894275e-04, 1.86984136e-04, 9.73883423e-05,
         #      5.74981099e-05, 3.77721249e-05, 2.71731280e-05, 2.11167300e-05,
@@ -430,7 +486,7 @@ class PSDSpline(PSD):
 
         # # Spline estimator of the variance of the log-PSD estimate
         # self.logvar_fn = interpolate.interp1d(self.logfc[1:],
-        #                                       self.varlogSc[1:],
+        #                                       self.varlogsc[1:],
         #                                       kind='cubic',
         #                                       fill_value="const")
 
@@ -465,21 +521,19 @@ class PSDSpline(PSD):
 
         """
 
-        base = 10
-        # base = np.exp(1)
-        ns = - np.log(self.fmax) / np.log(base)
-        n0 = - np.log(self.fmin) / np.log(base)
-        jvect = np.arange(0, self.J)
-        alpha_guess = 0.8
-
-        targetfunc = lambda x: n0 - (1 - x ** (self.J)) / (1 - x) - ns
-        result = optimize.fsolve(targetfunc, alpha_guess)
-        alpha = result[0]
-        n_knots = n0 - (1 - alpha ** jvect) / (1 - alpha)
-        f_knots = base ** (-n_knots)
+        f_knots = choose_frequency_knots(self.n_knots, freq_min=self.fmin, 
+                                         freq_max=self.fmax, base=10)
 
         return f_knots
-
+    
+    def get_spline_control_points(self):
+        """
+        Outputs the spline parameters (values of the model PSD at frequency
+        knots).
+        """
+        
+        return self.log_psd_fn.get_coeffs()
+        
     def estimate(self, y, wind='hanning'):
         """
 
@@ -539,20 +593,20 @@ class PSDSpline(PSD):
             # If there are several periodograms, average the estimates
             spl_list = [self.spline_lsqr(I0) for I0 in per if
                         self.fs / len(I0) < self.f_knots[0]]
-            self.beta = sum([spl.get_coeffs for spl in spl_list]) / len(per)
+            self.beta = sum([spl.get_coeffs() for spl in spl_list]) / len(per)
             self.log_psd_fn = interpolate.BSpline(spl_list[0].get_knots(),
                                                   self.beta, self.D)
 
         # Estimate psd at positive Fourier log-frequencies
-        self.logS = self.log_psd_fn(self.logf[self.N])
+        self.logs = self.log_psd_fn(self.logf[self.n_data])
 
         # # Spline estimator of the variance of the log-PSD estimate
         # self.logvar_fn = interpolate.LSQUnivariateSpline(self.logf[self.n_data],
-        #                                                  (np.log(I[1:self.n+1]) - self.C0 - self.logS)**2,
+        #                                                  (np.log(I[1:self.n+1]) - self.C0 - self.logs)**2,
         #                                                  self.logf_knots, k=1, ext='const')
         # Update PSD control values (for Bayesian estimation)
-        # self.varlogSc = self.logvar_fn(self.logfc)
-        self.logSc = self.log_psd_fn(self.logfc)
+        # self.varlogsc = self.logvar_fn(self.logfc)
+        self.logsc = self.log_psd_fn(self.logfc)
 
     def spline_lsqr(self, per, freq=None):
         """
@@ -605,9 +659,254 @@ class PSDSpline(PSD):
         return spl
 
 
-# ======================================================================================================================
+# ==============================================================================
+# Spline PSD model
+# ==============================================================================
+class PSDEstimator(object):
+
+    def __init__(self, f_knots, d=3, ext=3, cross=False):
+        """
+        PSD estimator without any assumption on the data size / sampling.
+
+        Parameters
+        ----------
+        f_knots : ndarray
+            spline knot frequencies
+        d : int
+            degree of the splines
+        ext : extint or str, optional
+            Controls the extrapolation mode for elements not in the interval
+            defined by the knot sequence.
+                if ext=0 or ‘extrapolate’, return the extrapolated value.
+                if ext=1 or ‘zeros’, return 0
+                if ext=2 or ‘raise’, raise a ValueError
+                if ext=3 of ‘const’, return the boundary value
+            The default value is 3.
+        cross : bool
+            if True, we assume that the spectrum is a complex cross-spectrum
+        """
+
+
+        # Set the knot grid
+        self.f_knots = f_knots
+        # Number of knots for the log-PSD spline model
+        self.n_knots = len(f_knots)
+        # Spline order
+        self.d = d
+        if d == 1:
+            self.kind = "linear"
+        elif d == 2:
+            self.kind = "quadratic"
+        elif d == 3:
+            self.kind = "cubic"
+        # Whether the class is for real spectrum or complex 
+        # cross-spectrum estimation
+        self.cross = cross
+        # Euler constant
+        self.c0 = -0.57721
+        # Control frequencies
+        self.logf_knots = np.log(self.f_knots)
+        # PSD amplitude values at control frequencies
+        self.logs_knots = []
+        # Spline extension
+        self.ext = ext
+        # Variance function values at control frequencies
+        self.varlogsc = np.pi**3 / 6 * np.ones(len(f_knots))
+        # Spline interpolation object of the estimated log PSD
+        # Function of the log-frequency that outputs the log-PSD
+        self.log_psd_fn = None
+        self.psd_fn = None
+        
+    def estimate(self, freq, per):
+        """
+        Estimate the spline coefficients from the periodogram 
+        or cross-periodogram.
+
+        Parameters
+        ----------
+        freq : ndarray
+            frequency vector
+        per : ndarray
+            periodogram computed at frequencies freq
+        complex : bool
+            if True, per is assumed to be a complex cross-periodogram. 
+            Thus, its phase is estimated along with its amplitude. 
+        """
+        if not self.cross:
+            # If the frequencies are given
+            v = np.log(per.real) - self.c0
+            # Spline estimator of the log-PSD
+            self.log_psd_fn = interpolate.LSQUnivariateSpline(np.log(freq),
+                                                              v,
+                                                              self.logf_knots,
+                                                              k=self.d,
+                                                              ext=self.ext)
+            # self.log_psd_fn = MyLSQUnivariateSpline(np.log(freq), v,
+            #                                         self.logf_knots,
+            #                                         k=self.d,
+            #                                         ext=self.ext)
+            # Save the values of the log-PSD at the frequency knots
+            # self.logs_knots = self.log_psd_fn(self.logf_knots)
+            
+        else:
+            # # If the frequencies are given
+            # v_amp = np.log(np.abs(per)) - self.c0
+            # v_ang = np.angle(per)
+            # # Spline estimator of the log-PSD
+            # spl_amp = interpolate.LSQUnivariateSpline(np.log(freq),
+            #                                           v_amp,
+            #                                           self.logf_knots,
+            #                                           k=self.d,
+            #                                           ext=self.ext)
+
+            # spl_ang = interpolate.LSQUnivariateSpline(freq,
+            #                                           v_ang,
+            #                                           self.f_knots,
+            #                                           k=self.d,
+            #                                           ext=self.ext)
+            # self.log_psd_fn = lambda x: spl_amp(x) + 1j * spl_ang(np.exp(x))
+            # self.psd_fn = lambda x: np.exp(spl_amp(np.log(x)) + 1j * spl_ang(x))
+            
+            # Spline estimator of real part of the cross-spectrum
+            spl_real = interpolate.LSQUnivariateSpline(freq,
+                                                       per.real,
+                                                       self.f_knots,
+                                                       k=self.d,
+                                                       ext=self.ext)
+            # Spline estimator of real part of the cross-spectrum
+            spl_imag = interpolate.LSQUnivariateSpline(freq,
+                                                       per.imag,
+                                                       self.f_knots,
+                                                       k=self.d,
+                                                       ext=self.ext)
+            self.psd_fn = lambda x: spl_real(x) + 1j * spl_imag(x)
+            
+
+            
+    def calculate(self, x):
+        """
+        
+        Returns the value of the PSD estimate at frequency x
+
+        Parameters
+        ----------
+        x : array_like
+            frequency
+
+        Returns
+        -------
+        psd : ndarray
+            PSD values
+            
+        """
+        if not self.cross:    
+            return np.exp(self.log_psd_fn(np.log(x)))
+        else:
+            return self.psd_fn(x)
+    
+    def set_params(self, x):
+        """
+        Set the Spline model coefficient values.
+
+        Parameters
+        ----------
+        x : ndarray
+            if the spectrum is real positive, values of the log-PSD at the knot 
+            frequencies
+            if the spectrum is crossed (complex), values of the cross-PSD at 
+            the knot frequencies 
+        """
+        
+        if not self.cross:
+            # self.log_psd_fn.set_coeffs(x)
+            self.log_psd_fn = interpolate.interp1d(self.logf_knots, x, 
+                                                   kind=self.kind, 
+                                                   fill_value="extrapolate")
+        else:
+            # # For the log-amplitude
+            # logsfunc = interpolate.interp1d(self.logf_knots, 
+            #                                 x.real, 
+            #                                 kind=self.kind, 
+            #                                 fill_value="extrapolate")
+            # # For the phase
+            # phasefunc = interpolate.interp1d(self.f_knots, 
+            #                                  x.imag, 
+            #                                  kind=self.kind, 
+            #                                  fill_value="extrapolate")
+            # # Update the log-PSD function of the log-frequency
+            # self.log_psd_fn = lambda x: logsfunc(x) + 1j * phasefunc(np.exp(x))        
+            # For the real part
+            s_real_func = interpolate.interp1d(self.f_knots, 
+                                               x.real, 
+                                               kind=self.kind, 
+                                               fill_value="extrapolate")
+            # For the phase
+            s_imag_func = interpolate.interp1d(self.f_knots, 
+                                               x.imag, 
+                                               kind=self.kind, 
+                                               fill_value="extrapolate")
+            # Update the log-PSD function of the log-frequency
+            self.psd_fn = lambda x: s_real_func(x) + 1j * s_imag_func(x)   
+    
+    def likelihood(self, x, logfr, per):
+        """
+
+        Compute log-likelihood for the PSD update
+
+        Parameters
+        ----------
+        x: array_like
+            vector of log-PSD values at specific frequencies
+        logfr : array_like
+            logarithm of frequency vector
+        per : array_like
+            periodogram computed at frequencies fr
+            
+        Returns
+        -------
+        ll : scalar float
+            value of the log-likelihood
+
+        """
+        
+        # Update log PSD function with new parameters
+        self.set_params(x)
+        
+        # If only one segment of data is analyzed
+        if type(per) == np.ndarray:
+            logs = self.log_psd_fn(logfr)
+            ll = np.real(-0.5*np.sum(logs + per * np.exp(-logs)))
+            
+        # If several segments of different lengths are considered:
+        elif type(per) == list:
+            logs_list = [self.log_psd_fn(logfj) for logfj in logfr]
+            ll = sum([np.real(-0.5*np.sum(logs_list[j] 
+                                          + per[j] * np.exp(-logs_list[j])))
+                              for j in range(len(per))])
+            
+        return ll
+    
+    def prior(self, x):
+        """
+
+        Compute the log-prior probability density for the PSD parameters
+
+        """
+
+        return -0.5 * np.sum(np.abs(x - self.logs_knots)**2 / (2*self.varlogsc))
+
+    def posterior(self, x_psd, logfr, per):
+        """
+        Compute the log-posterior probability density for the PSD parameters
+
+        """
+
+        return self.likelihood(x_psd, logfr, per) + self.prior(x_psd)
+
+
+# =============================================================================
 # Power-law PSD model
-# ======================================================================================================================
+# =============================================================================
 class PSDPowerLaw(PSD):
 
     def __init__(self, n, fs, f_knots=None, fmin=None, fmax=None):
@@ -637,7 +936,7 @@ class PSDPowerLaw(PSD):
         # Control frequencies
         self.logfc = np.concatenate(
             (np.log(self.f_knots), [np.log(self.fs / 2)]))
-        self.logSc = []
+        self.logsc = []
         # Prepare design matrix
         self.mat_list = self.build_matrix(self.f_knots)
 
@@ -760,18 +1059,14 @@ class PSDPowerLaw(PSD):
                          self.fs / len(I0) < self.f_knots[0]]
 
         # Estimate psd at positive Fourier log-frequencies
-        # self.logS = self.log_psd_fn(self.logf[self.n_data])
-        self.logSc = np.log(self.mat.dot(self.beta))
+        # self.logs = self.log_psd_fn(self.logf[self.n_data])
+        self.logsc = np.log(self.mat.dot(self.beta))
 
     def psd_fn(self, x):
 
         mat = self.build_matrix(x)
 
         return mat.dot(self.beta)
-
-    def log_psd_fn(self, x):
-
-        return np.log(self.psd_fn(np.log(x)))
 
 
 def scaled_gamma_distribution(mu, var):
@@ -852,7 +1147,7 @@ class PSDTheoretical(PSD):
     PSD of TDI data streams
     """
 
-    def __init__(self, n_data, fs, channel, scale=1.0, J=30, D=3,
+    def __init__(self, n_data, fs, channel, scale=1.0, n_knots=30, D=3,
                  fmin=None, fmax=None, f_knots=None, ext=3):
 
         PSD.__init__(self, n_data, fs, fmin=fmin, fmax=fmax)
