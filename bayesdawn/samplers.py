@@ -137,12 +137,14 @@ def metropolisHastings(target,proposal,xinit, Nsamples,proposalProb = []):
 
     Inputs
     ------
-    target returns the unnormalized log posterior, called as 'p = exp(target(x))'
+    target returns the unnormalized log posterior, called as 
+    'p = exp(target(x))'
     proposal is a fn, called as 'xprime = proposal(x)' where x is a 1xd vector
     xinit is a 1xd vector specifying the initial state
     Nsamples - total number of samples to draw
     proposalProb  - optional fn, called as 'p = proposalProb(x,xprime)',
-    computes q(xprime|x). Not needed for symmetric proposals (Metropolis algorithm)
+    computes q(xprime|x). Not needed for symmetric proposals (Metropolis 
+    algorithm)
 
     Outputs
     -------
@@ -276,7 +278,8 @@ class MHSampler(object):
                     print("Iteration " + str(s) + " completed.")
                     print("Accepted: " + str(self.accepted))
                 if (s%cov_update == 0):
-                    # Compute empirical covariance according to Haario optimal formula:
+                    # Compute empirical covariance according to Haario optimal 
+                    # formula:
                     self.set_cov( np.cov(self.x_samples[0:s+1,:].T)*2.38**2/self.N_params)
 
         return x_samples, logp_samples
@@ -370,9 +373,8 @@ class ExtendedPTMCMC(ptemcee.Sampler):
                                                  thin=n_thin,
                                                  storechain=True):
 
-            if (it % n_save == 0) & (it != 0):
+            if ((it % n_save == 0) & (it != 0)) | (it == n_it - 1):
                 print("Save data at iteration " + str(it) + "...")
-
                 file_object = open(save_path + 'chain.p', "wb")
                 pickle.dump(self.chain[:, :, 0:it, :], file_object)
                 file_object.close()

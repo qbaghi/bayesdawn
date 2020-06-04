@@ -523,7 +523,8 @@ class PSDSpline(PSD):
 
         f_knots = choose_frequency_knots(self.n_knots, freq_min=self.fmin, 
                                          freq_max=self.fmax, base=10)
-
+        f_knots = f_knots[1:-1]
+        
         return f_knots
     
     def get_spline_control_points(self):
