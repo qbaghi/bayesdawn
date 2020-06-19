@@ -324,7 +324,10 @@ class ExtendedPTMCMC(ptemcee.Sampler):
 
         if it % n_update == 0:
             print("Update of auxiliary parameters at iteration " + str(it))
-            callback(self.position[0, 0, :])
+            # Instead of always using the same chain, we randomly draw the
+            # index.
+            i_chain = np.random.randint(low=0, high=self.position.shape[1])
+            callback(self.position[0, i_chain, :])
 
     def run(self, n_it, n_save, n_thin, callback=None, n_callback=1000,
             n_start_callback=0, pos0=None, save_path='./'):
