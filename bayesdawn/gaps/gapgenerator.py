@@ -23,7 +23,7 @@ def modified_hann(n_data, n_wind=60):
     # w[0:n_w] = 0.5 * ( 1 - np.cos( 2*np.pi * n[0:n_w] / (2*n_w) ) )
     w[0:n_w] = 0.5 * (1 - np.cos(np.pi * n[0:n_w] / n_w))
 
-    # w[N-n_w:] = 0.5 * ( 1 - np.cos( 2*np.pi * (n[N-n_w:]-N+1+2*n_w) / (2*n_w) ) )
+    # w[n_data-n_w:] = 0.5 * ( 1 - np.cos( 2*np.pi * (n[n_data-n_w:]-n_data+1+2*n_w) / (2*n_w) ) )
     w[n_data - n_w:] = 0.5 * (1 - np.cos(np.pi * (n[n_data - n_w:] - n_data + 1) / n_w))
 
     return w
@@ -98,8 +98,8 @@ def windowing(nd, nf, n, window='rect', n_wind=160):
         mw[nf[nh - 1] - 1:n] = windowfunc(n - nf[nh - 1] + 2)[:-1]
 
         # Extend to take into account beginning and end of time series
-        #        Nde = np.concatenate(([-1],Nd,[N]))
-        #        Nfe = np.concatenate(([0],Nf,[N+1]))
+        #        Nde = np.concatenate(([-1],Nd,[n_data]))
+        #        Nfe = np.concatenate(([0],Nf,[n_data+1]))
         for k in range(0, nh - 1):
             # We have mw[Nf[k]] = 1 (end of gap), so we don't want the window
             # to be zero here.
@@ -109,7 +109,8 @@ def windowing(nd, nf, n, window='rect', n_wind=160):
     return mw
 
 
-def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2, wind_type='rect', std_loc=0, std_dur=0):
+def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
+                 wind_type='rect', std_loc=0, std_dur=0):
     """
     Function that generates the indices of begening and end of data holes, and
     then uses the windowing function to creates the corresponding mask vector.
@@ -224,7 +225,7 @@ def find_ends(m):
 
 
     @param m : mask vector
-    @type m : N x 1 vector where N is the number of data
+    @type m : n_data x 1 vector where n_data is the number of data
 
     @return: ...
         @param Nd : vector containing the indices of the begening of each hole
@@ -234,30 +235,30 @@ def find_ends(m):
     """
 
     i_mis = np.where(m == 0)[0]
-    N_mis = len(i_mis)
+    n_mis = len(i_mis)
     # Recalculate the holes ends
-    Nd_eff = np.array([])
-    Nf_eff = np.array([])
+    nd_eff = np.array([])
+    nf_eff = np.array([])
 
-    Nd_eff = np.append(Nd_eff, i_mis[0])
-    for n in range(N_mis - 1):
+    nd_eff = np.append(nd_eff, i_mis[0])
+    for n in range(n_mis - 1):
 
         # If the next hole is not just after this one
         if i_mis[n + 1] != i_mis[n] + 1:
             # End of holes is just after
-            Nf_eff = np.append(Nf_eff, i_mis[n] + 1)
+            nf_eff = np.append(nf_eff, i_mis[n] + 1)
             # beginning of next hole is at i_mis[n+1]
-            Nd_eff = np.append(Nd_eff, i_mis[n + 1])
+            nd_eff = np.append(nd_eff, i_mis[n + 1])
 
     # Last missing data
-    Nf_eff = np.append(Nf_eff, i_mis[N_mis - 1] + 1)
+    nf_eff = np.append(nf_eff, i_mis[n_mis - 1] + 1)
 
-    return Nd_eff.astype(np.int), Nf_eff.astype(np.int)
+    return nd_eff.astype(np.int), nf_eff.astype(np.int)
 
 
 def segmentedges(M):
     """
-    Find the segment edges 
+    Find the segment edges
     """
     Nd, Nf = find_ends(M)
     seg_starts = np.concatenate(([0], Nf))
@@ -297,8 +298,8 @@ def segmentwise(y, M):
 
 def compute_freq_times(M, ts):
     """
-    Function that computes the begining and end times of each segment of 
-    
+    Function that computes the begining and end times of each segment of
+
     Parameters
     ----------
     M : array_like
@@ -322,13 +323,13 @@ def findinds(f, fmin, fmax):
 
 def select_freq(f_segs, Tstarts, Tends, f1, f2):
     """
-    
+
     for a list of frequency vectors, select frequencies in a given interval.
     Discard vectors for which no frequency lies in the interval.
-    
+
     """
 
-    # For each frequency vector, indices of frequencies within the required 
+    # For each frequency vector, indices of frequencies within the required
     # interval
     inds = [findinds(f_seg, f1, f2) for f_seg in f_segs]
     # Then discard the empty ones

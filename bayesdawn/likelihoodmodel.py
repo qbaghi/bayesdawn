@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Tue Jan 22 17:11:56 2019
@@ -7,12 +6,12 @@ Created on Tue Jan 22 17:11:56 2019
 """
 import numpy as np
 from scipy import linalg as LA
-from bayesdawn import gaps
-from bayesdawn.utils import physics
 # FTT modules
 import pyfftw
 from pyfftw.interfaces.numpy_fft import fft, ifft
-from bayesdawn.waveforms import lisaresp
+from .waveforms import lisaresp
+from . import gaps
+from .utils import physics
 pyfftw.interfaces.cache.enable()
 
 

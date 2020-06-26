@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Fri Feb  1 13:24:27 2019
@@ -9,19 +8,18 @@ This module provide classes to perform missing data imputation steps based on
 Gaussian conditional model
 """
 
-
-from bayesdawn.gaps import gapgenerator
+from .algebra import matrixalgebra
+from .gaps import gapgenerator
 from numpy import ndarray
 import numpy as np
 from scipy import signal
 import time
 from scipy import linalg as LA
-from mecm import mecm, matrixalgebra, noise
 import copy
 import warnings
 # FTT modules
 import pyfftw
-from pyfftw.interfaces.numpy_fft import fft
+from pyfftw.interfaces.numpy_fft import fft, ifft
 pyfftw.interfaces.cache.enable()
 
 # import librosa
@@ -34,6 +32,108 @@ pyfftw.interfaces.cache.enable()
 #     def __init__(self, *args):
 #
 # class NDTimeSeries(ndarray):
+def generate_freq_noise_from_psd(psd, fe, myseed=None):
+    """
+    Generate noise in the frequency domain from the values of the DSP.
+    """
+
+
+    """
+    Function generating a colored noise from a vector containing the DSP.
+    The DSP contains Np points such that Np > 2N and the output noise should
+    only contain N points in order to avoid boundary effects. However, the
+    output is a 2N vector containing all the generated data. The troncature
+    should be done afterwards.
+
+    References : Timmer & König, "On generating power law noise", 1995
+
+    Parameters
+    ----------
+    DSP : array_like
+        vector of size N_DSP continaing the noise DSP calculated at frequencies
+        between -fe/N_DSP and fe/N_DSP where fe is the sampling frequency and N
+        is the size of the time series (it will be the size of the returned
+        temporal noise vector b)
+    N : scalar integer
+        Size of the output time series
+    fe : scalar float
+        sampling frequency
+    myseed : scalar integer or None
+        seed of the random number generator
+
+    Returns
+    -------
+        bf : numpy array
+        frequency sample of the colored noise (size N)
+    """
+
+    # Size of the DSP
+    n_psd = len(psd)
+    # Initialize seed for generating random numbers
+    np.random.seed(myseed)
+
+    n_fft = np.int((n_psd-1)/2)
+    # Real part of the Noise fft : it is a gaussian random variable
+    Noise_TF_real = np.sqrt(0.5)*psd[0:n_fft+1]*np.random.normal(loc=0.0, 
+                                                                 scale=1.0, 
+                                                                 size=n_fft+1) 
+    # Imaginary part of the Noise fft :
+    Noise_TF_im = np.sqrt(0.5)*psd[0:n_fft+1]*np.random.normal(loc=0.0, 
+                                                               scale=1.0, 
+                                                               size=n_fft+1)
+    # The Fourier transform must be real in f = 0
+    Noise_TF_im[0] = 0.
+    Noise_TF_real[0] = Noise_TF_real[0]*np.sqrt(2.)
+
+    # Create the NoiseTF complex numbers for positive frequencies
+    Noise_TF = Noise_TF_real + 1j*Noise_TF_im
+
+    # To get a real valued signal we must have NoiseTF(-f) = NoiseTF*
+    if n_psd % 2 == 0 :
+        # The TF at Nyquist frequency must be real in the case of an even number of data
+        Noise_sym0 = np.array([ psd[n_fft+1]*np.random.normal(0,1) ])
+        # Add the symmetric part corresponding to negative frequencies
+        Noise_TF = np.hstack( (Noise_TF, Noise_sym0, np.conj(Noise_TF[1:n_fft+1])[::-1]) )
+
+    else :
+
+        # Noise_TF = np.hstack( (Noise_TF, Noise_sym[::-1]) )
+        Noise_TF = np.hstack( (Noise_TF, np.conj(Noise_TF[1:n_fft+1])[::-1]) )
+
+    return np.sqrt(n_psd*fe/2.) * Noise_TF
+
+
+def generate_noise_from_psd(DSP, fe, myseed=None) :
+    """
+    Function generating a colored noise from a vector containing the DSP.
+    The DSP contains Np points such that Np > 2N and the output noise should
+    only contain N points in order to avoid boundary effects. However, the
+    output is a 2N vector containing all the generated data. The troncature
+    should be done afterwards.
+
+    References : Timmer & König, "On generating power law noise", 1995
+
+    Parameters
+    ----------
+    DSP : array_like
+        vector of size N_DSP continaing the noise DSP calculated at frequencies
+        between -fe/N_DSP and fe/N_DSP where fe is the sampling frequency and N
+        is the size of the time series (it will be the size of the returned
+        temporal noise vector b)
+    N : scalar integer
+        Size of the output time series
+    fe : scalar float
+        sampling frequency
+    myseed : scalar integer or None
+        seed of the random number generator
+
+    Returns
+    -------
+        b : numpy array
+        time sample of the colored noise (size N)
+    """
+
+    return ifft(generate_freq_noise_from_psd(DSP,fe,myseed = myseed))
 
 
 class NdTimeSeries(ndarray):
@@ -299,16 +399,21 @@ class GaussianStationaryProcess(object):
 
         elif self.n_gaps > 1:
             # first segment
-            self.indices = [np.arange(np.int(np.max([self.n_starts[0] - na, 0])), np.int(np.min([self.n_ends[0] + nb,
-                                                                                                 self.n_starts[1]])))]
+            self.indices = [np.arange(np.int(np.max([self.n_starts[0] - na, 0])),
+                                       np.int(np.min([self.n_ends[0] + nb,
+                                                      self.n_starts[1]])))]
             # most of the segments
-            self.indices = self.indices + [np.arange(np.int(np.max([self.n_starts[j] - na, self.n_ends[j - 1]])),
-                                                     np.int(np.min([self.n_ends[j] + nb, self.n_starts[j + 1]])))
-                                           for j in range(1, self.n_gaps-1)]
+            self.indices = self.indices + [
+                np.arange(
+                    np.int(np.max([self.n_starts[j] - na, self.n_ends[j - 1]])),
+                    np.int(np.min([self.n_ends[j] + nb, self.n_starts[j + 1]])))
+                for j in range(1, self.n_gaps-1)]
             # last segment
-            self.indices = self.indices + [np.arange(np.int(np.max([self.n_starts[self.n_gaps - 1] - na,
-                                                                    self.n_ends[self.n_gaps - 2]])),
-                                                     np.int(np.min([self.n_ends[self.n_gaps - 1] + nb, self.n])))]
+            self.indices = self.indices + [
+                np.arange(
+                    np.int(np.max([self.n_starts[self.n_gaps - 1] - na,
+                                   self.n_ends[self.n_gaps - 2]])),
+                    np.int(np.min([self.n_ends[self.n_gaps - 1] + nb, self.n])))]
         # self.indices = [np.arange(np.int(np.max([self.N_starts[j]- Na,0])),
         # np.int(np.min([self.N_ends[j]+Nb,n_data]))) for j in range(len(self.N_starts))]
         self.solve = None
@@ -329,8 +434,9 @@ class GaussianStationaryProcess(object):
 
         # Precompute solver
         print("Build preconditionner...")
-        self.solve = mecm.compute_precond(autocorr, self.mask, p=self.p,
-                                          taper='Wendland2')
+        self.solve = matrixalgebra.compute_precond(autocorr, 
+                                                   self.mask, p=self.p,
+                                                   taper='Wendland2')
         print("Preconditionner built.")
 
     def impute(self, y_model, psd):
@@ -361,11 +467,13 @@ class GaussianStationaryProcess(object):
         elif type(self.y) == list:
             # If there are several
             if self.n_gaps > 0:
-                return [self.draw_missing_data(self.y[i], y_model[i], psd[i]) for i in range(len(y_model))]
+                return [self.draw_missing_data(self.y[i], y_model[i], psd[i]) 
+                        for i in range(len(y_model))]
             else:
                 return self.y
 
-    def conditional_draw(self, z_o, psd_2n, c_oo_inv, c_mo, ind_obs, ind_mis, mask, c):
+    def conditional_draw(self, z_o, psd_2n, c_oo_inv, c_mo, 
+                         ind_obs, ind_mis, mask, c):
         """
         Function performing random draws of the complete data noise vector
         conditionnaly on the observed data.
@@ -379,8 +487,8 @@ class GaussianStationaryProcess(object):
         c_oo_inv : 2d numpy array
             Inverse of covariance matrix of observed data
         c_mo : callable
-            function computing the product of Matrix of covariance between missing data with observed data with any
-            vector: Cmo.x
+            function computing the product of Matrix of covariance between 
+            missing data with observed data with any vector: Cmo.x
         ind_obs : array_like (size No)
             vector of chronological indices of the observed data points in the
             complete data vector
@@ -407,14 +515,16 @@ class GaussianStationaryProcess(object):
         # the size of the vector that is randomly drawn is
         # equal to the size of the mask.
         # e = np.real(noise.generateNoiseFromDSP(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
-        e = np.random.multivariate_normal(np.zeros(mask.shape[0]), c[0:mask.shape[0], 0:mask.shape[0]])
+        e = np.random.multivariate_normal(np.zeros(mask.shape[0]), 
+                                          c[0:mask.shape[0], 0:mask.shape[0]])
 
         # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
         eps = e[ind_mis] + c_mo.dot(c_oo_inv.dot(z_o - e[ind_obs]))
 
         return eps
 
-    def conditional_draw_fast(self, z_o, psd_2n, c_oo_inv, c_mo, ind_obs, ind_mis, mask):
+    def conditional_draw_fast(self, z_o, psd_2n, c_oo_inv, c_mo, 
+                              ind_obs, ind_mis, mask):
 
         e = np.real(noise.generateNoiseFromDSP(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
 
@@ -487,18 +597,18 @@ class GaussianStationaryProcess(object):
         """
 
         if self.method == 'nearest':
-            # ======================================================================
+            # ==================================================================
             # For precomputations
-            # ======================================================================
+            # ==================================================================
             #indj_obs = np.where(M[indices[0]]==1)[0]
             #indj_mis = np.where(M[indices[0]]==0)[0]
             #y_mis = np.array([]) #np.zeros(len(ind_mis),dtype = np.float64)
             #C_oo = c[np.ix_(indj_obs,indj_obs)]
             #CooI = LA.inv(C_oo)
 
-            # ======================================================================
+            # ==================================================================
             # Gap per gap imputation
-            # ======================================================================
+            # ==================================================================
             if self.n_max <= 2000:
                 c = LA.toeplitz(r)
                 results = [self.single_imputation(y[indj], self.mask[indj], c,
@@ -518,8 +628,9 @@ class GaussianStationaryProcess(object):
         elif self.method == 'tapered':
             # Sparse approximation of the covariance
             print("Build preconditionner...")
-            self.solve = mecm.computePrecond(r, self.mask, p=self.p,
-                                             taper='Wendland2')
+            self.solve = matrixalgebra.compute_precond(r, 
+                                                       self.mask, p=self.p,
+                                                       taper='Wendland2')
             print("Preconditionner built.")
             # Approximately solve the linear system C_oo x = eps
             u = self.solve(y[self.ind_obs])
@@ -615,3 +726,24 @@ class GaussianStationaryProcess(object):
 
         return self.conditional_draw_fast(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
                                           ind_obsj, ind_misj, maskj)
+
+
+class GSP(object):
+    
+    def __init__(self, mu, cov):
+        """
+        
+        New Gaussian stationary process class
+
+        Parameters
+        ----------
+        mu : callable
+            Mean function (of time)
+        cov : bayesdawn.operator.CovarianceOperator instance
+            Covariance operator of the Gaussian process
+        """
+        
+        self.mu = mu
+        self.cov = cov
+        
+        

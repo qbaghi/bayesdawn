@@ -1,4 +1,3 @@
-#!/usr/bin/python3.6
 # -*- coding: utf-8 -*-
 # Author: Quentin Baghi 2017
 # This code implements simple Metropolis-Hastings MCMC

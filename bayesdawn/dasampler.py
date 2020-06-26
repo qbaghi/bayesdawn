@@ -1,18 +1,21 @@
+# -*- coding: utf-8 -*-
+# Author: Quentin Baghi 2017
+# Modules of bayesdawn package
 import numpy as np
 import h5py
-from . import gaps
-import ptemcee
-
 # FTT modules
 import pyfftw
-pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
+from . import gaps
+pyfftw.interfaces.cache.enable()
 
 
 class FullModel(object):
 
-    def __init__(self, posterior_cls, psd_cls, dat_cls, sampler_cls, outdir='./', window='modified_hann',
-                 n_wind=500, n_wind_psd=500000, prefix='samples', n_psd=10, imputation=False, psd_estimation=False,
+    def __init__(self, posterior_cls, psd_cls, dat_cls, sampler_cls, 
+                 outdir='./', window='modified_hann',
+                 n_wind=500, n_wind_psd=500000, prefix='samples', 
+                 n_psd=10, imputation=False, psd_estimation=False,
                  normalized=False):
         """
 
@@ -79,7 +82,7 @@ class FullModel(object):
         self.n_wind_psd = n_wind_psd
         # If there are missing data, then the window for PSD does not have gaps
         if any(dat_cls.mask == 0):
-            nd, nf = gaps.gapgenerator.findEnds(dat_cls.mask)
+            nd, nf = gaps.gapgenerator.find_ends(dat_cls.mask)
             self.w_psd = gaps.gapgenerator.windowing(nd, nf, self.dat_cls.N, window=window,
                                                      n_wind=self.n_wind_psd)
         else:
@@ -273,7 +276,8 @@ class FullModel(object):
         # PSD parameter posterior step
         if self.psd_estimation:
             self.update_psd(pos0)
-        self.sampler_cls.update_log_likelihood(self.posterior_cls.log_likelihood, (self.spectrum, self.y_fft))
+        self.sampler_cls.update_log_likelihood(self.posterior_cls.log_likelihood, 
+                                               (self.spectrum, self.y_fft))
 
     def reset_psd_samples(self):
 

@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Tue Jan 22 15:59:04 2019
@@ -15,24 +14,33 @@ from scipy import interpolate
 
 
 class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
-    """
     
-    ** ** 
-    TODO : Add z_fft as a permanent attribute for this class!!!
-    Will be much better
-    ** ** 
-    
-    
-    """    
-    
-    def __init__(self, Neff, fs, J=30, D=3, fmin=None, fmax=None):
+    def __init__(self, n_eff, fs, n_knots=30, d=3, fmin=None, fmax=None):
+        """[summary]
 
-        psdmodel.PSDSpline.__init__(self, Neff, fs, J=J, D=D, fmin=fmin, fmax=fmax)
+        Parameters
+        ----------
+        n_eff : int
+            Size of time series
+        fs : float
+            sampling frequency
+        n_knots : int, optional
+            number of spline knots, by default 30
+        d : int, optional
+            order of the spline, by default 3
+        fmin : float, optional
+            Minimum frequency where the data is analysed, by default None
+        fmax : float, optional
+            Maximum frequency where the data is analysed, by default None
+        """
+
+        psdmodel.PSDSpline.__init__(self, n_eff, fs, n_knots=n_knots, d=d, 
+                                    fmin=fmin, fmax=fmax)
         
         # Periodogram of the residuals is an attribute
         self.I = []
         # Initialize the sampler
-        samplers.MHSampler.__init__(self, J+1, self.psd_posterior)
+        samplers.MHSampler.__init__(self, n_knots + 1, self.psd_posterior)
 
     def set_periodogram(self, z_fft, K2=None):
         """
@@ -45,13 +53,13 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
         K2 : scalar float
             periodogram normalization. Should always be 
             sum(W**2) where W is the window function applied in the time domain.
-            If K2 is None, the length n_data of the data is taken.
+            If k2 is None, the length n_data of the data is taken.
         
         """
         if type(z_fft) == np.ndarray :
-            self.I = self.periodogram(z_fft, K2 = K2)
+            self.I = self.periodogram(z_fft, k2= K2)
         elif type(z_fft) == list:
-            self.I = [self.periodogram(zf, K2 = K2) for zf in z_fft]
+            self.I = [self.periodogram(zf, k2= K2) for zf in z_fft]
 
     def psd_likelihood(self, x):
         """
@@ -70,11 +78,12 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 
         """
 
-        logSfunc = interpolate.interp1d(self.logfc, x, kind='cubic', fill_value="extrapolate")
+        logSfunc = interpolate.interp1d(self.logfc, x, kind='cubic', 
+                                        fill_value="extrapolate")
         
         # If only one segment of data is analyzed
         if type(self.I) == np.ndarray:
-            logS = logSfunc(self.logf[self.N])
+            logS = logSfunc(self.logf[self.n_data])
             I_weighted = self.I[1:self.n+1] * np.exp( - logS )
             ll = np.real( -0.5*np.sum( logS + I_weighted ) )
             
@@ -116,8 +125,9 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 
         """
         # Update PSD interpolation function
-        self.logPSD_fn = interpolate.interp1d(self.logfc, logSc, kind=kind, fill_value="extrapolate")
-        self.S = self.calculate(self.N)
+        self.logPSD_fn = interpolate.interp1d(self.logfc, logSc, kind=kind, 
+                                              fill_value="extrapolate")
+        self.S = self.calculate(self.n_data)
 
     def sample_psd(self, nit, verbose=True, cov_update=1000):
         """
@@ -143,7 +153,9 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
         # Update likelihood
         self.logp_tilde = self.psd_posterior
         # update PSD parameters by MH steps
-        psd_samples, logpvalues = self.run_mcmc(np.copy(self.logSc), self.varlogSc/(self.J+1), nit,
+        psd_samples, logpvalues = self.run_mcmc(np.copy(self.logSc), 
+                                                self.varlogSc/(self.J+1), 
+                                                nit,
                                                 verbose=verbose,
                                                 cov_update=cov_update)
 
@@ -151,7 +163,7 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 
 
 
-#    def sample_psd(self,residual_fft,nit,verbose = True, cov_update = 1000,K2 = None):
+#    def sample_psd(self,residual_fft,nit,verbose = True, cov_update = 1000,k2 = None):
 #        """
 #        Update PSD parameters 
 #        
@@ -173,7 +185,7 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 #        """
 #    
 #        # Update the periodogram
-#        self.set_periodogram(residual_fft, K2 = K2)
+#        self.set_periodogram(residual_fft, k2 = k2)
 #        # Update likelihood
 #        self.logp_tilde = self.psd_posterior
 #        # update PSD parameters by MH steps

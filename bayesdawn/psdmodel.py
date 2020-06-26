@@ -1,4 +1,3 @@
-#!/usr/bin/python3.6
 # -*- coding: utf-8 -*-
 # Author: Quentin Baghi 2017
 # This code provides routines for PSD estimation using a peace-continuous model
@@ -11,9 +10,8 @@ import tdi
 from scipy import interpolate
 from scipy import linalg as la
 from scipy import optimize
-
-pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
+pyfftw.interfaces.cache.enable()
 
 
 # TODO: rewrite spline interpolation with LSQUnivariateSpline from scipy.interpolate
@@ -747,7 +745,7 @@ class PSDEstimator(object):
             #                                         k=self.d,
             #                                         ext=self.ext)
             # Save the values of the log-PSD at the frequency knots
-            # self.logs_knots = self.log_psd_fn(self.logf_knots)
+            self.logs_knots = self.log_psd_fn(self.logf_knots)
             
         else:
             # # If the frequencies are given
