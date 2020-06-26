@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+# Author: Quentin Baghi 2020
 # Always prefer setuptools over distutils
 from setuptools import setup, find_packages
 from os import path
@@ -18,9 +20,9 @@ print(here)
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
-# Extensions
-extensions = [Extension("bayesdawn.waveforms.cywavefuncs",
-                        ["bayesdawn/waveforms/cywavefuncs.pyx"])]
+# # Extensions
+# extensions = [Extension("bayesdawn.waveforms.cywavefuncs",
+#                         ["bayesdawn/waveforms/cywavefuncs.pyx"])]
 
 # Arguments marked as "Required" below must be included for upload to PyPI.
 # Fields marked as "Optional" may be commented out.
@@ -61,9 +63,9 @@ setup(
                                                'h5py',
                                                'scipy',
                                                'numpy'],
-    ext_modules=cythonize(extensions),
-    include_dirs=[numpy.get_include(),
-                  os.path.join(numpy.get_include(), 'numpy')]
+    # ext_modules=cythonize(extensions),
+    # include_dirs=[numpy.get_include(),
+    #               os.path.join(numpy.get_include(), 'numpy')]
 
 )
 
