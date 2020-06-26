@@ -28,7 +28,7 @@ extensions = [Extension("bayesdawn.waveforms.cywavefuncs",
 setup(
     name='bayesdawn',
     version='1.0.0',
-    description='a_mat bayesian data augmentation algorithm',
+    description='a bayesian data augmentation algorithm',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/qbaghi/bayesdawn',

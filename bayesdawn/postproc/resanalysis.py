@@ -10,9 +10,8 @@ import numpy as np
 import corner
 from ptemcee import util
 from scipy.integrate import simps
-
-import load_mcmc_config
-from LISAhdf5 import LISAhdf5
+# import load_mcmc_config
+# from LISAhdf5 import LISAhdf5
 from bayesdawn import psdsampler
 
 from matplotlib import pyplot as plt
