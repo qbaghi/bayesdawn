@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 Created on Wed Feb  6 13:22:49 2019
@@ -54,7 +53,7 @@ def cornerplot(s_list, truths_vect, offset, rscales, labels,
                colors=['k', 'gray', 'b'], limits=None, fontsize=16,
                bins=50, truth_color='cadetblue', figsize=(9, 8.5),
                linewidth=1, smooth=1.0, smooth1d=1.0,
-               plot_datapoints=False):
+               plot_datapoints=False, alpha=1):
     """
 
     Parameters
@@ -98,35 +97,49 @@ def cornerplot(s_list, truths_vect, offset, rscales, labels,
 
     fig, axes = plt.subplots(ndim, ndim, figsize=figsize)
 
-    fig = corner.corner((s_list[0]-offset)*rscales, truths=truths_res,
-                        labels=labels, range=limits,
+    fig = corner.corner((s_list[0]-offset)*rscales, 
+                        truths=truths_res,
+                        labels=labels, 
+                        range=limits,
                         color=colors[0],
-                        plot_datapoints=plot_datapoints, fill_contours=True, bins=bins,
+                        plot_datapoints=plot_datapoints, 
+                        fill_contours=True, 
+                        bins=bins,
                         smooth=smooth,
                         smooth1d=smooth1d,
                         label_kwargs={"fontsize": fontsize},
-                        hist_kwargs={"linewidth": linewidth},
+                        hist_kwargs={"linewidth": linewidth, "alpha": alpha},
                         truth_color=truth_color, fig=fig, use_math_text=True)
 
     # fig = plt.figure(figsize = (8,8))
 
     if len(s_list) > 1:
         for j in range(0, len(s_list)):
-            fig = corner.corner((s_list[j]-offset)*rscales, truths=truths_res,
-                                labels=labels, range=limits,
+            fig = corner.corner((s_list[j]-offset)*rscales, 
+                                truths=truths_res,
+                                labels=labels, 
+                                range=limits,
                                 color=colors[j],
-                                plot_datapoints=plot_datapoints, fill_contours=True, bins=bins,
-                                smooth=smooth, smooth1d=smooth1d,
-                                label_kwargs={"fontsize": fontsize}, hist_kwargs={"linewidth": linewidth},
-                                truth_color=truth_color, fig=fig, use_math_text=True)
+                                plot_datapoints=plot_datapoints, 
+                                fill_contours=True, 
+                                bins=bins,
+                                smooth=smooth, 
+                                smooth1d=smooth1d,
+                                label_kwargs={"fontsize": fontsize}, 
+                                hist_kwargs={"linewidth": linewidth, 
+                                             "alpha": alpha},
+                                truth_color=truth_color, 
+                                fig=fig, 
+                                use_math_text=True)
 
 
     return fig, axes
 
 
-
-def jointplot(s_list, truths_vect, labels, legend_labels, kind="kde", colors=['k', 'gray', 'b'], levels=4,
-              linestyles = ['solid', 'dotted', 'dashed'], limits=None, fontsize=16, linewidth=3, alpha=0.7, shade=False):
+def jointplot(s_list, truths_vect, labels, legend_labels, kind="kde", 
+              colors=['k', 'gray', 'b'], levels=4,
+              linestyles = ['solid', 'dotted', 'dashed'], limits=None, 
+              fontsize=16, linewidth=3, alpha=0.7, shade=False):
     """
 
     Parameters
@@ -628,7 +641,7 @@ def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes, maskname
     # For noise parameters
     logSinds_list = []
     fs = 0.1
-    psd = psdsampler.PSDSampler(2 ** 22, fs, J=30, D=3, fmin=None, fmax=None)
+    psd = psdsampler.PSDSampler(2 ** 22, fs, n_knots=30, d=3, fmin=None, fmax=None)
     f = np.fft.fftfreq(psd.N)*fs
     f1 = conf.f0 - conf.B / 2
     f2 = conf.f0 + conf.B / 2
@@ -1313,7 +1326,7 @@ if __name__ == '__main__':
     # #                  ax=axes[0, 2])
     #    #plt.xlabel(r'Source frequency [Hz]',fontsize=16)
     #    #plt.xlabel(r'Arbitrary units',fontsize=16)
-    #    # axes[0,0].set_ylabel('Gap pattern A',fontsize=18)
+    #    # axes[0,0].set_ylabel('Gap pattern a_mat',fontsize=18)
     #    # axes[1,0].set_ylabel('Gap pattern B',fontsize=18)
     #    # [axes[0,i].set_xlabel(labels[i],fontsize=18) for i in range(len(labels))]
     #    # [axes[1,i].set_xlabel(labels[i],fontsize=18) for i in range(len(labels))]
@@ -1323,7 +1336,7 @@ if __name__ == '__main__':
     # # axes[2].legend(axes[2].lines, cases, loc='lower center', frameon=False, bbox_to_anchor=(0.5, -0.25))
     #
     #
-    # axes[0].set_ylabel('Gap pattern A', fontsize=18)
+    # axes[0].set_ylabel('Gap pattern a_mat', fontsize=18)
     # [axes[i].set_xlabel(labels[i], fontsize=18) for i in range(len(labels))]
     # [axes[i].set_xlim(limits[i]) for i in range(len(limits))]
     # #[axes[i].axvline(truths_res[i], color='cadetblue', linewidth=1.5) for i in range(len(limits))]

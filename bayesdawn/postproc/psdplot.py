@@ -35,7 +35,7 @@ def compute_periodogram(x, fs=1.0, wind='tukey'):
     freq : numpy array
         frequency vector
     per : numpy array
-        periodogram of the time series expressed in A / Hz where A is the unit of x
+        periodogram of the time series expressed in a_mat / Hz where a_mat is the unit of x
 
     """
 

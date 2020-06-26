@@ -207,7 +207,7 @@ if __name__=='__main__':
     fc, S_samples, S_map, S_map_low, S_map_up = psdplot.compute_psd_map(chain_psd, logp_psd, fs, N)
 
     # Create PSD class
-    psd = psdsampler.PSDSampler(N, fs, J = 30, D = 3, fmin = None, fmax=None)
+    psd = psdsampler.PSDSampler(N, fs, n_knots= 30, d= 3, fmin = None, fmax=None)
     psd.update_psd_func(np.log(S_map))
     S = psd.calculate(N)
 
@@ -291,7 +291,7 @@ if __name__=='__main__':
     # ==========================================================================
     # Plots in the time domain
     # ==========================================================================
-    #y_mask2 = M2 * (dTDI[0:N, 1] - np.mean(dTDI[0:N, 1]))
+    #y_mask2 = M2 * (dTDI[0:n_data, 1] - np.mean(dTDI[0:n_data, 1]))
     y_comp = (1 - M_binary) * y
     y_comp[M_binary > 0] = None
     y_comp2 = (1 - M2) * y
