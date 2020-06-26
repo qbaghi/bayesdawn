@@ -6,12 +6,21 @@ from os import path
 # and accepts an argument to specify the text encoding
 # Python 3 only projects can skip this import
 from io import open
+# For cython extensions
+import os
+import numpy
+from Cython.Build import cythonize
+from distutils.extension import Extension
 
 here = path.abspath(path.dirname(__file__))
+print(here)
 # Get the long description from the README file
 with open(path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = f.read()
 
+# Extensions
+extensions = [Extension("bayesdawn.waveforms.cywavefuncs",
+                        ["bayesdawn/waveforms/cywavefuncs.pyx"])]
 
 # Arguments marked as "Required" below must be included for upload to PyPI.
 # Fields marked as "Optional" may be commented out.
@@ -19,7 +28,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 setup(
     name='bayesdawn',
     version='1.0.0',
-    description='A bayesian data augmentation algorithm',
+    description='a_mat bayesian data augmentation algorithm',
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/qbaghi/bayesdawn',
@@ -48,7 +57,13 @@ setup(
 
     keywords='bayesesian data analysis',
     packages=find_packages(),
-    python_requires='>=3.5', install_requires=['h5py', 'mecm', 'scipy', 'numpy']
+    python_requires='>=3.5', install_requires=['cython',
+                                               'h5py',
+                                               'scipy',
+                                               'numpy'],
+    ext_modules=cythonize(extensions),
+    include_dirs=[numpy.get_include(),
+                  os.path.join(numpy.get_include(), 'numpy')]
 
 )
 
