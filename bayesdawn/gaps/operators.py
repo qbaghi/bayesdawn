@@ -9,9 +9,9 @@ Time-domain and frequency domain operators useful for gapped data analysis
 """
 import numpy as np
 import pyfftw
-from bayesdawn.utils import fastoeplitz
 from pyfftw.interfaces.numpy_fft import fft, ifft
 from scipy import sparse, linalg
+from bayesdawn.algebra import fastoeplitz
 pyfftw.interfaces.cache.enable()
 
 
