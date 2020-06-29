@@ -8,6 +8,7 @@ Created on Fri Feb  1 15:40:47 2019
 
 import numpy as np
 from scipy import special
+import numba as nb
 
 
 def v_func_gb_mono(f, f_0, tobs, ts):
@@ -36,8 +37,42 @@ def v_func_gb_mono(f, f_0, tobs, ts):
 
     """
 
-    return np.exp(1j * np.pi *
-                  (f_0 - f) * tobs) * np.sinc((f_0 - f) * tobs) * tobs / ts
+    df = f_0 - f
+    
+    return np.exp(1j * np.pi * df * tobs) * np.sinc(df * tobs) * tobs / ts
+    
+    
+@nb.njit(fastmath=True)
+def v_func_gb_mono_fast(f, f_0, tobs, ts):
+    """
+    Fast implentation of v_func_gb_mon in the case of a nf x nf grid of 
+    frequencies
+
+    Parameters
+    ----------
+    f : [type]
+        [description]
+    f_0 : [type]
+        [description]
+    tobs : [type]
+        [description]
+    ts : [type]
+        [description]
+
+    Returns
+    -------
+    [type]
+        [description]
+    """
+    
+    v_gb = np.empty(f.shape, dtype=np.complex128)
+    
+    for i in range(f.shape[0]):
+        for j in range(f.shape[1]):
+            df = f_0 - f[i, j]
+            v_gb[i, j] = np.exp(1j * np.pi * df * tobs) * np.sinc(df * tobs) * tobs / ts
+
+    return v_gb
 
 
 def v_func_gb(f, f_0, f_dot, T, ts):
