@@ -127,7 +127,7 @@ if __name__ == '__main__':
                    for ch in ['A', 'E']]
         sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
         # Then set the PSD class to None to prevent its update
-        psd_cls = None
+        # psd_cls = None
 
         # psd_cls = None
         # # One-sided PSD
@@ -162,7 +162,7 @@ if __name__ == '__main__':
             n_it_max=config["Imputation"].getint("maximumIterationNumber"))
 
         data_cls.compute_preconditioner(
-            psd_cls.calculate_autocorr(data_cls.n)[0:data_cls.n_max])
+            psd_cls[0].calculate_autocorr(data_cls.n)[0:data_cls.n_max])
 
     else:
         data_cls = None
@@ -298,7 +298,9 @@ if __name__ == '__main__':
         n_save = config['Sampler'].getint('SavingNumber')
         n_thin = config["Sampler"].getint("thinningNumber")
         gibbsargs = []
-        gibbskwargs = {'reduced': reduced}
+        gibbskwargs = {'reduced': reduced, 
+                       'update_mis': imputation,
+                       'update_psd': psd_estimation}
 
         if (not psd_estimation) & (not imputation):
 
@@ -323,11 +325,16 @@ if __name__ == '__main__':
             t2 = time.time()
             
         else:
+            
+            def gibbs(x, x2, **kwargs):
+                return ll_cls.update_auxiliary_params(x, x2, **kwargs)
         
             sampler = ptemceeg.Sampler(
-                nwalkers, len(names), log_likelihood, posteriormodel.logp,
+                nwalkers, len(names), 
+                log_likelihood, 
+                posteriormodel.logp,
                 ntemps=ntemps,
-                gibbs=ll_cls.update_auxiliary_params,
+                gibbs=gibbs,
                 dim2=par_aux0.shape[0],
                 threads=threads,
                 loglargs=[],
