@@ -44,7 +44,8 @@ def clipcov(X, nit = 3, n_sig = 5):
 
         dX = X_clip - np.mean(X_clip,axis=0)
 
-        inds_tuple = [np.where( np.abs(dX[:,k]) <= n_sig * np.sqrt(cov[k,k]) )[0] for k in range(X.shape[1])]
+        inds_tuple = [np.where( np.abs(dX[:,k]) <= n_sig * np.sqrt(cov[k,k]) )[0] 
+                      for k in range(X.shape[1])]
 
         inds = reduce(np.intersect1d, inds_tuple)
 
@@ -366,7 +367,7 @@ class ExtendedPTMCMC(ptemcee.Sampler):
         # If no callback function specified, set it to do nothing
         if callback is None:
             def callback(p):
-                print(str(p))
+                pass
 
         self.position = pos[:]
         it = 0
@@ -386,7 +387,6 @@ class ExtendedPTMCMC(ptemcee.Sampler):
                 print("Data saved.")
 
             if (it % n_callback == 0) & (it != 0) & (it >= n_start_callback):
-                print(str(self.chain[0, 0, it, :]))
                 callback(self.chain[0, 0, it, :])
                 print("Callback function called at iteration " + str(it))
 

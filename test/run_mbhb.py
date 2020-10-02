@@ -1,8 +1,6 @@
 # Standard useful python module
 import time
-
 import numpy as np
-
 from bayesdawn import likelihoodmodel
 # LDC modules
 # MC Sampler modules
@@ -20,17 +18,19 @@ def prior_transform(theta_u, lower_bound, upper_bound):
 
 if __name__ == '__main__':
 
-    # Standard modules
+    # Bayesdawn modules
     from bayesdawn import datamodel, psdmodel, samplers, posteriormodel
     from bayesdawn.utils import loadings, preprocess
     # For parallel computing
     # from multiprocessing import Pool, Queue
+    import ptemceeg
     # LDC tools
     import lisabeta.lisa.ldctools as ldctools
-    # Plotting modules
+    # Loading modules
     import datetime
     import configparser
     from optparse import OptionParser
+    import os
     # FTT modules
     import fftwisdom
     import pyfftw
@@ -107,7 +107,9 @@ if __name__ == '__main__':
     # Auxiliary parameter classes
     # =========================================================================
     scale = config["InputData"].getfloat("rescale")
-    if config["PSD"].getboolean("estimation"):
+    psd_estimation = config["PSD"].getboolean("estimation")
+    imputation = config["Imputation"].getboolean("imputation")
+    if psd_estimation:
         print("PSD estimation enabled.")
         psd_cls = [psdmodel.PSDSpline(tm.shape[0], 1 / del_t,
                                       n_knots=config["PSD"].getint("knotNumber"),
@@ -150,7 +152,7 @@ if __name__ == '__main__':
         # [psd_cls[i].estimate(data_ae_noise[i]) for i in range(len(psd_cls))]
         # sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
 
-    if config["Imputation"].getboolean("imputation"):
+    if imputation:
         print("Missing data imputation enabled.")
         data_cls = datamodel.GaussianStationaryProcess(
             data_ae_time, mask,
@@ -183,9 +185,11 @@ if __name__ == '__main__':
     # =========================================================================
     # Testing likelihood
     # =========================================================================
+    par_aux0 = np.concatenate(ll_cls.data_dft + sn)
     t1 = time.time()
     if config['Model'].getboolean('reduced'):
-        aft, eft = ll_cls.compute_signal_reduced(p_sampl[i_sampl_intr])
+        aft, eft = ll_cls.compute_signal_reduced(p_sampl[i_sampl_intr],
+                                                 ll_cls.data_dft)
     else:
         aft, eft = ll_cls.compute_signal(p_sampl)
     t2 = time.time()
@@ -234,9 +238,12 @@ if __name__ == '__main__':
     with open(out_dir + prefix + "config.ini", 'w') as configfile:
         config.write(configfile)
 
-    # ==========================================================================
+    # =========================================================================
     # Start sampling
-    # ==========================================================================
+    # =========================================================================
+    if not config["Sampler"].getboolean("numpyParallel"):
+        os.environ["OMP_NUM_THREADS"] = "1"
+    threads = config["Sampler"].getint("threadNumber")
     # Set seed
     np.random.seed(int(config["Sampler"]["RandomSeed"]))
     # Multiprocessing pool
@@ -287,24 +294,58 @@ if __name__ == '__main__':
         ntemps = config["Sampler"].getint("TemperatureNumber")
         n_callback = config['Sampler'].getint('AuxiliaryParameterUpdate')
         n_start_callback = config['Sampler'].getint('AuxiliaryParameterStart')
+        n_iter = config["Sampler"].getint("MaximumIterationNumber")
+        n_save = config['Sampler'].getint('SavingNumber')
+        n_thin = config["Sampler"].getint("thinningNumber")
+        gibbsargs = []
+        gibbskwargs = {'reduced': reduced}
 
-        sampler = samplers.ExtendedPTMCMC(nwalkers,
-                                          len(names),
-                                          log_likelihood,
-                                          posteriormodel.logp,
-                                          ntemps=ntemps,
-                                          logpargs=(lower_bounds,
-                                                    upper_bounds))
+        if (not psd_estimation) & (not imputation):
 
-        def callback_function(par):
-
-            return ll_cls.update_auxiliary_params(par, reduced=reduced)
-
-        result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
-                             config['Sampler'].getint('SavingNumber'),
-                             int(config["Sampler"]["thinningNumber"]),
-                             callback=callback_function,
-                             n_callback=n_callback,
-                             n_start_callback=n_start_callback,
-                             pos0=None,
-                             save_path=out_dir + prefix)
+            sampler = samplers.ExtendedPTMCMC(nwalkers,
+                                            len(names),
+                                            log_likelihood,
+                                            posteriormodel.logp,
+                                            ntemps=ntemps,
+                                            threads=threads,
+                                            loglargs=[par_aux0],
+                                            logpargs=(lower_bounds,
+                                                        upper_bounds))
+            t1 = time.time()
+            result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
+                                config['Sampler'].getint('SavingNumber'),
+                                int(config["Sampler"]["thinningNumber"]),
+                                callback=None,
+                                n_callback=n_callback,
+                                n_start_callback=n_start_callback,
+                                pos0=None,
+                                save_path=out_dir + prefix)
+            t2 = time.time()
+            
+        else:
+        
+            sampler = ptemceeg.Sampler(
+                nwalkers, len(names), log_likelihood, posteriormodel.logp,
+                ntemps=ntemps,
+                gibbs=ll_cls.update_auxiliary_params,
+                dim2=par_aux0.shape[0],
+                threads=threads,
+                loglargs=[],
+                loglkwargs={},
+                logpargs=(lower_bounds, upper_bounds),
+                gibbsargs=gibbsargs,
+                gibbskwargs=gibbskwargs)
+            
+            print("Start MC sampling...")
+            t1 = time.time()
+            aux0 = np.full((nwalkers, par_aux0.shape[0]), par_aux0, 
+                           dtype=np.complex128)
+            result = sampler.run(n_iter, n_save, n_thin,
+                                 n_update=n_callback,
+                                 n_start_update=n_start_callback,
+                                 pos0=None,
+                                 aux0=aux0,
+                                 save_path=out_dir + prefix,
+                                 verbose=2)
+            t2 = time.time()
+        print("MC completed in " + str(t2 - t1) + " seconds.")
