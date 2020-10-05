@@ -760,7 +760,10 @@ class LogLike(object):
         
         return y_imp, data_dft
 
-    def update_auxiliary_params(self, par, par_aux, reduced=True):
+    def update_auxiliary_params(self, par, par_aux, 
+                                reduced=True,
+                                update_mis=True,
+                                update_psd=True):
         """
         Update auxiliary parameters (PSD + data).
 
@@ -772,6 +775,10 @@ class LogLike(object):
             auxiliary data parameters
         reduced : bool, optional
             If True, uses reduced likelihood (instrinsic), by default True
+        update_mis : bool, optional
+            If True, perform imputation step to update missing data
+        update_psd : bool, optional
+            If True, perform PSD estimation step to update PSD
         """
         
         data_dft = [par_aux[i*self.nf:(i+1)*self.nf] 
@@ -789,12 +796,12 @@ class LogLike(object):
             y_gw_list = [self.frequency_to_time(y_gw_fft_pos)
                          for y_gw_fft_pos in [at, et]]
         # Update missing data if requested
-        if self.model is not None:
+        if update_mis:
             data, data_dft = self.update_missing_data(y_gw_list)
         else:
             data = self.data[:]
         # Update PSD if requested
-        if self.psd_list is not None:
+        if update_psd:
             sn = self.update_psd(y_gw_list, data)
         else:
             sn = self.sn[:]
