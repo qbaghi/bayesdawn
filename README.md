@@ -28,7 +28,7 @@ To generate the noise, we start with a white, zero-mean Gaussian noise that
 we then filter to obtain a stationary colored noise:
 
 ```python
-  # Import mecm and other useful packages
+  # Import bayesdawn and other useful packages
   from bayesdawn import datamodel, psdmodel
   import numpy as np
   import random
@@ -69,17 +69,16 @@ is observed, and 0 otherwise:
 
 ```python
   mask = np.ones(n_data)
-  Ngaps = 30
-  gapstarts = (n_data * np.random.random(Ngaps)).astype(int)
+  n_gaps = 30
+  gapstarts = (n_data * np.random.random(n_gaps)).astype(int)
   gaplength = 10
   gapends = (gapstarts+gaplength).astype(int)
-  for k in range(Ngaps): mask[gapstarts[k]:gapends[k]]= 0
+  for k in range(n_gaps): mask[gapstarts[k]:gapends[k]]= 0
 ```
 
 Therefore, we do not observe the data y but its masked version, mask*y:
 
 ```python
-  y = s + n
   y_masked = mask * y
 ```
 
@@ -89,13 +88,18 @@ Assune that we know exactly the deterministic signal:
 
 ```python
    s_model = s[:]
+   s_masked = mask * s_model
 ```
 Then we can do a crude estimation of the PSD from masked data:
 
 ```python
     # Fit PSD with a spline of degree 2 and 10 knots
-    psd_cls = psdmodel.PSDSpline(n_data, fs, J=10, D=2, fmin=fs/N, fmax=fs/2)
-    psd_cls.estimate(y - s_mask)
+    psd_cls = psdmodel.PSDSpline(n_data, fs, 
+                                 n_knots=10, 
+                                 d=2, 
+                                 fmin=fs/n_data, 
+                                 fmax=fs/2)
+    psd_cls.estimate(y - s_masked)
     psd = psd_cls.calculate(n_data)
 
 ```
@@ -105,9 +109,9 @@ Then, from the observed data and their model, we can reconstruct the missing dat
 ```python
 
     # instantiate imputation class
-    imp_cls = datamodel.GaussianStationaryProcess(y_masked, mask, Na=50, Nb=50)
+    imp_cls = datamodel.GaussianStationaryProcess(y_masked, mask, na=50, nb=50)
     # Imputation of missing data
-    y_rec = imp_cls.draw_missing_data(s, psd_cls)
+    y_rec = imp_cls.draw_missing_data(y_masked, s_model, psd_cls)
 
 
 ```
