@@ -119,4 +119,4 @@ Then, from the observed data and their model, we can reconstruct the missing dat
 Documentation
 -------------
 
-Please refer to.
+Please refer to the [documentation](https://bayesdawn.readthedocs.io/en/latest/).
