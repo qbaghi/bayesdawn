@@ -74,19 +74,19 @@ def generate_freq_noise_from_psd(psd, fe, myseed=None):
 
     n_fft = np.int((n_psd-1)/2)
     # Real part of the Noise fft : it is a gaussian random variable
-    Noise_TF_real = np.sqrt(0.5)*psd[0:n_fft+1]*np.random.normal(loc=0.0, 
+    noise_ft_real = np.sqrt(0.5)*psd[0:n_fft+1]*np.random.normal(loc=0.0, 
                                                                  scale=1.0, 
                                                                  size=n_fft+1) 
     # Imaginary part of the Noise fft :
-    Noise_TF_im = np.sqrt(0.5)*psd[0:n_fft+1]*np.random.normal(loc=0.0, 
+    noise_ft_imag = np.sqrt(0.5)*psd[0:n_fft+1]*np.random.normal(loc=0.0, 
                                                                scale=1.0, 
                                                                size=n_fft+1)
     # The Fourier transform must be real in f = 0
-    Noise_TF_im[0] = 0.
-    Noise_TF_real[0] = Noise_TF_real[0]*np.sqrt(2.)
+    noise_ft_imag[0] = 0.
+    noise_ft_real[0] = noise_ft_real[0]*np.sqrt(2.)
 
     # Create the NoiseTF complex numbers for positive frequencies
-    Noise_TF = Noise_TF_real + 1j*Noise_TF_im
+    Noise_TF = noise_ft_real + 1j*noise_ft_imag
 
     # To get a real valued signal we must have NoiseTF(-f) = NoiseTF*
     if n_psd % 2 == 0 :
@@ -288,7 +288,7 @@ def cm_direct(s2, c, ind_mis, ind_obs, mask):
 
 def cm_fft(s2, c, ind_mis, ind_obs, mask):
 
-    return lambda v: matrixalgebra.matVectProd(v, ind_obs, ind_mis, mask, s2)
+    return lambda v: matrixalgebra.mat_vect_prod(v, ind_obs, ind_mis, mask, s2)
 
 
 def toeplitz(r, inds):
@@ -526,7 +526,7 @@ class GaussianStationaryProcess(object):
     def conditional_draw_fast(self, z_o, psd_2n, c_oo_inv, c_mo, 
                               ind_obs, ind_mis, mask):
 
-        e = np.real(noise.generateNoiseFromDSP(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
+        e = np.real(generate_noise_from_psd(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
 
         # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
         eps = e[ind_mis] + c_mo(c_oo_inv.dot(z_o - e[ind_obs]))
@@ -597,18 +597,9 @@ class GaussianStationaryProcess(object):
         """
 
         if self.method == 'nearest':
-            # ==================================================================
-            # For precomputations
-            # ==================================================================
-            #indj_obs = np.where(M[indices[0]]==1)[0]
-            #indj_mis = np.where(M[indices[0]]==0)[0]
-            #y_mis = np.array([]) #np.zeros(len(ind_mis),dtype = np.float64)
-            #C_oo = c[np.ix_(indj_obs,indj_obs)]
-            #CooI = LA.inv(C_oo)
-
-            # ==================================================================
+            # =================================================================
             # Gap per gap imputation
-            # ==================================================================
+            # =================================================================
             if self.n_max <= 2000:
                 c = LA.toeplitz(r)
                 results = [self.single_imputation(y[indj], self.mask[indj], c,
@@ -644,11 +635,11 @@ class GaussianStationaryProcess(object):
             # First guess
             x0 = np.zeros(len(self.ind_obs))
             # Solve the linear system C_oo x = eps
-            u, info = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
-                                              y[self.ind_obs], x0,
-                                              self.tol, self.n_it_max,
-                                              self.solve,
-                                              'scipy')
+            u, _ = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
+                                           y[self.ind_obs], x0,
+                                           self.tol, self.n_it_max,
+                                           self.solve,
+                                          'scipy')
             # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
             y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
                                                 self.mask, s2)
