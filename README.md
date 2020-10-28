@@ -99,7 +99,7 @@ Then we can do a crude estimation of the PSD from masked data:
                                  d=2, 
                                  fmin=fs/n_data, 
                                  fmax=fs/2)
-    psd_cls.estimate(y - s_masked)
+    psd_cls.estimate(y - s)
 
 ```
 
