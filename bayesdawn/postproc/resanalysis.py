@@ -572,7 +572,8 @@ def loadtdi(hdf5_name):
 
 
 
-def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes, maskname, conf, signal_name = "chains/chain1/"):
+def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes, 
+                      maskname, conf, signal_name = "chains/chain1/"):
 
     # ==========================================================================
     # Prefixes for figure saving
@@ -1050,9 +1051,6 @@ if __name__ == '__main__':
     # =========================================================================
     # PLot data
     # =========================================================================
-
-
-
     # import seaborn as sns
     # sns.set(style="white", palette="muted", color_codes=True)
     mpl.rcdefaults()
@@ -1130,9 +1128,6 @@ if __name__ == '__main__':
     colors = ['black', 'gray', 'blue']
     cases = ['Complete data', 'Gaps, window method', 'Gaps, DA method']
     caselabels = ['complete', 'window', 'da']
-
-
-
 
 
     # ==================================================================================================================

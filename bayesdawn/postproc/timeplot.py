@@ -1,10 +1,8 @@
-#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 import load_mcmc_config
-# from . import resanalysis
-import resanalysis
+from . import resanalysis
 import gapgenerator as gg
-import psdplot
+from . import psdplot
 from bayesdawn import imputation
 from bayesdawn import gwsampler
 from bayesdawn import psdsampler

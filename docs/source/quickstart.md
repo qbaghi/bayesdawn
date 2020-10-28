@@ -1,21 +1,5 @@
-BayesDawn
-=================
-
-
-
-BayesDawn stands for Bayesian Data Augmentation for Waves and Noise. It implements an iterative Bayesian augmentation 
-method to handle data gaps in gravitational-wave data analysis, as described in this paper: https://arxiv.org/abs/1907.04747.
-
-Installation
-------------
-
-BayesDawn can be installed by unzipping the source code in one directory and using this command: ::
-
-    sudo python setup.py install
-    
-    
-Quick start
------------
+Quick Start
+===========
 
 Using BayesDawn for your own analysis will essentially involve the datamodel.py module, which allows you to 
 compute the conditional distribution of missing values given the observed values of a time series.
@@ -115,8 +99,3 @@ Then, from the observed data and their model, we can reconstruct the missing dat
 
 
 ```
-
-Documentation
--------------
-
-Please refer to.
