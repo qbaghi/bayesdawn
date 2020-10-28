@@ -110,6 +110,8 @@ Then, from the observed data and their model, we can reconstruct the missing dat
     # instantiate imputation class
     imp_cls = datamodel.GaussianStationaryProcess(s_model, mask, psd_cls, 
                                                   na=50, nb=50)
+    # perform offline computations
+    imp_cls.compute_offline()
     # Imputation of missing data
     y_rec = imp_cls.draw_missing_data(y_masked)
 
