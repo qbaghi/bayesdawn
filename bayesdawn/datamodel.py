@@ -321,16 +321,19 @@ class GaussianStationaryProcess(object):
 
     """
 
-    def __init__(self, y, mask, method='nearest', na=150, nb=150, p=60,
+    def __init__(self, y_mean, mask, psd_cls,
+                 method='nearest', na=150, nb=150, p=60,
                  tol=1e-6, n_it_max=150):
         """
 
         Parameters
         ----------
-        y : array_like
-            vector of masked data y = x * M
+        y_mean : array_like
+            mean vector of the Gaussian process, size n
         mask : array_like
             binary mask
+        psd_cls : psdmodel.PSD instance
+            power spectral density class
         method : str
             method to use to perform imputation. 'nearest': nearest neighboors,
             approximate method.
@@ -345,9 +348,11 @@ class GaussianStationaryProcess(object):
         """
 
         # Masked data
-        self.y = copy.deepcopy(y)
+        self.y_mean = copy.deepcopy(y_mean)
         # The binary mask
         self.mask = copy.deepcopy(mask)
+        # The PSD
+        self.psd_cls = copy.deepcopy(psd_cls)
         # Total length of the data
         self.n = len(mask)
         # Imputation method
@@ -414,9 +419,79 @@ class GaussianStationaryProcess(object):
                     np.int(np.max([self.n_starts[self.n_gaps - 1] - na,
                                    self.n_ends[self.n_gaps - 2]])),
                     np.int(np.min([self.n_ends[self.n_gaps - 1] + nb, self.n])))]
-        # self.indices = [np.arange(np.int(np.max([self.N_starts[j]- Na,0])),
-        # np.int(np.min([self.N_ends[j]+Nb,n_data]))) for j in range(len(self.N_starts))]
+
+        # ==
+        # Store quantities that can be computed offline
+        # ==
+        
+        # Preconditionner
         self.solve = None
+        # Autocovariance
+        self.autocorr = None
+        # Power spectral density computed on a frequency grid of size 2n
+        self.s2 = None
+        
+    def update_psd(self, psd_cls):
+        """
+        Update the PSD class of the Gaussian stationary process
+
+        Parameters
+        ----------
+        psd_cls : psdmodel.PSD instance
+            New PSD class
+        """
+        
+        self.psd_cls = copy.deepcopy(psd_cls)
+        
+    def update_mean(self, y_mean):
+        """
+        Update the mean vector of the Gaussian stationary process
+
+        Parameters
+        ----------
+        y_mean : ndarray or list
+            Mean vector (deterministic part).
+        """
+        
+        self.y_mean = y_mean[:]
+        
+    def compute_offline(self):
+        """
+        Performs all necessary offline computations that depend on PSD and 
+        mean vector.
+        """
+        
+        # Compute the autocovariance from the full PSD and restrict it to N_max
+        # points
+        if type(self.psd_cls) != list:
+            t1 = time.time()
+            self.autocorr = self.psd_cls.calculate_autocorr(self.n)[0:self.n_max]
+            t2 = time.time()
+            # Compute the spectrum on 2*N_max points
+            self.s2 = self.psd_cls.calculate(2 * self.n_max)
+        else:
+            t1 = time.time()
+            self.autocorr = [psd.calculate_autocorr(self.n)[0:self.n_max]
+                             for psd in self.psd_cls]
+            t2 = time.time()
+            self.s2 = [psd.calculate(2 * self.n_max) for psd in self.psd_cls]
+        print("Computation of autocovariance + PSD took " + str(t2-t1))
+        
+        # Precompute solver if necessary
+        if (self.method == 'PCG') | (self.method == 'tapered'):
+            print("Build preconditionner...")
+            if type(self.autocorr) != list:
+                self.solve = matrixalgebra.compute_precond(self.autocorr, 
+                                                           self.mask, 
+                                                           p=self.p,
+                                                           taper='Wendland2')
+            else:
+                self.solve = [matrixalgebra.compute_precond(autocorr, 
+                                                            self.mask, 
+                                                            p=self.p,
+                                                            taper='Wendland2')
+                              for autocorr in self.autocorr]              
+            print("Preconditionner built.")
 
     def compute_preconditioner(self, autocorr):
         """
@@ -439,15 +514,13 @@ class GaussianStationaryProcess(object):
                                                    taper='Wendland2')
         print("Preconditionner built.")
 
-    def impute(self, y_model, psd):
+    def impute(self, y):
         """
 
         Parameters
         ----------
-        y_model : ndarray or list
-            modeled signal in the data (deterministic part)
-        psd : PSD_spline instance
-            class to compute the noise PSD
+        y : ndarray or list
+            masked data vector, size n
 
         Returns
         -------
@@ -456,21 +529,11 @@ class GaussianStationaryProcess(object):
 
         """
 
-        # The imputation method
-        if type(self.y) == np.ndarray:
-            # If there is only one single channel
-            if self.n_gaps > 0:
-                return self.draw_missing_data(self.y, y_model, psd)
-            else:
-                return self.y
-
-        elif type(self.y) == list:
-            # If there are several
-            if self.n_gaps > 0:
-                return [self.draw_missing_data(self.y[i], y_model[i], psd[i]) 
-                        for i in range(len(y_model))]
-            else:
-                return self.y
+        # If there is only one single channel
+        if self.n_gaps > 0:
+            return self.draw_missing_data(y)
+        else:
+            return y
 
     def conditional_draw(self, z_o, psd_2n, c_oo_inv, c_mo, 
                          ind_obs, ind_mis, mask, c):
@@ -533,7 +596,7 @@ class GaussianStationaryProcess(object):
 
         return eps
 
-    def draw_missing_data(self, y, y_model, psd):
+    def draw_missing_data(self, y):
         """
 
         Draw the missing data from their conditional distributions on the
@@ -543,10 +606,6 @@ class GaussianStationaryProcess(object):
         ----------
         y : ndarray or list
             masked data y = mask * x
-        y_model : array_like
-            vector of modelled signal (size n_data)
-        psd : PSD_spline instance
-            class to compute the noise PSD
 
         Returns
         -------
@@ -555,23 +614,33 @@ class GaussianStationaryProcess(object):
             data
 
         """
-        # Compute the autocovariance from the full PSD and restrict it to N_max
-        # points
-        t1 = time.time()
-        autocorr = psd.calculate_autocorr(self.n)[0:self.n_max]
-        t2 = time.time()
-        print("Computation of autocovariance took " + str(t2-t1))
-        # Compute the spectrum on 2*N_max points
-        s2 = psd.calculate(2 * self.n_max)
-        t1 = time.time()
-        # Impute the missing data: estimation of missing residuals
-        y_mis_res = self.imputation(y - y_model, autocorr, s2)
-        # Construct the full imputed data vector
-        # at observed value this is the same
-        y_rec = y[:]
-        y_rec[self.ind_mis] = y_mis_res + y_model[self.ind_mis]
-        t2 = time.time()
-        print("Missing data imputation took " + str(t2-t1))
+
+        if self.autocorr is None:
+            self.compute_offline()
+        
+        # If there is only one array
+        if type(y) == np.ndarray:
+            t1 = time.time()
+            # Impute the missing data: estimation of missing residuals
+            y_mis_res = self.imputation(y - self.y_mean, 
+                                        self.autocorr, self.s2)
+            # Construct the full imputed data vector
+            # at observed value this is the same
+            y_rec = y[:]
+            y_rec[self.ind_mis] = y_mis_res + self.y_mean[self.ind_mis]
+            t2 = time.time()
+            print("Missing data imputation took " + str(t2-t1))
+            
+        elif type(y) == list:
+            
+            y_mis_res = [self.imputation(y[i] - self.y_mean[i], 
+                                         self.autocorr[i], self.s2[i]) 
+                         for i in range(len(y))]
+            y_rec = copy.deepcopy(y)
+            
+            for i in range(len(y)):
+                y_rec[i][self.ind_mis] = y_mis_res[i] + self.y_mean[i][self.ind_mis]
+            
         return y_rec
 
     def imputation(self, y, r, s2):
@@ -601,9 +670,12 @@ class GaussianStationaryProcess(object):
             # Gap per gap imputation
             # =================================================================
             if self.n_max <= 2000:
+                
                 c = LA.toeplitz(r)
+                
                 results = [self.single_imputation(y[indj], self.mask[indj], c,
-                                                  s2) for indj in self.indices]
+                                                  s2) 
+                           for indj in self.indices]
             else:
                 # If the number of points inside the gaps is too large, use a
                 # FFT-based method

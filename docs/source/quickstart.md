@@ -84,7 +84,6 @@ Then we can do a crude estimation of the PSD from masked data:
                                  fmin=fs/n_data, 
                                  fmax=fs/2)
     psd_cls.estimate(y - s_masked)
-    psd = psd_cls.calculate(n_data)
 
 ```
 
@@ -93,9 +92,10 @@ Then, from the observed data and their model, we can reconstruct the missing dat
 ```python
 
     # instantiate imputation class
-    imp_cls = datamodel.GaussianStationaryProcess(y_masked, mask, na=50, nb=50)
+    imp_cls = datamodel.GaussianStationaryProcess(s_model, mask, psd_cls, 
+                                                  na=50, nb=50)
     # Imputation of missing data
-    y_rec = imp_cls.draw_missing_data(y_masked, s_model, psd_cls)
+    y_rec = imp_cls.draw_missing_data(y_masked)
 
 
 ```
