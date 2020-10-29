@@ -8,13 +8,13 @@ This module provide classes to perform missing data imputation steps based on
 Gaussian conditional model
 """
 
-from .algebra import matrixalgebra
-from .gaps import gapgenerator
+from .algebra import matrixalgebra, fastoeplitz
+from .gaps import gapgenerator, operators
 from numpy import ndarray
 import numpy as np
 from scipy import signal
 import time
-from scipy import linalg as LA
+from scipy import linalg
 import copy
 import warnings
 # FTT modules
@@ -424,12 +424,18 @@ class GaussianStationaryProcess(object):
         # Store quantities that can be computed offline
         # ==
         
-        # Preconditionner
-        self.solve = None
         # Autocovariance
         self.autocorr = None
         # Power spectral density computed on a frequency grid of size 2n
         self.s2 = None
+        # Preconditionner for PCG or tapered methods
+        self.solve = None
+        # Inverted matrix for woodbury method
+        self.sig_inv_mm_inv = None
+        self.w_m_cls = None
+        self.a = None
+        self.lamdba_n = None
+
         
     def update_psd(self, psd_cls):
         """
@@ -477,6 +483,29 @@ class GaussianStationaryProcess(object):
             self.s2 = [psd.calculate(2 * self.n_max) for psd in self.psd_cls]
         print("Computation of autocovariance + PSD took " + str(t2-t1))
         
+        if self.method == 'woodbury':
+            if len(self.ind_mis) < 1e3:
+                print("Start Toeplitz system precomputations...")
+                self.w_m_cls = operators.MappingOperator(self.ind_mis, self.n)
+                w_m = self.w_m_cls.build_matrix(sp=False)
+                s_n = self.psd_cls.calculate(self.n_max)
+                sigma_inv_wmt = ifft(fft(w_m.T, axis=0) / np.array([s_n]).T, axis=0)
+                # Precompute quantities for calculating the inverse of Sigma
+                self.lambda_n, self.a = fastoeplitz.teopltiz_precompute(
+                    self.autocorr,  p=self.p, nit=self.n_it_max, tol=self.tol)
+                # sigma_inv_wmt = fastoeplitz.multiple_toepltiz_inverse(
+                #     w_m.T, self.lambda_n, self.a)
+                self.sig_inv_mm_inv = linalg.pinv(w_m.dot(sigma_inv_wmt))
+            else:
+                msg = "Number of missing data is too large for woodbury method."
+                raise ValueError(msg)
+        
+    def compute_preconditioner(self):
+        """
+        Precompute the pre-conditioner operator that looks like Coo
+
+        """
+
         # Precompute solver if necessary
         if (self.method == 'PCG') | (self.method == 'tapered'):
             print("Build preconditionner...")
@@ -492,27 +521,6 @@ class GaussianStationaryProcess(object):
                                                             taper='Wendland2')
                               for autocorr in self.autocorr]              
             print("Preconditionner built.")
-
-    def compute_preconditioner(self, autocorr):
-        """
-        Precompute the pre-conditioner operator that looks like Coo
-
-        Parameters
-        ----------
-        autocorr : numpy array
-            noise autocovarinace until lag n_max
-
-        Returns
-        -------
-
-        """
-
-        # Precompute solver
-        print("Build preconditionner...")
-        self.solve = matrixalgebra.compute_precond(autocorr, 
-                                                   self.mask, p=self.p,
-                                                   taper='Wendland2')
-        print("Preconditionner built.")
 
     def impute(self, y):
         """
@@ -617,16 +625,18 @@ class GaussianStationaryProcess(object):
 
         if self.autocorr is None:
             self.compute_offline()
-        
+        if ((self.method == 'PCG') | (self.method == 'tapered')) & (self.solve is None):
+            self.compute_preconditioner()
         # If there is only one array
         if type(y) == np.ndarray:
             t1 = time.time()
             # Impute the missing data: estimation of missing residuals
             y_mis_res = self.imputation(y - self.y_mean, 
-                                        self.autocorr, self.s2)
+                                        self.autocorr, 
+                                        self.s2)
             # Construct the full imputed data vector
             # at observed value this is the same
-            y_rec = y[:]
+            y_rec = copy.deepcopy(y)
             y_rec[self.ind_mis] = y_mis_res + self.y_mean[self.ind_mis]
             t2 = time.time()
             print("Missing data imputation took " + str(t2-t1))
@@ -651,7 +661,7 @@ class GaussianStationaryProcess(object):
         Parameters
         ----------
         y : array_like
-            observed residuals (size n_data)
+            masked residuals (size n_data)
         r : array_like
             autocovariance function until lag N_max
         s2 : array_like
@@ -671,7 +681,7 @@ class GaussianStationaryProcess(object):
             # =================================================================
             if self.n_max <= 2000:
                 
-                c = LA.toeplitz(r)
+                c = linalg.toeplitz(r)
                 
                 results = [self.single_imputation(y[indj], self.mask[indj], c,
                                                   s2) 
@@ -715,6 +725,18 @@ class GaussianStationaryProcess(object):
             # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
             y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
                                                 self.mask, s2)
+            
+        elif self.method == 'woodbury':
+            x = self.mask * y
+            # Apply inverse sigma
+            a_o = fastoeplitz.toepltiz_inverse_jain(x, self.lambda_n, self.a)
+            b_o = self.sig_inv_mm_inv.dot(a_o[self.ind_mis])
+            y_o = np.zeros(self.n)
+            y_o[self.ind_mis] = b_o
+            # e_o = a_o - sigma_inv.dot(y_o)
+            e_o = a_o - fastoeplitz.toepltiz_inverse_jain(
+                y_o, self.lambda_n, self.a)
+            y_mis = e_o[self.ind_mis]
 
         return y_mis
 
@@ -747,7 +769,7 @@ class GaussianStationaryProcess(object):
 
         c_mo = c[np.ix_(ind_misj, ind_obsj)]
         #C_mm = C[np.ix_(ind_misj,ind_misj)]
-        c_oo_inv = LA.inv(c[np.ix_(ind_obsj, ind_obsj)])
+        c_oo_inv = linalg.inv(c[np.ix_(ind_obsj, ind_obsj)])
 
         out = self.conditional_draw(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
                                     ind_obsj, ind_misj, maskj, c)
@@ -782,7 +804,7 @@ class GaussianStationaryProcess(object):
         ind_misj = np.where(maskj == 0)[0]
         # Covariance of observed data and its inverse
         c_oo = toeplitz(r, ind_obsj)
-        c_oo_inv = LA.inv(c_oo)
+        c_oo_inv = linalg.inv(c_oo)
         # Covariance missing / observed data : matrix operator
         c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
                                                      maskj, psd_2n)

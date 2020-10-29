@@ -84,13 +84,7 @@ Therefore, we do not observe the data y but its masked version, mask*y:
 
 3. Missing data imputation
 
-Assune that we know exactly the deterministic signal:
-
-```python
-   s_model = s[:]
-   s_masked = mask * s_model
-```
-Then we can do a crude estimation of the PSD from masked data:
+Assuming that we know exactly the deterministic signal, we can do a crude estimation of the PSD from masked data:
 
 ```python
     # Fit PSD with a spline of degree 2 and 10 knots
@@ -99,16 +93,17 @@ Then we can do a crude estimation of the PSD from masked data:
                                  d=2, 
                                  fmin=fs/n_data, 
                                  fmax=fs/2)
-    psd_cls.estimate(y - s)
+    psd_cls.estimate(mask * (y - s))
 
 ```
+
 
 Then, from the observed data and their model, we can reconstruct the missing data using the imputation package:
 
 ```python
 
     # instantiate imputation class
-    imp_cls = datamodel.GaussianStationaryProcess(s_model, mask, psd_cls, 
+    imp_cls = datamodel.GaussianStationaryProcess(s, mask, psd_cls, 
                                                   na=50, nb=50)
     # perform offline computations
     imp_cls.compute_offline()

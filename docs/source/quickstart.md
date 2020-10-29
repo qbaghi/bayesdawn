@@ -5,7 +5,7 @@ Using BayesDawn for your own analysis will essentially involve the datamodel.py 
 compute the conditional distribution of missing values given the observed values of a time series.
 Here is a working example that can be used.
 
-1. Generation of test data
+### Generation of test data
 
 To begin with, we generate some simple time series which contains noise and signal.
 To generate the noise, we start with a white, zero-mean Gaussian noise that
@@ -45,7 +45,7 @@ The noisy data is then
   y = s + n
 ```
 
-2. Introduction of data gaps
+### Introduction of data gaps
 
 Now assume that some data are missing, i.e. the time series is cut by random gaps.
 The pattern is represented by a mask vector with entries equal to 1 when data
@@ -66,15 +66,9 @@ Therefore, we do not observe the data y but its masked version, mask*y:
   y_masked = mask * y
 ```
 
-3. Missing data imputation
+### Missing data imputation
 
-Assune that we know exactly the deterministic signal:
-
-```python
-   s_model = s[:]
-   s_masked = mask * s_model
-```
-Then we can do a crude estimation of the PSD from masked data:
+Assuming that we know exactly the deterministic signal, we can do a crude estimation of the PSD from masked data:
 
 ```python
     # Fit PSD with a spline of degree 2 and 10 knots
@@ -83,7 +77,7 @@ Then we can do a crude estimation of the PSD from masked data:
                                  d=2, 
                                  fmin=fs/n_data, 
                                  fmax=fs/2)
-    psd_cls.estimate(y - s_masked)
+    psd_cls.estimate(mask * (y - s))
 
 ```
 
@@ -92,10 +86,46 @@ Then, from the observed data and their model, we can reconstruct the missing dat
 ```python
 
     # instantiate imputation class
-    imp_cls = datamodel.GaussianStationaryProcess(s_model, mask, psd_cls, 
+    imp_cls = datamodel.GaussianStationaryProcess(s, mask, psd_cls, 
                                                   na=50, nb=50)
+    # perform offline computations
+    imp_cls.compute_offline()
     # Imputation of missing data
     y_rec = imp_cls.draw_missing_data(y_masked)
 
+
+```
+
+
+### Plotting the results
+
+To see whether the imputation gives statisfactory statistics, we will compare 
+the imputed data to the original one in Fourier domain.
+We start by Fourier-transforming the data:
+
+```python
+
+    f = np.fft.fftfreq(n_data) * fs
+    # Fourier transforms
+    y_fft = np.fft.fft(y)
+    y_masked_fft = np.fft.fft(y_masked)
+    y_rec_fft = np.fft.fft(y_rec)
+
+```
+
+Then we plot them:
+
+```python
+
+from matplotlib import pyplot as plt
+fig, ax = plt.subplots()
+ax.set_title(r"Noise FFT")
+ax.set_xlabel(r"Frequency [Hz]")
+ax.set_ylabel(r"PSD [1/Hz]") 
+ax.loglog(f[f>0], np.abs(y_fft[f>0])/np.sqrt(n_data*fs), label="Full")
+ax.loglog(f[f>0], np.abs(y_masked_fft[f>0])/np.sqrt(n_data*fs), label="Gapped")
+ax.loglog(f[f>0], np.abs(y_rec_fft[f>0])/np.sqrt(n_data*fs), label="Imputed")
+plt.legend()
+plt.show()
 
 ```
