@@ -323,7 +323,7 @@ class GaussianStationaryProcess(object):
 
     def __init__(self, y_mean, mask, psd_cls,
                  method='nearest', na=150, nb=150, p=60,
-                 tol=1e-6, n_it_max=150):
+                 tol=1e-6, n_it_max=1000):
         """
 
         Parameters
@@ -488,13 +488,13 @@ class GaussianStationaryProcess(object):
                 print("Start Toeplitz system precomputations...")
                 self.w_m_cls = operators.MappingOperator(self.ind_mis, self.n)
                 w_m = self.w_m_cls.build_matrix(sp=False)
-                s_n = self.psd_cls.calculate(self.n_max)
-                sigma_inv_wmt = ifft(fft(w_m.T, axis=0) / np.array([s_n]).T, axis=0)
+                # s_n = self.psd_cls.calculate(self.n_max)
+                # sigma_inv_wmt = ifft(fft(w_m.T, axis=0) / np.array([s_n]).T, axis=0)
                 # Precompute quantities for calculating the inverse of Sigma
                 self.lambda_n, self.a = fastoeplitz.teopltiz_precompute(
                     self.autocorr,  p=self.p, nit=self.n_it_max, tol=self.tol)
-                # sigma_inv_wmt = fastoeplitz.multiple_toepltiz_inverse(
-                #     w_m.T, self.lambda_n, self.a)
+                sigma_inv_wmt = fastoeplitz.multiple_toepltiz_inverse(
+                    w_m.T, self.lambda_n, self.a)
                 self.sig_inv_mm_inv = linalg.pinv(w_m.dot(sigma_inv_wmt))
             else:
                 msg = "Number of missing data is too large for woodbury method."
@@ -727,18 +727,21 @@ class GaussianStationaryProcess(object):
                                                 self.mask, s2)
             
         elif self.method == 'woodbury':
-            x = self.mask * y
+
+            epsilon_masked = self.mask * y
             # Apply inverse sigma
-            a_o = fastoeplitz.toepltiz_inverse_jain(x, self.lambda_n, self.a)
+            a_o = fastoeplitz.toepltiz_inverse_jain(epsilon_masked, 
+                                                    self.lambda_n, self.a)
             b_o = self.sig_inv_mm_inv.dot(a_o[self.ind_mis])
-            y_o = np.zeros(self.n)
+            y_o = np.zeros(self.mask.shape[0])
             y_o[self.ind_mis] = b_o
-            # e_o = a_o - sigma_inv.dot(y_o)
-            e_o = a_o - fastoeplitz.toepltiz_inverse_jain(
-                y_o, self.lambda_n, self.a)
-            # Multiply my the mask and them by the covariance Sigma
-            eps_given_o = ifft(fft(self.mask * e_o, 2*self.n_max) * self.s2)
-            
+            e_o = a_o - fastoeplitz.toepltiz_inverse_jain(y_o, 
+                                                          self.lambda_n, 
+                                                          self.a)
+            # Apply Sigma after multiplying by the mask
+            eps_given_o = fastoeplitz.toeplitz_multiplication(self.mask * e_o,
+                                                              self.autocorr,
+                                                              self.autocorr)  
             y_mis = eps_given_o[self.ind_mis]
 
         return y_mis

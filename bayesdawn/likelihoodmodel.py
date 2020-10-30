@@ -628,7 +628,7 @@ class LogLike(object):
             TDI data a_mat, E, T in the time domain, without any smooth
             windowing (except binary masking)
         sn : list of ndarrays
-            noise PSD computed at freq for each channel
+            list of noise PSDs computed at freq for each channel
         inds: array_like
             indices of the frequencies to consider in the Fourier frequency
             array
@@ -688,7 +688,7 @@ class LogLike(object):
                          for dat in self.data]
 
         if normalized:
-            self.ll_norm = self.log_norm(self.data_dft )
+            self.ll_norm = self.log_norm(self.data_dft, sn)
         else:
             self.ll_norm = 0
         # The full set of parameters is
@@ -732,6 +732,11 @@ class LogLike(object):
         # Calculate the spectrum in the estimation band
         sn = [psd.calculate(self.f[self.inds]) for psd in self.psd_list]
         # It is currently x fs / 2. Should correct for that.
+        # Update the PSD used for data imputation
+        self.model.update_psd(self.psd_list)
+        # Pre-compute quantities depending on PSD
+        self.model.compute_offline()
+        
         return sn
 
     def update_missing_data(self, y_gw_list):
@@ -748,9 +753,11 @@ class LogLike(object):
         Nothing, just update the attribute self.data_dft
 
         """
-
+        
+        # Update Gaussian process mean
+        self.model.update_mean(y_gw_list)
         # Impute missing data
-        y_imp = self.model.impute(y_gw_list, self.psd_list)
+        y_imp = self.model.impute(self.data)
         # Transform back to Fourier domain, applying the windowing for complete
         # time series, with re-scaling
         resc = self.del_t * self.resc_full
@@ -787,7 +794,7 @@ class LogLike(object):
         if (self.psd_list is not None) | (self.model is not None):
             # Compute waveform template in the frequency domain
             if reduced:
-                at, et = self.compute_signal_reduced(par, data_dft)
+                at, et = self.compute_signal_reduced(par, data_dft, self.sn)
             else:
                 at, et = self.compute_signal(par)
 
@@ -809,7 +816,7 @@ class LogLike(object):
         # Encapsulate auxiliary parameters lists
         return np.concatenate(data_dft + sn)
 
-    def log_norm(self, data_dft):
+    def log_norm(self, data_dft, sn):
         """
         Compute normalizing constant for the log-likelihood
 
@@ -819,6 +826,8 @@ class LogLike(object):
         data_dft :  list[ndarray]
             List of windowed frequency-domain data restricted to the band 
             of interest
+        sn : list of ndarrays
+            list of noise PSDs computed at freq for each channel
 
         Returns
         -------
@@ -828,8 +837,8 @@ class LogLike(object):
         """
 
         ll_norm = - self.nf/2 * np.log(2 * np.pi * 2 * self.del_t)
-        ll_norm += sum([- 0.5 * np.sum(np.log(self.sn[i]))
-                        - 0.5 * np.sum(np.abs(data_dft[i]) ** 2 / self.sn)
+        ll_norm += sum([- 0.5 * np.sum(np.log(sn[i]))
+                        - 0.5 * np.sum(np.abs(data_dft[i]) ** 2 / sn[i])
                         for i in range(len(data_dft))])
 
         return ll_norm
@@ -918,7 +927,7 @@ class LogLike(object):
 
         return np.real(ll_a + ll_e + self.ll_norm)
 
-    def compute_signal_reduced(self, par_intr, data_dft):
+    def compute_signal_reduced(self, par_intr, data_dft, sn):
         """
 
         Parameters
@@ -929,6 +938,8 @@ class LogLike(object):
         data_dft :  list[ndarray]
             List of windowed frequency-domain data restricted to the band 
             of interest
+        sn : list of ndarrays
+            list of noise PSDs computed at freq for each channel
 
         Returns
         -------
@@ -944,7 +955,7 @@ class LogLike(object):
                                           tref=0, t_offset=self.t_offset,
                                           channels=self.channels)
         # Weighted design matrices
-        mat_list_weighted = [mat_list[i] / np.array([self.sn[i]]).T
+        mat_list_weighted = [mat_list[i] / np.array([sn[i]]).T
                              for i in range(len(self.channels))]
         # Compute amplitudes
         amps = [LA.pinv(np.dot(mat_list_weighted[i].conj().T,
@@ -988,7 +999,7 @@ class LogLike(object):
                   for i in range(2, 2 + len(self.channels))]
 
         # Compute the signal in the frequency domain
-        at, et = self.compute_signal_reduced(par_intr, data_dft)
+        at, et = self.compute_signal_reduced(par_intr, data_dft, sn)
 
         # (h | y)
         sna = np.sum(np.real(data_dft[0] * np.conjugate(at)) / sn[0])

@@ -154,15 +154,17 @@ if __name__ == '__main__':
 
     if imputation:
         print("Missing data imputation enabled.")
+        data_mean = [np.zeros(dat.shape[0]) for dat in data_ae_time]
         data_cls = datamodel.GaussianStationaryProcess(
-            data_ae_time, mask,
+            data_mean, mask, psd_cls,
             method=config["Imputation"]['method'],
             na=150, nb=150, p=config["Imputation"].getint("precondOrder"),
             tol=config["Imputation"].getfloat("tolerance"),
             n_it_max=config["Imputation"].getint("maximumIterationNumber"))
-
-        data_cls.compute_preconditioner(
-            psd_cls[0].calculate_autocorr(data_cls.n)[0:data_cls.n_max])
+        # Pre-compute quantities that do not get updated very often
+        data_cls.compute_offline()
+        if config["Imputation"]['method'] == 'PCG':
+            data_cls.compute_preconditioner()
 
     else:
         data_cls = None
@@ -189,7 +191,8 @@ if __name__ == '__main__':
     t1 = time.time()
     if config['Model'].getboolean('reduced'):
         aft, eft = ll_cls.compute_signal_reduced(p_sampl[i_sampl_intr],
-                                                 ll_cls.data_dft)
+                                                 ll_cls.data_dft,
+                                                 sn)
     else:
         aft, eft = ll_cls.compute_signal(p_sampl)
     t2 = time.time()
