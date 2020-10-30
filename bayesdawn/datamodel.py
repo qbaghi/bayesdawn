@@ -736,7 +736,10 @@ class GaussianStationaryProcess(object):
             # e_o = a_o - sigma_inv.dot(y_o)
             e_o = a_o - fastoeplitz.toepltiz_inverse_jain(
                 y_o, self.lambda_n, self.a)
-            y_mis = e_o[self.ind_mis]
+            # Multiply my the mask and them by the covariance Sigma
+            eps_given_o = ifft(fft(self.mask * e_o, 2*self.n_max) * self.s2)
+            
+            y_mis = eps_given_o[self.ind_mis]
 
         return y_mis
 
