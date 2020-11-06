@@ -1,5 +1,5 @@
-Module API
-==========
+bayesdawn
+=========
 
 .. toctree::
    :maxdepth: 4

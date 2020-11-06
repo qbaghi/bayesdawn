@@ -13,6 +13,7 @@ method to handle data gaps in gravitational-wave data analysis, as described in 
    :maxdepth: 2
 
    quickstart
+   methods
    modules
    
 
