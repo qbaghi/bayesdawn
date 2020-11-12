@@ -191,9 +191,14 @@ def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4):
 
     Parameters
     ----------
-    R : array_like
+    r : array_like
         autocovariance function (first row of the Toepltiz matrix)
-
+    p : scalar integer
+        maximum number of lags for the preconditionning
+    Nit : scalar integer
+        maximum number of iterations for PCG
+    tol : scalar float
+        relative error convergence criterium for the PCG algorithm
 
     Returns
     -------
@@ -201,12 +206,7 @@ def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4):
         prefactor of the inverse of T
     a : numpy array
         vector of size n_data-1 involved in the computation of the inverse of T
-    p : scalar integer
-        maximum number of lags for the preconditionning
-    Nit : scalar integer
-        maximum number of iterations for PCG
-    tol : scalar float
-        relative error convergence criterium for the PCG algorithm
+
 
 
     References
@@ -215,30 +215,34 @@ def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4):
     Decompositions, 1978
 
     """
-    N = len(r)
+    ndim = len(r)
     # First basis vector (of orthonormal cartesian basis)
-    e1 = np.concatenate(([1],np.zeros(N-1)))
+    e1 = np.concatenate(([1],np.zeros(ndim-1)))
     # Compute spectrum
-    S_2N = fft(np.concatenate((r,[0],r[1:][::-1])))
+    s_2n = fft(np.concatenate((r, [0] , r[1:][::-1])))
     # Linear operator correponding to the Toeplitz matrix
-    T_op = toepltizLinearOp(N,S_2N)
+    t_op = toepltizLinearOp(ndim, s_2n)
     # Preconditionner to approximate T^{-1}
-    Psolver = computeToepltizPrecond(r,p=p)
+    psolver = compute_toepltiz_precond(r, p=p)
     # Build the associated linear operator
-    P_op = matrixalgebra.precondLinearOp(Psolver,N,N)
+    p_op = matrixalgebra.precond_linear_op(psolver, ndim, ndim)
     # Initial guess
-    z,info = sparse.linalg.bicgstab(T_op, e1, x0=np.zeros(N),tol=tol,
-    maxiter=nit,M=P_op,callback=None)
-    matrixalgebra.printPCGstatus(info)
+    z, info = sparse.linalg.bicgstab(t_op, e1, 
+                                     x0=np.zeros(ndim),
+                                     tol=tol,
+                                     maxiter=nit,
+                                     M=p_op,
+                                     callback=None)
+    matrixalgebra.print_pcg_status(info)
 
     lambda_n = 1/z[0]
     a = lambda_n * z[1:]
 
-    return lambda_n,a
+    return lambda_n, a
 
 
 # ==============================================================================
-def computeToepltizPrecond(r, p=10, taper='Wendland2'):
+def compute_toepltiz_precond(r, p=10, taper='Wendland2'):
     """
     Compute a sparse preconditionner for solving T x = b where T is Toeplitz
     and symmetric, defined by autocovariance R

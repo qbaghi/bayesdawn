@@ -238,7 +238,7 @@ def print_pcg_status(info):
         print("illegal input or breakdown.")
         
 
-def precondLinearOp(solver, N_out, N_in):
+def precond_linear_op(solver, N_out, N_in):
 
     P_func = lambda x: solver(x)
     PH_func = lambda x: solver(x)
@@ -352,7 +352,7 @@ def pcg_solve(ind_obs, mask, s_2n, b, x0, tol, maxiter, p_solver, pcg_algo):
 
     elif 'scipy' in pcg_algo:
         coo_op = cov_linear_op(ind_obs, ind_obs, mask, s_2n)
-        p_op = precondLinearOp(p_solver, n_o, n_o)
+        p_op = precond_linear_op(p_solver, n_o, n_o)
         tol_eff = np.min([tol, tol * LA.norm(b)])
         if (pcg_algo == 'scipy') | (pcg_algo == 'scipy.bicgstab'):
             u, info = sparse.linalg.bicgstab(coo_op, b, x0=x0, tol=tol_eff,
@@ -386,9 +386,12 @@ def pcg_solve(ind_obs, mask, s_2n, b, x0, tol, maxiter, p_solver, pcg_algo):
 def compute_precond(autocorr, mask, p=10, ptype='sparse', taper='Wendland2',
                     square=True):
     """
-    For a given mask and a given PSD function, the function computes the linear
-    operator x = C_OO^{-1} b for any vector b, where C_OO is the covariance
-    matrix of the observed data (at points where mask==1).
+    For a given mask and a given PSD function, this function approximately 
+    computes the linear operator x = C_OO^{-1} b for any vector b, 
+    where C_OO is the covariance matrix of the observed data 
+    (at points where mask==1).
+    It uses an operator that is close to C_OO^{-1} but not exaclty it, 
+    and is fast to compute.
 
 
     Parameters
