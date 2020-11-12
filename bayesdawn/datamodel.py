@@ -429,7 +429,7 @@ class GaussianStationaryProcess(object):
         # Power spectral density computed on a frequency grid of size 2n
         self.s2 = None
         # Preconditionner for PCG or tapered methods
-        self.solve = None
+        self.solve = [None for channel in y_mean]
         # Inverted matrix for woodbury method
         self.sig_inv_mm_inv = None
         self.w_m_cls = None
@@ -490,12 +490,18 @@ class GaussianStationaryProcess(object):
                 w_m = self.w_m_cls.build_matrix(sp=False)
                 # s_n = self.psd_cls.calculate(self.n_max)
                 # sigma_inv_wmt = ifft(fft(w_m.T, axis=0) / np.array([s_n]).T, axis=0)
+                if type(self.psd_cls) != list:
+                    autocorr = self.autocorr[:]
+                else:
+                    # Assume same autocovariance for every channel
+                    autocorr = self.autocorr[0]
                 # Precompute quantities for calculating the inverse of Sigma
                 self.lambda_n, self.a = fastoeplitz.teopltiz_precompute(
-                    self.autocorr,  p=self.p, nit=self.n_it_max, tol=self.tol)
+                    autocorr,  p=self.p, nit=self.n_it_max, tol=self.tol)
                 sigma_inv_wmt = fastoeplitz.multiple_toepltiz_inverse(
                     w_m.T, self.lambda_n, self.a)
                 self.sig_inv_mm_inv = linalg.pinv(w_m.dot(sigma_inv_wmt))
+                    
             else:
                 msg = "Number of missing data is too large for woodbury method."
                 raise ValueError(msg)
@@ -519,7 +525,12 @@ class GaussianStationaryProcess(object):
                                                             self.mask, 
                                                             p=self.p,
                                                             taper='Wendland2')
-                              for autocorr in self.autocorr]              
+                              for autocorr in self.autocorr]
+            # # For now, use the same preconditionner for all channels           
+            # self.solve = matrixalgebra.compute_precond(self.autocorr, 
+            #                                             self.mask, 
+            #                                             p=self.p,
+            #                                             taper='Wendland2') 
             print("Preconditionner built.")
 
     def impute(self, y):
@@ -644,7 +655,8 @@ class GaussianStationaryProcess(object):
         elif type(y) == list:
             
             y_mis_res = [self.imputation(y[i] - self.y_mean[i], 
-                                         self.autocorr[i], self.s2[i]) 
+                                         self.autocorr[i], self.s2[i],
+                                         solve=self.solve[i]) 
                          for i in range(len(y))]
             y_rec = copy.deepcopy(y)
             
@@ -653,10 +665,10 @@ class GaussianStationaryProcess(object):
             
         return y_rec
 
-    def imputation(self, y, r, s2):
+    def imputation(self, y, r, s2, solve=None):
         """
 
-        Nearest neighboor imputation
+        Imputation method
 
         Parameters
         ----------
@@ -667,6 +679,8 @@ class GaussianStationaryProcess(object):
         s2 : array_like
             values of the noise spectrum calculated on a Fourier grid of size
             2 N_max
+        solve : linear operator
+            preconditionner
 
         Returns
         -------
@@ -699,28 +713,29 @@ class GaussianStationaryProcess(object):
             # y_rec[self.ind_obs] = y[self.ind_obs]
             # y_rec[self.ind_mis] = y_mis
         elif self.method == 'tapered':
-            # Sparse approximation of the covariance
-            print("Build preconditionner...")
-            self.solve = matrixalgebra.compute_precond(r, 
-                                                       self.mask, p=self.p,
-                                                       taper='Wendland2')
-            print("Preconditionner built.")
+            # # Sparse approximation of the covariance
+            # print("Build preconditionner...")
+            # self.solve = matrixalgebra.compute_precond(r, 
+            #                                            self.mask, p=self.p,
+            #                                            taper='Wendland2')
+            # print("Preconditionner built.")
             # Approximately solve the linear system C_oo x = eps
-            u = self.solve(y[self.ind_obs])
+            u = solve(y[self.ind_obs])
             # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
             y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
                                                 self.mask, s2)
         elif self.method == 'PCG':
             # Precompute solver if necessary
-            if self.solve is None:
-                self.compute_preconditioner(r)
+            if solve is None:
+                # self.compute_preconditioner(r)
+                raise ValueError("Please provide preconditionning operator")
             # First guess
             x0 = np.zeros(len(self.ind_obs))
             # Solve the linear system C_oo x = eps
             u, _ = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
                                            y[self.ind_obs], x0,
                                            self.tol, self.n_it_max,
-                                           self.solve,
+                                           solve,
                                           'scipy')
             # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
             y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
@@ -739,9 +754,8 @@ class GaussianStationaryProcess(object):
                                                           self.lambda_n, 
                                                           self.a)
             # Apply Sigma after multiplying by the mask
-            eps_given_o = fastoeplitz.toeplitz_multiplication(self.mask * e_o,
-                                                              self.autocorr,
-                                                              self.autocorr)  
+            eps_given_o = fastoeplitz.toeplitz_multiplication(
+                self.mask * e_o, r, r)  
             y_mis = eps_given_o[self.ind_mis]
 
         return y_mis

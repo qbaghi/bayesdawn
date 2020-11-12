@@ -21,6 +21,7 @@ if __name__ == '__main__':
     # Bayesdawn modules
     from bayesdawn import datamodel, psdmodel, samplers, posteriormodel
     from bayesdawn.utils import loadings, preprocess
+    from bayesdawn.postproc import postprocess
     # For parallel computing
     # from multiprocessing import Pool, Queue
     import ptemceeg
@@ -43,7 +44,7 @@ if __name__ == '__main__':
                           version="10.28.2018, Quentin Baghi")
     (options, args) = parser.parse_args()
     if not args:
-        config_file = "../configs/config_ldc.ini"
+        config_file = "../configs/config_ldc_single_gap.ini"
     else:
         config_file = args[0]
     # =========================================================================
@@ -108,14 +109,21 @@ if __name__ == '__main__':
     # =========================================================================
     scale = config["InputData"].getfloat("rescale")
     psd_estimation = config["PSD"].getboolean("estimation")
+    psd_model = config["PSD"].get("model")
     imputation = config["Imputation"].getboolean("imputation")
-    if psd_estimation:
+    if psd_estimation | (psd_model == 'spline'):
         print("PSD estimation enabled.")
+        f_knots = np.array([1e-5, 5e-4, 5e-3, 1e-2, 3e-2, 4e-2, 
+                            4.5e-2, 4.7e-2, 4.8e-2, 4.9e-2, 4.97e-2, 4.99e-2])
+        # n_knots = config["PSD"].getint("knotNumber")
+        n_knots = f_knots.shape[0]
         psd_cls = [psdmodel.PSDSpline(tm.shape[0], 1 / del_t,
-                                      n_knots=config["PSD"].getint("knotNumber"),
+                                      n_knots=n_knots,
                                       d=config["PSD"].getint("SplineOrder"),
                                       fmin=1 / (del_t * tm.shape[0]) * 1.05,
-                                      fmax=1 / (del_t * 2))
+                                      fmax=1 / (del_t * 2),
+                                      f_knots=f_knots,
+                                      ext=0)
                    for dat in data_ae_time]
         [psd_cls[i].estimate(data_ae_time[i]) for i in range(len(psd_cls))]
         sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
@@ -229,6 +237,7 @@ if __name__ == '__main__':
         periodic = [6]
 
     fftwisdom.save_wisdom()
+    
     # =======================================================================
     # Prepare data to save during sampling
     # =======================================================================
@@ -293,6 +302,7 @@ if __name__ == '__main__':
 
     elif config["Sampler"]["Type"] == 'ptemcee':
 
+        initialization = config["Sampler"].get("Initialization")
         nwalkers = config["Sampler"].getint("WalkerNumber")
         ntemps = config["Sampler"].getint("TemperatureNumber")
         n_callback = config['Sampler'].getint('AuxiliaryParameterUpdate')
@@ -304,6 +314,21 @@ if __name__ == '__main__':
         gibbskwargs = {'reduced': reduced, 
                        'update_mis': imputation,
                        'update_psd': psd_estimation}
+        
+        # =====================================================================
+        # Initialization of parameter state
+        # =====================================================================
+        if initialization == 'prior':
+            pos0 = np.random.uniform(lower_bounds, upper_bounds,
+                                     size=(ntemps, nwalkers, 
+                                           len(upper_bounds)))
+        elif initialization == 'file':
+            run_config_path = config["InputData"].get("initialRunPath")
+            names, par0, chain0, lnprob, sampler_type = postprocess.get_simu_parameters(run_config_path)
+            # n_burn = 1000
+            # i_map = np.where(lnprob[0, :, n_burn:] == np.max(lnprob[0, :, n_burn:]))
+            # p_map = chain0[0, :, n_burn:, :][i_map[0][0], i_map[1][0]]
+            pos0 = chain0[:, :, -1, :]
 
         if (not psd_estimation) & (not imputation):
 
@@ -323,12 +348,13 @@ if __name__ == '__main__':
                                 callback=None,
                                 n_callback=n_callback,
                                 n_start_callback=n_start_callback,
-                                pos0=None,
+                                pos0=pos0,
                                 save_path=out_dir + prefix)
             t2 = time.time()
             
         else:
             
+            # Define the function updating auxiliary parameters
             def gibbs(x, x2, **kwargs):
                 return ll_cls.update_auxiliary_params(x, x2, **kwargs)
         
@@ -353,7 +379,7 @@ if __name__ == '__main__':
             result = sampler.run(n_iter, n_save, n_thin,
                                  n_update=n_callback,
                                  n_start_update=n_start_callback,
-                                 pos0=None,
+                                 pos0=pos0,
                                  aux0=aux0,
                                  save_path=out_dir + prefix,
                                  verbose=2)
