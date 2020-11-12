@@ -3,11 +3,7 @@ import load_mcmc_config
 from . import resanalysis
 import gapgenerator as gg
 from . import psdplot
-from bayesdawn import imputation
-from bayesdawn import gwsampler
 from bayesdawn import psdsampler
-import alfreq
-
 import os
 import numpy as np
 import h5py
@@ -20,14 +16,10 @@ pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
 
 # Plot modules
-import myplots
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1.inset_locator import mark_inset, inset_axes
 
 from scipy import linalg as LA
-
-import pyFLR
-import alwaves
 
 if __name__=='__main__':
 

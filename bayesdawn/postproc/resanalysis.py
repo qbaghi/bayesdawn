@@ -17,7 +17,6 @@ from bayesdawn import psdsampler
 from matplotlib import pyplot as plt
 from matplotlib import rcParams
 import matplotlib as mpl
-import healpy as hp
 import pandas
 
 # from ligo.skymap import Clustered2Plus1DSkyKDE, Clustered2DSkyKDE
@@ -280,162 +279,6 @@ def create_sample_file(sample_data, file_name):
     fd.close()
 
 
-def write_healpix_map(skylocs, nside=16, outdir='./', enable_multiresolution=False, fitsoutname='skymap.fits.gz',
-                      nest=True):
-    """
-    Construct a sky map of the sky localization posterior distribution using Healpix
-
-
-    Parameters
-    ==========
-    skylocs : 2d numpy array
-        sky location angle matrix of size Nsamples x 2
-    logpvals : array_like
-        log posterior probability values, vector of size Nsamples
-    contour : float or None
-        plot contour enclosing this percentage of probability mass [may be specified multiple times, default: none]
-
-    theta = EclipticLatitude + np.pi / 2,
-    phi = EclipticLongitude - np.pi
-
-
-    """
-
-
-    # Conversion to Ecliptic latitude and longitude
-    # convert angles in right ascension and declination
-    # pts = np.column_stack((skylocs[:, 0] - np.pi / 2, skylocs[:, 1] + np.pi))
-    pts = np.column_stack((skylocs[:, 1] + np.pi, skylocs[:, 0] - np.pi / 2))
-
-    # Create instance of 2D KDE class
-    skypost = kde.Clustered2DSkyKDE(pts)
-
-    # # Pickle the skyposterior object
-    # with open(os.path.join(outdir, 'skypost.obj'), 'wb') as out:
-    #     pickle.dump(skypost, out)
-
-    # Making skymap
-    hpmap = skypost.as_healpix()
-
-    if not enable_multiresolution:
-        hpmap = bayestar.rasterize(hpmap)
-
-
-    # Include metadata
-    hpmap.meta.update(io.fits.metadata_for_version_module(version))
-    hpmap.meta['creator'] = 'Q. Baghi'
-    hpmap.meta['origin'] = 'LISA'
-    hpmap.meta['gps_creation_time'] = Time.now().gps
-
-
-    # Write skymap to file if needed
-    io.write_sky_map(os.path.join(outdir, fitsoutname), hpmap, nest=nest)
-
-
-def load_healpix_map(outdir, fitsoutname='skymap.fits.gz', radecs=[], contour=None, annotate=True, inset=False):
-    # Load skymap
-    skymap, metadata = io.fits.read_sky_map(os.path.join(outdir, fitsoutname), nest=None)
-
-    # Convert sky map from probability to probability per square degree.
-    nside = hp.npix2nside(len(skymap))
-    deg2perpix = hp.nside2pixarea(nside, degrees=True)
-    probperdeg2 = skymap / deg2perpix
-
-    # Projection type
-    #obstime = Time(metadata['gps_time'], format='gps').utc.isot
-    #obstime = Time(metadata['gps_creation_time'], format='gps').utc.isot
-    # ax = plt.axes(projection='geo degrees mollweide', obstime=obstime)
-    ax = plt.axes(projection='astro hours mollweide')
-    ax.grid()
-
-    # Plot sky map.
-    vmax = probperdeg2.max()
-    img = ax.imshow_hpx((probperdeg2, 'ICRS'), nested=metadata['nest'], vmin=0., vmax=vmax)
-
-
-    # Add colorbar.
-    cb = plot.colorbar(img)
-    #cb.set_label(r'Prob. per deg$^2$')
-    cb.set_label(r'Prob. per deg²')
-
-    # Add contours.
-    cls = 100 * postprocess.find_greedy_credible_levels(skymap)
-    cs = ax.contour_hpx(
-        (cls, 'ICRS'), nested=metadata['nest'],
-        colors='k', linewidths=0.5, levels=contour)
-    fmt = r'%g\%%' if rcParams['text.usetex'] else '%g%%'
-    plt.clabel(cs, fmt=fmt, fontsize=6, inline=True)
-
-    # # Add markers (e.g., for injections or external triggers).
-    # for ra, dec in radecs:
-    #     ax.plot_coord(
-    #         SkyCoord(ra, dec, unit='deg'), '*',
-    #         markerfacecolor='white', markeredgecolor='black', markersize=10)
-
-    # Try to add a zoom inset
-    if inset:
-        ra, dec = radecs
-        center = SkyCoord(ra*u.deg, dec*u.deg)
-        ax_inset = plt.axes(
-            [0.59, 0.3, 0.4, 0.4],
-            projection='astro zoom',
-            center=center,
-            radius=10 * u.deg)
-        for key in ['ra', 'dec']:
-            ax_inset.coords[key].set_ticklabel_visible(False)
-            ax_inset.coords[key].set_ticks_visible(False)
-        ax.grid()
-        ax.mark_inset_axes(ax_inset)
-        ax.connect_inset_axes(ax_inset, 'upper left')
-        ax.connect_inset_axes(ax_inset, 'lower left')
-        ax_inset.scalebar((0.1, 0.1), 5 * u.deg).label()
-        ax_inset.compass(0.9, 0.1, 0.2)
-
-        ax_inset.imshow_hpx((probperdeg2, 'ICRS'), nested=metadata['nest'], vmin=0., vmax=vmax)#, cmap='cylon')
-        ax_inset.plot(
-            center.ra.deg, center.dec.deg,
-            transform=ax_inset.get_transform('world'),
-            marker=plot.reticle(),
-            color='white',
-            markersize=30,
-            markeredgewidth=3)
-
-    # Add a white outline to all text to make it stand out from the background.
-    plot.outline_text(ax)
-    ax.grid()
-
-
-    if annotate:
-        text = []
-        try:
-            objid = metadata['objid']
-        except KeyError:
-            pass
-        else:
-            text.append('event ID: {}'.format(objid))
-        if contour:
-            pp = np.round(contour).astype(int)
-            ii = np.round(np.searchsorted(np.sort(cls), contour) *
-                          deg2perpix).astype(int)
-            for i, p in zip(ii, pp):
-                # FIXME: use Unicode symbol instead of TeX '$^2$'
-                # because of broken fonts on Scientific Linux 7.
-                text.append(
-                    u'{:d}% area: {:d} deg²'.format(p, i, grouping=True))
-        ax.text(1, 1, '\n'.join(text), transform=ax.transAxes, ha='right')
-
-    plt.show()
-
-
-    # # nside = hp.npix2nside(skylocs.shape[0])
-    # npix = hp.nside2npix(nside)
-    #
-    # pixels = hp.pixelfunc.ang2pix(nside, skylocs[:, 0], skylocs[:, 1])
-    #
-    # hp.mollview(pixels[0:npix], coord=['G', 'E'], title='Histogram equalized Ecliptic', unit='Probability', norm='hist')#, min=-1,max=1)
-
-
-
 def load_volume_map(input_name, nside=None, interpolate='nearest', contour=[90], simplify=True):
     """
 
@@ -451,7 +294,6 @@ def load_volume_map(input_name, nside=None, interpolate='nearest', contour=[90],
     """
 
     return 0
-
 
 
 def compute_log_evidence(logpvals, beta_ladder, deg=5):
@@ -568,8 +410,6 @@ def loadtdi(hdf5_name):
         labels = np.array([r'$\hat{\theta}$ [rad]', r'$\hat{\phi}$ [rad]', r'$\hat{f}_{0}-f_{0}$ [nHz]'])
 
     return dTDI, p, truths, labels, ts, Tobs
-
-
 
 
 def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes, 
@@ -751,9 +591,6 @@ def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes,
 
 
     return sample_list, logp_list, logl_list, bayes_list, bayes_std_list, f0, gaps, prefix, sufix
-
-
-
 
 
 
