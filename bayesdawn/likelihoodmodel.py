@@ -732,10 +732,6 @@ class LogLike(object):
         # Calculate the spectrum in the estimation band
         sn = [psd.calculate(self.f[self.inds]) for psd in self.psd_list]
         # It is currently x fs / 2. Should correct for that.
-        # Update the PSD used for data imputation
-        self.model.update_psd(self.psd_list)
-        # Pre-compute quantities depending on PSD
-        self.model.compute_offline()
         
         return sn
 
@@ -778,7 +774,7 @@ class LogLike(object):
         ----------
         par : array_like
             waveform parameters
-        data_dft_flat : ndarray
+        par_aux : ndarray
             auxiliary data parameters
         reduced : bool, optional
             If True, uses reduced likelihood (instrinsic), by default True
@@ -810,6 +806,11 @@ class LogLike(object):
         # Update PSD if requested
         if update_psd:
             sn = self.update_psd(y_gw_list, data)
+            if update_mis:
+                # Update the PSD used for data imputation
+                self.model.update_psd(self.psd_list)
+                # Pre-compute quantities depending on PSD
+                self.model.compute_offline()
         else:
             sn = self.sn[:]
 
@@ -996,7 +997,7 @@ class LogLike(object):
             data_dft = [par_aux[i*self.nf:(i+1)*self.nf] 
                         for i in range(len(self.channels))]
             sn = [par_aux[i*self.nf:(i+1)*self.nf] 
-                  for i in range(2, 2 + len(self.channels))]
+                  for i in range(len(self.channels), 2*len(self.channels))]
 
         # Compute the signal in the frequency domain
         at, et = self.compute_signal_reduced(par_intr, data_dft, sn)
