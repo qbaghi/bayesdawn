@@ -62,7 +62,9 @@ setup(
     python_requires='>=3.5', install_requires=['cython',
                                                'h5py',
                                                'scipy',
-                                               'numpy'],
+                                               'numpy',
+                                               'corner',
+                                               'pyfftw'],
     # ext_modules=cythonize(extensions),
     # include_dirs=[numpy.get_include(),
     #               os.path.join(numpy.get_include(), 'numpy')]
