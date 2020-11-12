@@ -82,8 +82,9 @@ def get_simu_parameters(config_path):
                   r'$\cos \beta$', r'$\lambda$', r'$\psi$', r'$\phi_0$']
 
     if 'LDC' in simu_name:
-        simu_path = '/Users/qbaghi/Codes/data/LDC/'
-        p, td = loadings.load_ldc_data(simu_path + '/' + simu_name)
+        # simu_path='/Users/qbaghi/Codes/data/LDC/'
+        # p, td = loadings.load_ldc_data(simu_path + '/' + simu_name)
+        p, _ = loadings.load_ldc_data(config["InputData"]["FilePath"])
         # Convert waveform parameters to actually sampled parameters
         par = physics.get_params(p, sampling=True)
         i_intr = [0, 1, 2, 3, 4, 7, 8]
