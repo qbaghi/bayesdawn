@@ -178,7 +178,7 @@ def toepltiz_inverse_jain(c, lambda_n, a):
     return np.real(we_2n[0:n]/lambda_n)
 
 
-def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4):
+def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4, precond='taper'):
     """
     Solve the system T y = e1 where T is symmetric Toepltiz.
     where e1 = [1 0 0 0 0 0].T to compute the vector a and lambda_n for
@@ -199,6 +199,8 @@ def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4):
         maximum number of iterations for PCG
     tol : scalar float
         relative error convergence criterium for the PCG algorithm
+    precond : str in {'taper', 'circulant'}
+        preconditionner to use
 
     Returns
     -------
@@ -221,9 +223,12 @@ def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4):
     # Compute spectrum
     s_2n = fft(np.concatenate((r, [0] , r[1:][::-1])))
     # Linear operator correponding to the Toeplitz matrix
-    t_op = toepltizLinearOp(ndim, s_2n)
+    t_op = toepltiz_linear_op(ndim, s_2n)
     # Preconditionner to approximate T^{-1}
-    psolver = compute_toepltiz_precond(r, p=p)
+    if precond == 'taper':
+        psolver = compute_toepltiz_precond(r, p=p)
+    elif precond == 'circulant':
+        psolver = toepltiz_linear_op(ndim, fft(r))
     # Build the associated linear operator
     p_op = matrixalgebra.precond_linear_op(psolver, ndim, ndim)
     # Initial guess
@@ -277,7 +282,7 @@ def compute_toepltiz_precond(r, p=10, taper='Wendland2'):
 
 
 # ==============================================================================
-def toepltizMatVectProd(y,S_2N):
+def toepltiz_mat_vect_prod(y, s_2n):
     """
     Linear operator that calculate T y_in assuming that we can write:
 
@@ -302,10 +307,10 @@ def toepltizMatVectProd(y,S_2N):
 
     """
 
-    return np.real( ifft( S_2N * fft(y,len(S_2N)) )[0:len(y)] )
+    return np.real(ifft(s_2n * fft(y, len(s_2n)))[0:len(y)])
 
 
-def toepltizLinearOp(N,S_2N):
+def toepltiz_linear_op(ndim, s_2n):
     """
     Construct a linear operator object that computes the operation C * v
     for any vector v, where C is a covariance matrix.
@@ -317,29 +322,32 @@ def toepltizLinearOp(N,S_2N):
 
     Parameters
     ----------
-    N : scalar integer
+    ndim : scalar integer
         size of the corresponding Toepltiz matrix
-    S_2N : numpy array (size P >= 2N)
+    s_2n : numpy array (size P >= 2N)
         PSD vector
 
 
     Returns
     -------
-    T_op : scipy.sparse.linalg.LinearOperator instance
+    t_op : scipy.sparse.linalg.LinearOperator instance
         linear opreator that computes the vector y_out = T * y_in for any
         vector of size n_data
 
     """
 
-    T_func = lambda x: toepltizMatVectProd(x,S_2N)
-    TH_func = lambda x: toepltizMatVectProd(x,S_2N)
-    Tmat_func = lambda X: np.array([toepltizMatVectProd(X[:,j],S_2N) 
+    t_func = lambda x: toepltiz_mat_vect_prod(x, s_2n)
+    th_func = lambda x: toepltiz_mat_vect_prod(x, s_2n)
+    tmat_func = lambda X: np.array([toepltiz_mat_vect_prod(X[:,j],s_2n) 
                                     for j in X.shape[1]]).T
 
-    T_op = sparse.linalg.LinearOperator(shape = (N,N),matvec=T_func,
-    rmatvec = TH_func,matmat = Tmat_func,dtype=np.float64)
+    t_op = sparse.linalg.LinearOperator(shape=(ndim,ndim),
+                                        matvec=t_func,
+                                        rmatvec=th_func,
+                                        matmat=tmat_func,
+                                        dtype=np.float64)
 
-    return T_op
+    return t_op
 
 
 def taper_covariance(h, theta, taper='Wendland1', tau=10):

@@ -497,7 +497,8 @@ class GaussianStationaryProcess(object):
                     autocorr = self.autocorr[0]
                 # Precompute quantities for calculating the inverse of Sigma
                 self.lambda_n, self.a = fastoeplitz.teopltiz_precompute(
-                    autocorr,  p=self.p, nit=self.n_it_max, tol=self.tol)
+                    autocorr,  p=self.p, nit=self.n_it_max, tol=self.tol,
+                    precond='circulant')
                 sigma_inv_wmt = fastoeplitz.multiple_toepltiz_inverse(
                     w_m.T, self.lambda_n, self.a)
                 self.sig_inv_mm_inv = linalg.pinv(w_m.dot(sigma_inv_wmt))
