@@ -325,31 +325,32 @@ if __name__ == '__main__':
         elif initialization == 'file':
             run_config_path = config["InputData"].get("initialRunPath")
             names, par0, chain0, lnprob, sampler_type = postprocess.get_simu_parameters(run_config_path)
-            # n_burn = 1000
-            # i_map = np.where(lnprob[0, :, n_burn:] == np.max(lnprob[0, :, n_burn:]))
+            n_burn = 2000
+            i_map = np.where(lnprob[0, :, n_burn:] == np.max(lnprob[0, :, n_burn:]))
             # p_map = chain0[0, :, n_burn:, :][i_map[0][0], i_map[1][0]]
-            pos0 = chain0[:, :, -1, :]
+            # pos0 = chain0[:, :, -1, :]
+            pos0 = chain0[:, :, i_map[1][0], :]
 
         if (not psd_estimation) & (not imputation):
 
-            sampler = samplers.ExtendedPTMCMC(nwalkers,
-                                            len(names),
-                                            log_likelihood,
-                                            posteriormodel.logp,
-                                            ntemps=ntemps,
-                                            threads=threads,
-                                            loglargs=[par_aux0],
-                                            logpargs=(lower_bounds,
+            sampler = samplers.ExtendedPTMCMC(nwalkers, 
+                                              len(names),
+                                              log_likelihood,
+                                              posteriormodel.logp,
+                                              ntemps=ntemps,
+                                              threads=threads,
+                                              loglargs=[par_aux0],
+                                              logpargs=(lower_bounds,
                                                         upper_bounds))
             t1 = time.time()
             result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
-                                config['Sampler'].getint('SavingNumber'),
-                                int(config["Sampler"]["thinningNumber"]),
-                                callback=None,
-                                n_callback=n_callback,
-                                n_start_callback=n_start_callback,
-                                pos0=pos0,
-                                save_path=out_dir + prefix)
+                                 config['Sampler'].getint('SavingNumber'),
+                                 int(config["Sampler"]["thinningNumber"]),
+                                 callback=None,
+                                 n_callback=n_callback,
+                                 n_start_callback=n_start_callback,
+                                 pos0=pos0,
+                                 save_path=out_dir + prefix)
             t2 = time.time()
             
         else:
