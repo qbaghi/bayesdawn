@@ -379,11 +379,12 @@ class ExtendedPTMCMC(ptemcee.Sampler):
             if ((it % n_save == 0) & (it != 0)) | (it == n_it - 1):
                 print("Save data at iteration " + str(it) + "...")
                 file_object = open(save_path + 'chain.p', "wb")
-                pickle.dump(self.chain[:, :, 0:it//n_thin, :], file_object)
+                pickle.dump(self.chain[:, :, 0:it//n_thin, :], file_object,
+                            protocol=4)
                 file_object.close()
                 file_object = open(save_path + 'lnprob.p', "wb")
                 pickle.dump(self.logprobability[:, :, 0:it//n_thin], 
-                            file_object)
+                            file_object, protocol=4)
                 file_object.close()
                 print("Data saved.")
 
