@@ -335,8 +335,10 @@ class GaussianStationaryProcess(object):
         psd_cls : psdmodel.PSD instance
             power spectral density class
         method : str
-            method to use to perform imputation. 'nearest': nearest neighboors,
-            approximate method.
+            method to use to perform imputation. 
+            'nearest': nearest neighboors, approximate method.
+            'PCG': preconjugate gradient, iterative exact method.
+            'woodbury': low-rank formulation, non-iterative, exact method.
         na : scalar integer
             number of points to consider before each gap (for the conditional
             distribution of gap data)
@@ -498,7 +500,7 @@ class GaussianStationaryProcess(object):
                 # Precompute quantities for calculating the inverse of Sigma
                 self.lambda_n, self.a = fastoeplitz.teopltiz_precompute(
                     autocorr,  p=self.p, nit=self.n_it_max, tol=self.tol,
-                    precond='circulant')
+                    precond='taper')
                 sigma_inv_wmt = fastoeplitz.multiple_toepltiz_inverse(
                     w_m.T, self.lambda_n, self.a)
                 self.sig_inv_mm_inv = linalg.pinv(w_m.dot(sigma_inv_wmt))
@@ -645,7 +647,8 @@ class GaussianStationaryProcess(object):
             # Impute the missing data: estimation of missing residuals
             y_mis_res = self.imputation(y - self.y_mean, 
                                         self.autocorr, 
-                                        self.s2)
+                                        self.s2,
+                                        solve=self.solve)
             # Construct the full imputed data vector
             # at observed value this is the same
             y_rec = copy.deepcopy(y)
@@ -695,9 +698,9 @@ class GaussianStationaryProcess(object):
             # Gap per gap imputation
             # =================================================================
             if self.n_max <= 2000:
-                
+
                 c = linalg.toeplitz(r)
-                
+
                 results = [self.single_imputation(y[indj], self.mask[indj], c,
                                                   s2) 
                            for indj in self.indices]
