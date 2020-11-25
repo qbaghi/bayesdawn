@@ -82,19 +82,23 @@ if __name__ == '__main__':
     # frequencies due to gaps
     f_minimum = config['Model'].getfloat('MinimumFrequency')
     f_maximum = config['Model'].getfloat('MaximumFrequency')
+    
+    include_gaps = config["TimeWindowing"].getboolean('gaps')
+    imputation = config["Imputation"].getboolean('imputation')
+    frequency_windowing = config["Model"].getboolean('accountForDistortions')
 
-    if (config["TimeWindowing"].getboolean('gaps')) \
-            & (not config["Imputation"].getboolean('imputation')):
+    if (include_gaps) & (not imputation) & frequency_windowing:
         f1, f2 = physics.find_distorted_interval(mask, p_sampl, t_offset,
-                                                 del_t, margin=0.4)
+                                                 del_t, margin=0.5)
         f1 = np.max([f1, 0])
         f2 = np.min([f2, 1 / (2 * del_t)])
-        inds = np.where((f_minimum <= freq_d)
-                        & (freq_d <= f_maximum)
-                        & ((freq_d <= f1) | (freq_d >= f2)))[0]
+        # inds = np.where((f_minimum <= freq_d)
+        #                 & (freq_d <= f_maximum)
+        #                 & ((freq_d <= f1) | (freq_d >= f2)))[0]
+        inds = np.where((f_minimum <= freq_d) & (freq_d <= f_maximum) 
+                        & (freq_d >= f2))[0]
     else:
-        inds = np.where((f_minimum <= freq_d)
-                        & (freq_d <= f_maximum))[0]
+        inds = np.where((f_minimum <= freq_d) & (freq_d <= f_maximum))[0]
 
     # Restriction of sampling parameters to instrinsic ones
     # Mc, q, tc, chi1, chi2, np.sin(bet), lam
