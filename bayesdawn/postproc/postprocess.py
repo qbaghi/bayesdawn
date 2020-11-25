@@ -60,7 +60,26 @@ def postprocess(chain, lnprob, names, par0, n_burn=500, n_thin=1, n_bins=40, k=4
     return fig, axes
 
 
-def get_simu_parameters(config_path):
+def get_simu_parameters(config_path, simu_path=None, ldc=True, intrinsic=True):
+    """
+
+    Parameters
+    ----------
+    config_path : string
+        path to analysis configuration file
+    simu_path : string, optional
+        path to the simulation file that was analyzed. If not provided, the 
+        path indicated in the configuration file will be used.
+    ldc : bool, optional
+        if the simulation is an LDC data set, by default True
+    intrinsic : bool, optional
+        Whether to restrict the parameters to the intrinsic ones, by default True
+
+    Returns
+    -------
+    names, par0, chain0, lnprob, sampler_type
+        [description]
+    """
 
     # Load config file
     config = configparser.ConfigParser()
@@ -81,10 +100,15 @@ def get_simu_parameters(config_path):
                   r'$\log D_L$', r'$\cos \i$',
                   r'$\cos \beta$', r'$\lambda$', r'$\psi$', r'$\phi_0$']
 
-    if 'LDC' in simu_name:
+    if simu_path is None:
+        input_path = config["InputData"]["FilePath"]
+    else:
+        input_path = simu_path + '/' + simu_name
+
+    if ldc:
         # simu_path='/Users/qbaghi/Codes/data/LDC/'
         # p, td = loadings.load_ldc_data(simu_path + '/' + simu_name)
-        p, _ = loadings.load_ldc_data(config["InputData"]["FilePath"])
+        p, _ = loadings.load_ldc_data(input_path)
         # Convert waveform parameters to actually sampled parameters
         par = physics.get_params(p, sampling=True)
         i_intr = [0, 1, 2, 3, 4, 7, 8]
@@ -98,27 +122,26 @@ def get_simu_parameters(config_path):
         chain = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_chain.p')
         lnprob = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_lnprob.p')
 
-        if not config["Model"].getboolean('reduced'):
-            # # Keep all parameters
-            # names = np.array(names_math)
-            # par0 = np.array(par)
-            # Restrict to instrinsic parameters
+        if not config["Model"].getboolean('reduced') and intrinsic:
+            # Even if all parameters were sampled, restrict to intrinsic ones
             names = np.array(names_math)[i_intr]
             par0 = np.array(par)[i_intr]
-            print("Shape of loaded sample array: " + str(chain.shape))
             chain0 = chain[:, :, :, i_intr]
             inds = np.where(chain0[0, 0, :, 0] != 0)[0]
-            print("Number of non-zero entries: " + str(len(inds)))
             chain0 = chain0[:, :, inds, :]
-            # chain0 = chain[:, :, inds, :]
-            print("Shape of non-zero sample array: " + str(chain0.shape))
+        elif not config["Model"].getboolean('reduced') and not intrinsic:
+            # Keep all parameters
+            names = np.array(names_math)
+            par0 = np.array(par)
+            chain0 = chain[:, :, chain[0, 0, :, 0] != 0, :]
         else:
             # Restrict to instrinsic parameters
             names = np.array(names_math)[i_intr]
             par0 = np.array(par)[i_intr]
-            print("Shape of loaded sample array: " + str(chain.shape))
             chain0 = chain[:, :, chain[0, 0, :, 0] != 0, :]
-            print("Shape of non-zero sample array: " + str(chain0.shape))
+
+        print("Shape of loaded sample array: " + str(chain.shape))
+        print("Shape of non-zero sample array: " + str(chain0.shape))
 
     elif sampler_type == 'dynesty':
         # fig, axes = dyplot.runplot(chain)  # summary (run) plot
