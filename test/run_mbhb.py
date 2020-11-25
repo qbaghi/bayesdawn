@@ -324,8 +324,8 @@ if __name__ == '__main__':
                                            len(upper_bounds)))
         elif initialization == 'file':
             run_config_path = config["InputData"].get("initialRunPath")
+            n_burn = config["Sampler"].getint("burnin")
             names, par0, chain0, lnprob, sampler_type = postprocess.get_simu_parameters(run_config_path)
-            n_burn = 2000
             i_map = np.where(lnprob[0, :, n_burn:] == np.max(lnprob[0, :, n_burn:]))
             # p_map = chain0[0, :, n_burn:, :][i_map[0][0], i_map[1][0]]
             # pos0 = chain0[:, :, -1, :]
