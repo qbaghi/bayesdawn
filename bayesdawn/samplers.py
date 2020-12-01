@@ -15,8 +15,10 @@ try:
     import dynesty
     from dynesty import NestedSampler, DynamicNestedSampler
     from dynesty.dynamicsampler import stopping_function, weight_function
+    dynesty_on = True
 except:
     print("dynesty does not seem to be installed. Proceed without it.")
+    dynesty_on = False
 
 
 def prior_transform(theta_u, lower_bound, upper_bound):
@@ -399,156 +401,156 @@ class ExtendedPTMCMC(ptemcee.Sampler):
 
         return pos, lnlike0, lnprob0
 
+if dynesty_on:
+    class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
 
-class ExtendedNestedSampler(dynesty.nestedsamplers.MultiEllipsoidSampler):
+        def __init__(self, *args, **kwargs):
 
-    def __init__(self, *args, **kwargs):
+            super(ExtendedNestedSampler, self).__init__(*args, **kwargs)
 
-        super(ExtendedNestedSampler, self).__init__(*args, **kwargs)
+        def get_chain(self):
 
-    def get_chain(self):
+            return self.results.samples
 
-        return self.results.samples
+        def update_log_likelihood(self, log_likelihood, loglike_args):
 
-    def update_log_likelihood(self, log_likelihood, loglike_args):
+            self.loglikelihood.func = log_likelihood
+            self.loglikelihood.args = loglike_args
 
-        self.loglikelihood.func = log_likelihood
-        self.loglikelihood.args = loglike_args
+        def update_log_prior(self, log_prior, log_prior_args):
+            pass
 
-    def update_log_prior(self, log_prior, log_prior_args):
-        pass
+        def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None,
+                save_path='./', param_names=None):
 
-    def run(self, n_it, n_update, n_thin, n_save, callback=None, pos0=None,
-            save_path='./', param_names=None):
+            print("The main nested sampling loop begins...")
+            for it, res in enumerate(self.sample(maxiter=n_it)):
+                if (it % n_update == 0) & (callback is not None):
+                    print("Update of auxiliary parameters at iteration " + str(it))
+                    # callback(self.saved_v[0, :])
+                    callback(self.results.samples[0, :])
+                if (it % n_save == 0) & (it != 0):
+                    print("Save data at iteration " + str(it))
+                    df = pd.DataFrame(self.results.samples[-n_save:, :],
+                                    columns=param_names)
+                    df.to_hdf(save_path, 'chain',
+                            append=True, mode='a', format='table')
 
-        print("The main nested sampling loop begins...")
-        for it, res in enumerate(self.sample(maxiter=n_it)):
-            if (it % n_update == 0) & (callback is not None):
-                print("Update of auxiliary parameters at iteration " + str(it))
-                # callback(self.saved_v[0, :])
-                callback(self.results.samples[0, :])
-            if (it % n_save == 0) & (it != 0):
-                print("Save data at iteration " + str(it))
-                df = pd.DataFrame(self.results.samples[-n_save:, :],
-                                  columns=param_names)
-                df.to_hdf(save_path, 'chain',
-                          append=True, mode='a', format='table')
-
-        print("Adding the final set of live points")
-        for it_final, res in enumerate(self.add_live_points()):
-            if (it_final % n_save == 0) & (it_final != 0):
-                print("Final iteration " + str(it_final) + " reached.")
-
-
-_SAMPLERS = dynesty.dynesty._SAMPLERS
-_SAMPLERS['extended'] = ExtendedNestedSampler
+            print("Adding the final set of live points")
+            for it_final, res in enumerate(self.add_live_points()):
+                if (it_final % n_save == 0) & (it_final != 0):
+                    print("Final iteration " + str(it_final) + " reached.")
 
 
-def extended_nested_sampler(*args, **kwargs):
-
-    return NestedSampler(*args, **kwargs)
-
-
-def extended_dynamic_nested_sampler(*args, **kwargs):
-
-    return DynamicNestedSampler(*args, **kwargs)
+    _SAMPLERS = dynesty.dynesty._SAMPLERS
+    _SAMPLERS['extended'] = ExtendedNestedSampler
 
 
-def save_object(obj, file_path):
+    def extended_nested_sampler(*args, **kwargs):
 
-    file_object = open(file_path, "wb")
-    pickle.dump(obj, file_object)
-    file_object.close()
+        return NestedSampler(*args, **kwargs)
 
 
-def run_and_save(sampler, nlive=50, n_save=1000, n_iter=100000,
-                 file_path="initial_save.p", dynamic=False):
-    """
-    External function allowing us to run a Dynamic Nested Sampler from Dynesty
-    while regularly saving the results
+    def extended_dynamic_nested_sampler(*args, **kwargs):
 
-    Parameters
-    ----------
-    sampler : DynamicNestedSampler instance
-        dynamic nested sampler
-    nlive : int
-        number of live points for the initial run
-    n_save : int
-        canence of result saving, expressed in number of iterations
-    file_path : str
-        directory path (+ suffix) where so save the results
+        return DynamicNestedSampler(*args, **kwargs)
 
-    Returns
-    -------
 
-    """
+    def save_object(obj, file_path):
 
-    if dynamic:
-        # Baseline run.
-        it = 0
-        for results in sampler.sample_initial(nlive=nlive, maxiter=n_iter):
-            it += 1
-            # If it is a multiple of n_save, save data
-            if it % n_save == 0:
-                print("Saving results at iteration " + str(it))
-                save_object(sampler.results, file_path + "initial_save.p")
-            else:
-                # print("Iteration " + str(it) + " completed.")
-                pass
+        file_object = open(file_path, "wb")
+        pickle.dump(obj, file_object)
+        file_object.close()
 
-        # Save initial results
-        save_object(sampler.results, file_path + "initial_save.p")
 
-        # Add batches until we hit the stopping criterion.
-        it = 0
-        while True:
-            # evaluate stop
-            stop = stopping_function(sampler.results,
-                                     stop_kwargs={'pfrac': 1.0})
-            if not stop:
-                # derive bounds
-                logl_bounds = weight_function(sampler.results,
-                                              wt_kwargs={'pfrac': 1.0})
-                for results in sampler.sample_batch(logl_bounds=logl_bounds,
-                                                    maxiter=n_iter):
-                    it += 1
-                    # If it is a multiple of n_save, save data
-                    if it % n_save == 0:
-                        print("Saving results at iteration " + str(it))
-                        save_object(sampler.results,
-                                    file_path + "batch_save.p")
-                    else:
-                        pass
-                sampler.combine_runs()  # add new samples to previous results
-            else:
-                break
+    def run_and_save(sampler, nlive=50, n_save=1000, n_iter=100000,
+                    file_path="initial_save.p", dynamic=False):
+        """
+        External function allowing us to run a Dynamic Nested Sampler from Dynesty
+        while regularly saving the results
 
-        # Save new results
-        save_object(sampler.results, file_path + "batch_save.p")
+        Parameters
+        ----------
+        sampler : DynamicNestedSampler instance
+            dynamic nested sampler
+        nlive : int
+            number of live points for the initial run
+        n_save : int
+            canence of result saving, expressed in number of iterations
+        file_path : str
+            directory path (+ suffix) where so save the results
 
-    else:
+        Returns
+        -------
 
-        # The main nested sampling loop.
-        print("Main nested sampling loop starts...")
-        for it, res in enumerate(sampler.sample(maxiter=n_iter,
-                                                save_samples=True)):
-            # If it is a multiple of n_save, run the callback function
-            if (it % n_save == 0) & (it != 0):
-                print("Saving results at iteration " + str(it))
-                save_object(sampler.results, file_path + "initial_save.p")
-            else:
-                pass
+        """
 
-        # Save initial results
-        save_object(sampler.results, file_path + "initial_save.p")
+        if dynamic:
+            # Baseline run.
+            it = 0
+            for results in sampler.sample_initial(nlive=nlive, maxiter=n_iter):
+                it += 1
+                # If it is a multiple of n_save, save data
+                if it % n_save == 0:
+                    print("Saving results at iteration " + str(it))
+                    save_object(sampler.results, file_path + "initial_save.p")
+                else:
+                    # print("Iteration " + str(it) + " completed.")
+                    pass
 
-        # Adding the final set of live points.
-        print("Adding the final set of live points...")
-        for it_final, res in enumerate(sampler.add_live_points()):
-            if (it_final % n_save == 0) & (it_final != 0):
-                save_object(sampler.results, file_path + "final_save.p")
-            else:
-                pass
+            # Save initial results
+            save_object(sampler.results, file_path + "initial_save.p")
 
-        # Save final results
-        save_object(sampler.results, file_path + "final_save.p")
+            # Add batches until we hit the stopping criterion.
+            it = 0
+            while True:
+                # evaluate stop
+                stop = stopping_function(sampler.results,
+                                        stop_kwargs={'pfrac': 1.0})
+                if not stop:
+                    # derive bounds
+                    logl_bounds = weight_function(sampler.results,
+                                                wt_kwargs={'pfrac': 1.0})
+                    for results in sampler.sample_batch(logl_bounds=logl_bounds,
+                                                        maxiter=n_iter):
+                        it += 1
+                        # If it is a multiple of n_save, save data
+                        if it % n_save == 0:
+                            print("Saving results at iteration " + str(it))
+                            save_object(sampler.results,
+                                        file_path + "batch_save.p")
+                        else:
+                            pass
+                    sampler.combine_runs()  # add new samples to previous results
+                else:
+                    break
+
+            # Save new results
+            save_object(sampler.results, file_path + "batch_save.p")
+
+        else:
+
+            # The main nested sampling loop.
+            print("Main nested sampling loop starts...")
+            for it, res in enumerate(sampler.sample(maxiter=n_iter,
+                                                    save_samples=True)):
+                # If it is a multiple of n_save, run the callback function
+                if (it % n_save == 0) & (it != 0):
+                    print("Saving results at iteration " + str(it))
+                    save_object(sampler.results, file_path + "initial_save.p")
+                else:
+                    pass
+
+            # Save initial results
+            save_object(sampler.results, file_path + "initial_save.p")
+
+            # Adding the final set of live points.
+            print("Adding the final set of live points...")
+            for it_final, res in enumerate(sampler.add_live_points()):
+                if (it_final % n_save == 0) & (it_final != 0):
+                    save_object(sampler.results, file_path + "final_save.p")
+                else:
+                    pass
+
+            # Save final results
+            save_object(sampler.results, file_path + "final_save.p")
