@@ -16,7 +16,7 @@ try:
     from dynesty import NestedSampler, DynamicNestedSampler
     from dynesty.dynamicsampler import stopping_function, weight_function
 except:
-    print("dynesty does not seem to be installed. Proceed without it."
+    print("dynesty does not seem to be installed. Proceed without it.")
 
 
 def prior_transform(theta_u, lower_bound, upper_bound):
