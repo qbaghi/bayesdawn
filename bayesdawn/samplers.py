@@ -3,17 +3,20 @@
 # This code implements simple Metropolis-Hastings MCMC
 
 import numpy as np
-from scipy import linalg as LA
+from scipy import linalg as linalg
 import copy
 from functools import reduce
 import ptemcee
 import h5py
-import tables
-import pandas as pd
-import dynesty
-from dynesty import NestedSampler, DynamicNestedSampler
 import pickle
-from dynesty.dynamicsampler import stopping_function, weight_function
+# import tables
+import pandas as pd
+try:
+    import dynesty
+    from dynesty import NestedSampler, DynamicNestedSampler
+    from dynesty.dynamicsampler import stopping_function, weight_function
+except:
+    print("dynesty does not seem to be installed. Proceed without it."
 
 
 def prior_transform(theta_u, lower_bound, upper_bound):
@@ -212,7 +215,7 @@ class MHSampler(object):
          # If the covariance is provided in the form of a matrix
         self.cov = cov
         if len(cov.shape) == 2 :
-            self.L = LA.cholesky(self.cov)
+            self.L = linalg.cholesky(self.cov)
             self.L_func = lambda x : self.L.conj().T.dot(x)
 
         else:
