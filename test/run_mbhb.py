@@ -44,7 +44,7 @@ if __name__ == '__main__':
                           version="10.28.2018, Quentin Baghi")
     (options, args) = parser.parse_args()
     if not args:
-        config_file = "../configs/config_ldc_single_gap.ini"
+        config_file = "../configs/config_ldc.ini"
     else:
         config_file = args[0]
     # =========================================================================
@@ -337,6 +337,14 @@ if __name__ == '__main__':
             pos0 = chain0[:, :, i_map[1][0], :]
             # Deleting useless variables
             del chain0, lnprob
+        
+        # Choosing parallelization process
+        multiproc = config["Sampler"].get("multiproc")
+        if multiproc == 'ray':
+            from ray.util.multiprocessing.pool import Pool
+            pool = Pool(threads)
+        else:
+            pool = None
 
         if (not psd_estimation) & (not imputation):
 
@@ -346,6 +354,7 @@ if __name__ == '__main__':
                                               posteriormodel.logp,
                                               ntemps=ntemps,
                                               threads=threads,
+                                              pool=pool,
                                               loglargs=[par_aux0],
                                               logpargs=(lower_bounds,
                                                         upper_bounds))
@@ -374,6 +383,7 @@ if __name__ == '__main__':
                 gibbs=gibbs,
                 dim2=par_aux0.shape[0],
                 threads=threads,
+                pool=pool,
                 loglargs=[],
                 loglkwargs={},
                 logpargs=(lower_bounds, upper_bounds),
