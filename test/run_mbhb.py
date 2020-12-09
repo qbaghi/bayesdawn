@@ -480,6 +480,8 @@ if __name__ == '__main__':
     # Append current date and prefix to file names
     now = datetime.datetime.now()
     prefix = now.strftime("%Y-%m-%d_%Hh%M-%S_")
+    suffix = config["OutputData"].get("FileSuffix")
+    prefix += suffix
     out_dir = config["OutputData"]["DirectoryPath"]
     print("Chosen saving path: " + out_dir)
     # Save the configuration file used for the run
