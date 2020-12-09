@@ -444,3 +444,29 @@ def compute_precond(autocorr, mask, p=10, ptype='sparse', taper='Wendland2',
             return np.real(ifft(fft(v, n_fft)/s_2n, len(v)))
 
     return solve
+
+
+def gls(dat, mat, sn):
+    """
+    Generalized least-square estimator.
+
+    Parameters
+    ----------
+    dat : ndarray
+        data vector, size n
+    mat : ndarray
+        design matrix, size n x p
+    sn : ndarray
+        variance vector, size n
+        
+    Returns
+    -------
+    amps : ndarray
+        estimated amplitudes, size p
+    """
+    
+    mat_weighted = mat / np.array([sn]).T
+    amps = LA.pinv(np.dot(mat_weighted.conj().T, mat)).dot(
+        np.dot(mat_weighted.conj().T, dat))
+    
+    return amps
