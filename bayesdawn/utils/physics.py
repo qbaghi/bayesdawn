@@ -75,6 +75,26 @@ def like_to_waveform(par):
     return params
 
 
+def waveform_to_dic(params):
+    
+    # Convert parameters back to dictionary
+    params_dic = {}
+    params_dic['m1'] = params[0] # Redshifted mass of body 1 (solar masses)        
+    params_dic['m2'] = params[1] # Redshifted mass of body 1 (solar masses)
+    params_dic['chi1'] = params[2] # Dimensionless spin of body 1 (in [-1, 1])
+    params_dic['chi2'] = params[3] # Dimensionless spin of body 2 (in [-1, 1])
+    params_dic['Deltat'] = params[4] # Time shift (s)
+    params_dic['dist'] = params[5] # Luminosity distance (Mpc)
+    params_dic['inc'] = params[6] # Inclination angle (rad)
+    params_dic['phi'] = params[7] # Observer's azimuthal phase (rad)
+    params_dic['lambda'] = params[8] # Source longitude (rad)
+    params_dic['beta'] = params[9] # Source latitude (rad)
+    params_dic['psi'] = params[10] # Polarization angle (rad)
+    
+    return params_dic
+
+
+
 def waveform_to_like(params):
     """
     Convert lisabeta waveform parameters to sampled parameters
@@ -269,6 +289,31 @@ def compute_frequency_vs_time(t, m_chirp, t_merger):
 
 
 def find_distorted_interval(mask, p_sampl, t0, del_t, margin=0):
+    """
+    Function locating the frequency interval where the MBHB waveform is 
+    most distorted by the presence of gaps.
+
+    Parameters
+    ----------
+    mask : ndarray
+        binary mask locating missing data
+    p_sampl : ndarray
+        sampling GW parameter vector
+    t0 : float
+        offset time [seconds], to account for a possible shift in the
+        arrival time (for example in LDC data set).
+    del_t : float
+        sampling time [seconds]
+    margin : int, optional
+        float, by default 0. Margin to include at the interval edges.
+
+    Returns
+    -------
+    f1 : float
+        lower frequency bound [Hz] of distorted interval
+    f2 : float
+        upper frequency bound [Hz] of distorted interval
+    """
 
     m_chirp = p_sampl[0]
     t_merger = p_sampl[2]

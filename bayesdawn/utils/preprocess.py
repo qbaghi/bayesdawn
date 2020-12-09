@@ -8,7 +8,14 @@ pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
 
 
-def preprocess(config, td, i1, i2, scale=1.0):
+def filter(dat, fc, del_t):
+    
+    b, a = signal.butter(5, fc, 'low', analog=False, fs=1/del_t)
+    xd = signal.filtfilt(b, a, dat)
+
+    return xd
+
+def preprocess_all(config, td, i1, i2, scale=1.0):
 
     del_t = td[1, 0] - td[0, 0]
 
@@ -60,7 +67,7 @@ def preprocess_ldc_data(p, td, config):
         t_offset = 52.657
 
     scale = config["InputData"].getfloat("rescale")
-    tm, xd, yd, zd, q = preprocess(config, td, i1, i2,
+    tm, xd, yd, zd, q = preprocess_all(config, td, i1, i2,
                                    scale=scale)
 
     return tm, xd, yd, zd, q, t_offset, tobs, del_t, p_sampl

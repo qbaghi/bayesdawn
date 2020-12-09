@@ -1,32 +1,240 @@
 # Standard useful python module
 import time
 import numpy as np
-from bayesdawn import likelihoodmodel
-# LDC modules
-# MC Sampler modules
-from bayesdawn.utils import physics
+import copy
+# Bayesdawn modules
+from bayesdawn.algebra import matrixalgebra
+# LISABeta and LDC tools
+import lisabeta.lisa.ldctools as ldctools
+import lisabeta.lisa.lisa as lisa
+import lisabeta.tools.pyspline as pyspline
 
 
-def prior_transform(theta_u, lower_bound, upper_bound):
-    # order in theta
-    # 0  1  2   3     4    5     6  7    8    9    10
-    # [Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0]
-    theta = lower_bound + (upper_bound - lower_bound) * theta_u
+def shiftTime(f,Xf,delay):
+    return Xf*np.exp(-2j*np.pi*f*delay)
 
-    return theta
+def generate_lisa_signal(wftdi, freq=None, channels=[1, 2, 3]):
+    '''
+    Args:
+      wftdi              # dictionary output from GenerateLISATDI
+      freq               # numpy array of freqs on which to sample waveform (or None)
+    Return:
+      dictionary with output TDI channel data yielding numpy complex data arrays 
+    '''
+
+    fs = wftdi['freq']
+    amp = wftdi['amp']
+    phase = wftdi['phase']
+    tr_list = [wftdi['transferL' + str(i)] for i in channels]
+
+    if freq is not None:
+        amp = pyspline.resample(freq, fs, amp)
+        phase = pyspline.resample(freq, fs, phase)
+        tr_list = [pyspline.resample(freq, fs, tr) for tr in tr_list]
+    else:
+        freq=fs
+
+    h = amp*np.exp(1j*phase)
+    signal={'ch'+str(i): h * tr_list[i-1] for i in channels}
+    signal['freq']=freq
+    
+    return signal
+
+# Creating a waveform generator from a vector of parameters
+def lisabeta_waveform(params, freq, 
+                      minf=1e-5, 
+                      maxf=0.1, 
+                      tshift=0,
+                      channels=[1, 2],
+                      tmin=None, 
+                      tmax=None,
+                      scale=1.0):
+    # params = m1s, m2s, a1, a2, tc, DL, inc, phi0, lam, beta, psi
+    # Convert vector to dictionary
+    params_dic = ldctools.make_params_dict(params)
+    # Compute waveform on coarse grid
+    wftdi=lisa.GenerateLISATDI_SMBH(params_dic, 
+                                    minf=minf, 
+                                    maxf=maxf,
+                                    tmin=tmin,
+                                    tmax=tmax,
+                                    TDI='TDIAET', 
+                                    order_fresnel_stencil=0, 
+                                    TDIrescaled=False, 
+                                    approximant='IMRPhenomD')
+    # Resample on finer grid
+    sig = generate_lisa_signal(wftdi[(2,2)], freq=freq, channels=channels)
+    return [shiftTime(freq, sig['ch' + str(i)], tshift).conj()*scale for i in channels]
+
+
+def compute_signal(p_sampl, freq,
+                   minf=1e-5, 
+                   maxf=0.1,
+                   t_offset=0.0,
+                   channels=[1, 2],
+                   scale=1.0):
+    
+    # Convert likelihood parameters into waveform-compatible parameters
+    params = physics.like_to_waveform(p_sampl)
+    # Waveform from LISABeta
+    return lisabeta_waveform(params, freq,
+                             minf=minf, 
+                             maxf=maxf,
+                             tshift=t_offset,
+                             channels=channels,
+                             scale=scale)
+    
+
+def design_matrix(params_intr, freq,
+                  minf=1e-5, 
+                  maxf=0.1, 
+                  t_offset=0.0,
+                  channels=[1, 2],
+                  scale=1.0,
+                  i_intr=[0, 1, 2, 3, 4, 8, 9],
+                  i_dist=5,
+                  i_inc=6,
+                  i_phi0=7,
+                  i_psi=10,
+                  i_tc=4):
+    """
+    Design matrix of basis functions for F-statistics computation.
+
+    Parameters
+    ----------
+    params_intr : ndarray
+        intrinsic parameters m1, m2, chi1, chi2, tc, lambd, beta
+    freq : ndarray
+        frequency array where to compute the basis.
+    tobs : float
+        observation time [s]
+    tref : int, optional
+        [description], by default 0
+    minf : [type], optional
+        [description], by default 1e-5
+    maxf : float, optional
+        [description], by default 0.1
+    t_offset : float, optional
+        [description], by default 0.0
+    channels : list, optional
+        [description], by default [1, 2]
+    i_intr : list, optional
+        [description], by default [0, 1, 2, 3, 4, 8, 9]
+    i_dist : int, optional
+        [description], by default 5
+    i_inc : int, optional
+        [description], by default 6
+    i_phi0 : int, optional
+        [description], by default 7
+    i_psi : int, optional
+        [description], by default 10
+    i_tc : int, optional
+        [description], by default 4
+
+
+    Returns
+    -------
+    mat_list : list
+        list of design matrices for each channel
+        
+    Reference
+    ---------
+    Marsat, Sylvain and Baker, John G, Fourier-domain modulations and delays of 
+    gravitational-wave signals, 2018
+    Neil J. Cornish and Kevin Shuman, Black Hole Hunting with LISA, 2020
+    
+    """
+
+    # First column
+    # m1, m2, chi1, chi2, tc, dist, inc, phi, lambd, beta, psi = params
+    # Building the F-statistics basis
+    
+    params_0 = np.zeros(11)
+    # Save intrinsic parameters
+    params_0[i_intr] = params_intr
+    # Luminosity distance (Mpc)
+    params_0[i_dist] = 1e4
+    # Inclination
+    params_0[i_inc] = 0.5 * np.pi
+    # 4 elements
+    params_list = [copy.deepcopy(params_0) for j in range(4)]
+    # First element (phi_c, phi) = (0, 0)
+    params_list[0][i_phi0] = 0
+    params_list[0][i_psi] = 0
+    # Second element (phi_c, phi) = (pi/2, pi/4)
+    params_list[1][i_phi0] = np.pi / 2
+    params_list[1][i_psi] = np.pi / 4
+    # Third element (phi_c, phi) = (3pi/4, 0)
+    params_list[2][i_phi0] = 3 * np.pi / 4
+    params_list[2][i_psi] = 0
+    # Fourth element (phi_c, phi) = (pi/4, pi/4)
+    params_list[3][i_phi0] = np.pi / 4
+    params_list[3][i_psi] = np.pi / 4
+    # Compute all 4 elements for all channels
+    elements = [lisabeta_waveform(params, freq, 
+                                  minf=minf, 
+                                  maxf=maxf, 
+                                  tshift=t_offset, 
+                                  channels=channels,
+                                 scale=scale)
+                for params in params_list]
+    # Compute the design matrices for each channel
+    mat_list = [np.vstack([el[i] for el in elements]).T 
+                for i in range(len(elements[0]))]
+
+    return mat_list
+
+
+def compute_signal_reduced(par_intr, freq, data_dft, sn,
+                           minf=1e-5, maxf=0.1, t_offset=0.0,
+                           channels=[1, 2], scale=1.0):
+    """
+
+    Parameters
+    ----------
+    par_intr : array_like
+        vector of intrinsic waveform parameters in the following order:
+        [Mc, q, tc, chi1, chi2, sb, lam]
+    data_dft :  list[ndarray]
+        List of windowed frequency-domain data restricted to the band 
+        of interest
+    sn : list of ndarrays
+        list of noise PSDs computed at freq for each channel
+
+    Returns
+    -------
+    ch_list : list[ndarrays]
+        list of complex GW strains for each channel
+
+    """
+
+    # Transform parameters into waveform-compatible ones
+    params_intr = physics.like_to_waveform_intr(par_intr)
+    # Compute design matrices for all channels
+    mat_list = design_matrix(params_intr, freq,
+                             minf=minf, 
+                             maxf=maxf, 
+                             t_offset=t_offset,
+                             channels=channels,
+                            scale=scale)
+    # Compute amplitudes
+    amps = [matrixalgebra.gls(data_dft[i], mat_list[i], sn[i]) 
+            for i in range(len(channels))]
+    # Compute estimated signals
+    ch_list = [np.dot(mat_list[i], amps[i]) for i in range(len(channels))]
+    
+    return ch_list
 
 
 if __name__ == '__main__':
 
     # Bayesdawn modules
     from bayesdawn import datamodel, psdmodel, samplers, posteriormodel
-    from bayesdawn.utils import loadings, preprocess
-    from bayesdawn.postproc import postprocess
+    from bayesdawn import likelihoodmodel
+    from bayesdawn.utils import loadings, preprocess, postprocess, physics
     # For parallel computing
     # from multiprocessing import Pool, Queue
     import ptemceeg
-    # LDC tools
-    import lisabeta.lisa.ldctools as ldctools
     # Loading modules
     import datetime
     import configparser
@@ -44,7 +252,7 @@ if __name__ == '__main__':
                           version="10.28.2018, Quentin Baghi")
     (options, args) = parser.parse_args()
     if not args:
-        config_file = "../configs/config_ldc.ini"
+        config_file = "../configs/config_template.ini"
     else:
         config_file = args[0]
     # =========================================================================
@@ -53,31 +261,74 @@ if __name__ == '__main__':
     fftwisdom.load_wisdom()
 
     # =========================================================================
-    # Unpacking the hdf5 file and getting data and source parameters
+    # Load and pre-process input data
     # =========================================================================
-    p, tdi_data = loadings.load_ldc_data(config["InputData"]["FilePath"])
+    if 'LDC' in config["InputData"]["FilePath"]:
+        # Unpacking the hdf5 file and getting data and source parameters
+        p, tdi_data = loadings.load_ldc_data(config["InputData"]["FilePath"])
+
+        # Pre-processing data: anti-aliasing, filtering and rescaling
+        preproc_data = preprocess.preprocess_ldc_data(p, tdi_data, config)
+        tm, xd, yd, zd, q, t_offset, tobs, del_t, p_sampl = preproc_data
+
+        # Convert Michelson TDI to a_mat, E, T (time domain)
+        ad, ed, td = ldctools.convert_XYZ_to_AET(xd, yd, zd)
+
+    else:
+        # Unpacking the hdf5 file and getting data and source parameters
+        tvect, signal_list, noise_list, params, tstart, del_t, tobs = loadings.load_simulation(
+            config["InputData"]["FilePath"])
+        # Form data = signal + noise
+        data_list = [signal_list[i] + noise_list[i] 
+                    for i in range(len(signal_list))]
+        # Convert waveform parameters to sampling parameters
+        p_sampl = physics.waveform_to_like(params)
+
+        # Trim the data if needed
+        if config['InputData'].getboolean('trim'):
+            # i1 = np.int(config["InputData"].getfloat("StartTime") / del_t)
+            # i2 = np.int(config["InputData"].getfloat("EndTime") / del_t)
+            i1 = np.argmin(np.abs(config["InputData"].getfloat("StartTime") - tvect))
+            i2 = np.argmin(np.abs(config["InputData"].getfloat("EndTime") - tvect))
+            tobs = (i2 - i1) * del_t
+            tstart = tvect[i1]
+        else:
+            i1 = 0
+            i2 = np.int(tvect.shape[0])
+            
+        # Downsampling and filtering if needed
+        scale = config["InputData"].getfloat("rescale")
+        dec = config['InputData'].getboolean('decimation')
+
+        if dec:
+            fc = config['InputData'].getfloat('filterFrequency')
+            q = config['InputData'].getint('decimationFactor')
+            data_pre_list = [preprocess.filter(dat, fc, del_t)
+                            for dat in data_list]
+        else:
+            data_pre_list = data_list[:]
+            q = 1
+
+        # Preprocessed data
+        data_pre_list = [dat[i1:i2:q]*scale for dat in data_pre_list]
+        tm = tvect[i1:i2:q]
+        ad, ed, td = data_pre_list
 
     # =========================================================================
-    # Pre-processing data: anti-aliasing, filtering and rescaling
-    # =========================================================================
-    preproc_data = preprocess.preprocess_ldc_data(p, tdi_data, config)
-    tm, xd, yd, zd, q, t_offset, tobs, del_t, p_sampl = preproc_data
-
+    # Load mask if needed
     # =========================================================================
     # Introducing gaps if requested
-    # =========================================================================
     wd, wd_full, mask = loadings.load_gaps(config, tm)
     print("Ideal decay number: "
-          + str(np.int((config["InputData"].getfloat("EndTime")
+        + str(np.int((config["InputData"].getfloat("EndTime")
                         - p_sampl[2]) / (2 * del_t))))
+    # And in time domain, including mask
+    data_ae_time = [mask * ad, mask * ed]
 
     # =========================================================================
-    # Now we get extract the data and transform it to frequency domain
+    # Transform data to frequency domain
     # =========================================================================
     freq_d = np.fft.fftfreq(len(tm), del_t * q)
-    # Convert Michelson TDI to a_mat, E, T (time domain)
-    ad, ed, td = ldctools.convert_XYZ_to_AET(xd, yd, zd)
-
     # Restrict the frequency band to high SNR region, and exclude distorted
     # frequencies due to gaps
     f_minimum = config['Model'].getfloat('MinimumFrequency')
@@ -104,9 +355,6 @@ if __name__ == '__main__':
     # Mc, q, tc, chi1, chi2, np.sin(bet), lam
     i_sampl_intr = [0, 1, 2, 3, 4, 7, 8]
     print("=================================================================")
-
-    # And in time domain, including mask
-    data_ae_time = [mask * ad, mask * ed]
 
     # =========================================================================
     # Auxiliary parameter classes
@@ -138,31 +386,6 @@ if __name__ == '__main__':
                                            scale=scale, fmin=None, fmax=None)
                    for ch in ['A', 'E']]
         sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
-        # Then set the PSD class to None to prevent its update
-        # psd_cls = None
-
-        # psd_cls = None
-        # # One-sided PSD
-        # sa = tdi.noisepsd_AE(freq_d[inds], model='Proposal', includewd=None)
-        # sn = [sa, sa]
-        # Select a chunk of data free of signal
-        # t_end = config["InputData"].getfloat("EndTime")
-        # ind_noise = np.where(tdi_data[t_end > tdi_data[:, 0], 0])[0]
-        # ad_noise, ed_noise, td_noise = ldctools.convert_XYZ_to_AET(
-        #     tdi_data[ind_noise, 1],
-        #     tdi_data[ind_noise, 2],
-        #     tdi_data[ind_noise, 3])
-        # data_ae_noise = [ad_noise, ed_noise]
-        # del ad_noise, ed_noise, td_noise
-        #
-        # psd_cls = [psdmodel.PSDSpline(data_ae_noise[0].shape[0], 1 / del_t,
-        #                               n_knots=config["PSD"].getint("knotNumber"),
-        #                               d=config["PSD"].getint("SplineOrder"),
-        #                               fmin=1 / (del_t * tm.shape[0]) * 1.05,
-        #                               fmax=1 / (del_t * 2))
-        #            for dat in data_ae_time]
-        # [psd_cls[i].estimate(data_ae_noise[i]) for i in range(len(psd_cls))]
-        # sn = [psd.calculate(freq_d[inds]) for psd in psd_cls]
 
     if imputation:
         print("Missing data imputation enabled.")
@@ -184,17 +407,26 @@ if __name__ == '__main__':
     # =========================================================================
     # Instantiate likelihood class
     # =========================================================================
+    # Normalization of DFT to account for windowing
     normalized = config['Model'].getboolean('normalized')
-
+    # Arguments of waveform generator
+    signal_kwargs = {"minf": 1e-5, 
+                    "maxf": 0.1,
+                    "t_offset": tstart,
+                    "channels": [1, 2],
+                    "scale": scale}
+    # Likelihood definition
     ll_cls = likelihoodmodel.LogLike(data_ae_time, sn, inds, tobs, del_t * q,
-                                     normalized=normalized,
-                                     t_offset=t_offset,
-                                     channels=[1, 2],
-                                     scale=scale,
-                                     model_cls=data_cls,
-                                     psd_cls=psd_cls,
-                                     wd=wd,
-                                     wd_full=wd_full)
+                                    compute_signal,
+                                    compute_signal_reduced,
+                                    signal_args=[],
+                                    signal_kwargs=signal_kwargs,
+                                    normalized=normalized,
+                                    channels=[1, 2],
+                                    model_cls=data_cls,
+                                    psd_cls=psd_cls,
+                                    wd=wd,
+                                    wd_full=wd_full)
 
     # =========================================================================
     # Testing likelihood
@@ -261,145 +493,104 @@ if __name__ == '__main__':
         os.environ["OMP_NUM_THREADS"] = "1"
     threads = config["Sampler"].getint("threadNumber")
     # Set seed
-    np.random.seed(int(config["Sampler"]["RandomSeed"]))
-    # Multiprocessing pool
-    # pool = Pool(4)
+    seed = config["Sampler"].get("RandomSeed")
+    if seed != "None":
+        np.random.seed(np.int(seed))
 
-    if config["Sampler"]["Type"] == 'dynesty':
-        # Instantiate sampler
-        if config['Sampler'].getboolean('dynamic'):
-            sampler = dynesty.DynamicNestedSampler(log_likelihood,
-                                                   prior_transform,
-                                                   ndim=len(names),
-                                                   bound='multi',
-                                                   sample='slice',
-                                                   periodic=periodic,
-                                                   ptform_args=(lower_bounds,
-                                                                upper_bounds),
-                                                   ptform_kwargs=None)
-                                                   # pool=pool, queue_size=4)
-        else:
-            # Instantiate sampler
-            nwalkers = config["Sampler"].getint("WalkerNumber")
-            sampler = dynesty.NestedSampler(log_likelihood, prior_transform,
-                                            ndim=len(names),
-                                            bound='multi', sample='slice',
-                                            periodic=periodic,
-                                            ptform_args=(lower_bounds,
-                                                         upper_bounds),
-                                            nlive=nwalkers)
+    initialization = config["Sampler"].get("Initialization")
+    nwalkers = config["Sampler"].getint("WalkerNumber")
+    ntemps = config["Sampler"].getint("TemperatureNumber")
+    n_callback = config['Sampler'].getint('AuxiliaryParameterUpdate')
+    n_start_callback = config['Sampler'].getint('AuxiliaryParameterStart')
+    n_iter = config["Sampler"].getint("MaximumIterationNumber")
+    n_save = config['Sampler'].getint('SavingNumber')
+    n_thin = config["Sampler"].getint("thinningNumber")
+    gibbsargs = []
+    gibbskwargs = {'reduced': reduced, 
+                    'update_mis': imputation,
+                    'update_psd': psd_estimation}
+    
+    # =====================================================================
+    # Initialization of parameter state
+    # =====================================================================
+    if initialization == 'prior':
+        pos0 = np.random.uniform(lower_bounds, upper_bounds,
+                                    size=(ntemps, nwalkers, 
+                                        len(upper_bounds)))
+    elif initialization == 'file':
+        run_config_path = config["InputData"].get("initialRunPath")
+        n_burn = config["Sampler"].getint("burnin")
+        names, par0, chain0, lnprob, sampler_type = postprocess.get_simu_parameters(
+            run_config_path, intrinsic=False)
+        i_map = np.where(lnprob[0, :, n_burn:] == np.max(lnprob[0, :, n_burn:]))
+        # p_map = chain0[0, :, n_burn:, :][i_map[0][0], i_map[1][0]]
+        # pos0 = chain0[:, :, -1, :]
+        pos0 = chain0[:, :, i_map[1][0], :]
+        # Deleting useless variables
+        del chain0, lnprob
+    
+    # Choosing parallelization process
+    multiproc = config["Sampler"].get("multiproc")
+    if multiproc == 'ray':
+        from ray.util.multiprocessing.pool import Pool
+        pool = Pool(threads)
+    else:
+        pool = None
 
-        print("n_live_init = " + config["Sampler"]["WalkerNumber"])
-        print("Save samples every " + config['Sampler']['SavingNumber']
-              + " iterations.")
+    if (not psd_estimation) & (not imputation):
 
-        nlive = config["Sampler"].getint("WalkerNumber")
-        n_save = config['Sampler'].getint('SavingNumber')
-        n_iter = config["Sampler"].getint("MaximumIterationNumber")
-        dynamic = config['Sampler'].getboolean('dynamic')
-        samplers.run_and_save(sampler,
-                              nlive=nlive,
-                              n_save=n_save,
-                              n_iter=n_iter,
-                              file_path=out_dir + prefix,
-                              dynamic=dynamic)
-
-    elif config["Sampler"]["Type"] == 'ptemcee':
-
-        initialization = config["Sampler"].get("Initialization")
-        nwalkers = config["Sampler"].getint("WalkerNumber")
-        ntemps = config["Sampler"].getint("TemperatureNumber")
-        n_callback = config['Sampler'].getint('AuxiliaryParameterUpdate')
-        n_start_callback = config['Sampler'].getint('AuxiliaryParameterStart')
-        n_iter = config["Sampler"].getint("MaximumIterationNumber")
-        n_save = config['Sampler'].getint('SavingNumber')
-        n_thin = config["Sampler"].getint("thinningNumber")
-        gibbsargs = []
-        gibbskwargs = {'reduced': reduced, 
-                       'update_mis': imputation,
-                       'update_psd': psd_estimation}
+        sampler = samplers.ExtendedPTMCMC(nwalkers, 
+                                            len(names),
+                                            log_likelihood,
+                                            posteriormodel.logp,
+                                            ntemps=ntemps,
+                                            threads=threads,
+                                            pool=pool,
+                                            loglargs=[par_aux0],
+                                            logpargs=(lower_bounds,
+                                                    upper_bounds))
+        t1 = time.time()
+        result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
+                                config['Sampler'].getint('SavingNumber'),
+                                int(config["Sampler"]["thinningNumber"]),
+                                callback=None,
+                                n_callback=n_callback,
+                                n_start_callback=n_start_callback,
+                                pos0=pos0,
+                                save_path=out_dir + prefix)
+        t2 = time.time()
         
-        # =====================================================================
-        # Initialization of parameter state
-        # =====================================================================
-        if initialization == 'prior':
-            pos0 = np.random.uniform(lower_bounds, upper_bounds,
-                                     size=(ntemps, nwalkers, 
-                                           len(upper_bounds)))
-        elif initialization == 'file':
-            run_config_path = config["InputData"].get("initialRunPath")
-            n_burn = config["Sampler"].getint("burnin")
-            names, par0, chain0, lnprob, sampler_type = postprocess.get_simu_parameters(
-                run_config_path, intrinsic=False)
-            i_map = np.where(lnprob[0, :, n_burn:] == np.max(lnprob[0, :, n_burn:]))
-            # p_map = chain0[0, :, n_burn:, :][i_map[0][0], i_map[1][0]]
-            # pos0 = chain0[:, :, -1, :]
-            pos0 = chain0[:, :, i_map[1][0], :]
-            # Deleting useless variables
-            del chain0, lnprob
+    else:
         
-        # Choosing parallelization process
-        multiproc = config["Sampler"].get("multiproc")
-        if multiproc == 'ray':
-            from ray.util.multiprocessing.pool import Pool
-            pool = Pool(threads)
-        else:
-            pool = None
-
-        if (not psd_estimation) & (not imputation):
-
-            sampler = samplers.ExtendedPTMCMC(nwalkers, 
-                                              len(names),
-                                              log_likelihood,
-                                              posteriormodel.logp,
-                                              ntemps=ntemps,
-                                              threads=threads,
-                                              pool=pool,
-                                              loglargs=[par_aux0],
-                                              logpargs=(lower_bounds,
-                                                        upper_bounds))
-            t1 = time.time()
-            result = sampler.run(int(config["Sampler"]["MaximumIterationNumber"]),
-                                 config['Sampler'].getint('SavingNumber'),
-                                 int(config["Sampler"]["thinningNumber"]),
-                                 callback=None,
-                                 n_callback=n_callback,
-                                 n_start_callback=n_start_callback,
-                                 pos0=pos0,
-                                 save_path=out_dir + prefix)
-            t2 = time.time()
-            
-        else:
-            
-            # Define the function updating auxiliary parameters
-            def gibbs(x, x2, **kwargs):
-                return ll_cls.update_auxiliary_params(x, x2, **kwargs)
+        # Define the function updating auxiliary parameters
+        def gibbs(x, x2, **kwargs):
+            return ll_cls.update_auxiliary_params(x, x2, **kwargs)
+    
+        sampler = ptemceeg.Sampler(
+            nwalkers, len(names), 
+            log_likelihood, 
+            posteriormodel.logp,
+            ntemps=ntemps,
+            gibbs=gibbs,
+            dim2=par_aux0.shape[0],
+            threads=threads,
+            pool=pool,
+            loglargs=[],
+            loglkwargs={},
+            logpargs=(lower_bounds, upper_bounds),
+            gibbsargs=gibbsargs,
+            gibbskwargs=gibbskwargs)
         
-            sampler = ptemceeg.Sampler(
-                nwalkers, len(names), 
-                log_likelihood, 
-                posteriormodel.logp,
-                ntemps=ntemps,
-                gibbs=gibbs,
-                dim2=par_aux0.shape[0],
-                threads=threads,
-                pool=pool,
-                loglargs=[],
-                loglkwargs={},
-                logpargs=(lower_bounds, upper_bounds),
-                gibbsargs=gibbsargs,
-                gibbskwargs=gibbskwargs)
-            
-            print("Start MC sampling...")
-            t1 = time.time()
-            aux0 = np.full((nwalkers, par_aux0.shape[0]), par_aux0, 
-                           dtype=np.complex128)
-            result = sampler.run(n_iter, n_save, n_thin,
-                                 n_update=n_callback,
-                                 n_start_update=n_start_callback,
-                                 pos0=pos0,
-                                 aux0=aux0,
-                                 save_path=out_dir + prefix,
-                                 verbose=2)
-            t2 = time.time()
-        print("MC completed in " + str(t2 - t1) + " seconds.")
+        print("Start MC sampling...")
+        t1 = time.time()
+        aux0 = np.full((nwalkers, par_aux0.shape[0]), par_aux0, 
+                        dtype=np.complex128)
+        result = sampler.run(n_iter, n_save, n_thin,
+                                n_update=n_callback,
+                                n_start_update=n_start_callback,
+                                pos0=pos0,
+                                aux0=aux0,
+                                save_path=out_dir + prefix,
+                                verbose=2)
+        t2 = time.time()
+    print("MC completed in " + str(t2 - t1) + " seconds.")

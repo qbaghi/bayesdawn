@@ -36,19 +36,52 @@ def load_samples(hdf5_name):
 
 
 def load_simulation(hdf5_name,
-                    param_keylist=['m1', 'm2', 'xi1', 'xi2', 'tc', 'dist',
-                                   'inc', 'phi0', 'lam', 'beta', 'psi'],
-                    signal_keylist=['tdi_a', 'tdi_e', 'tdi_ts']):
+                    param_keylist=["m1", "m2", "chi1", "chi2", "Deltat", 
+                                   "dist", "inc", "phi", "lambda", "beta", 
+                                   "psi"],
+                    signal_keylist=['tdi_a', 'tdi_e', 'tdi_t']):
+    """
+    Load home-made simulation.
+
+    Parameters
+    ----------
+    hdf5_name : str
+        name of input hdf5 file
+    param_keylist : list, optional
+        GW parameters keys, by default ["m1", "m2", "chi1", "chi2", "Deltat", 
+        "dist", "inc", "phi", "lambda", "beta", "psi"]
+    signal_keylist : list, optional
+        Channel keys, by default ['tdi_a', 'tdi_e', 'tdi_t']
+
+    Returns
+    -------
+    signal_list : list
+        List of signal time series for each channel
+    noise_list : list
+        List of noise time series for each channel
+    params : ndarray
+        GW parameters
+    tstart : float
+        Start time of observation [s]
+    del_t : float
+        Sampling time [s]
+    tobs : float
+        Observation time [s]
+    """
 
     # Load data
     fh5 = h5py.File(hdf5_name, 'r')
     params = [fh5["parameters/" + par][()]for par in param_keylist]
-    time_vect = fh5["signal/time"][()]
+    # time_vect = fh5["signal/time"][()]
     signal_list = [fh5["signal/" + sig][()] for sig in signal_keylist]
     noise_list = [fh5["noise/" + sig][()] for sig in signal_keylist]
+    tstart = fh5["time/start_time"][()]
+    del_t = fh5["time/del_t"][()]
+    tobs = fh5["time/tobs"][()]
+    tvect = fh5["time/time_stamps"][()]
     fh5.close()
 
-    return time_vect, signal_list, noise_list, params
+    return tvect, signal_list, noise_list, params, tstart, del_t, tobs
 
 
 def create_config_file(file_name='example.ini'):

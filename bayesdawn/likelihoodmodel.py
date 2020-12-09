@@ -5,13 +5,14 @@ Created on Tue Jan 22 17:11:56 2019
 @author: qbaghi
 """
 import numpy as np
-from scipy import linalg as LA
+from scipy import linalg
 # FTT modules
 import pyfftw
 from pyfftw.interfaces.numpy_fft import fft, ifft
-from .waveforms import lisaresp
+# from .waveforms import lisaresp
 from . import gaps
 from .utils import physics
+from .algebra import matrixalgebra
 pyfftw.interfaces.cache.enable()
 
 
@@ -62,7 +63,7 @@ def gls(mat_fft, psd, y_fft):
 
     mat_fft_weighed = mat_fft / np.array([psd]).T
 
-    return LA.pinv(mat_fft_weighed.conj().T.dot(mat_fft)).dot(
+    return linalg.pinv(mat_fft_weighed.conj().T.dot(mat_fft)).dot(
         mat_fft_weighed.conj().T.dot(y_fft))
 
 
@@ -617,16 +618,20 @@ def gls(mat_fft, psd, y_fft):
 
 class LogLike(object):
 
-    def __init__(self, data, sn, inds, tobs, del_t, normalized=False,
-                 t_offset=52.657, channels=None, scale=1.0,
+    def __init__(self, data, sn, inds, tobs, del_t,
+                 signal_func,
+                 signal_reduced_func,
+                 signal_args=[],
+                 signal_kwargs={},
+                 normalized=False, channels=None,
                  model_cls=None, psd_cls=None, wd=None, wd_full=None):
         """
 
         Parameters
         ----------
         data : list of ndarrays
-            TDI data a_mat, E, T in the time domain, without any smooth
-            windowing (except binary masking)
+            TDI data A, E, T in the time domain, without any smooth
+            windowing (except binary masking).
         sn : list of ndarrays
             list of noise PSDs computed at freq for each channel
         inds: array_like
@@ -638,12 +643,28 @@ class LogLike(object):
             data sampling cadence
         normalized : boolean
             whether to apply normalization constant for the log-likelihood
-        t_offset : float
-            offset time for the waveform start
+        signal_func : callable
+            GW waveform generator function, taking the full sampling parameter 
+            vector and a frequency vector as input, and outputing a list of 
+            waveforms in the frequency domain (one for each channel). 
+            The amplitude should be normalized as the discrete Fourier 
+            transform multiplied by the sampling time (like data_dft).
+        signal_reduced_func : callable
+            GW waveform generator function, taking as input the intrinsic 
+            sampling parameter vector, a frequency vector, 
+            the discrete Fourier transformed data vector list, and the PSD 
+            list. It should output a list of waveforms in the frequency domain 
+            (one for each channel). 
+            The amplitude shouldbe normalized as the discrete Fourier transform 
+            multiplied by the sampling time (like data_dft).
+        signal_args : list
+            list of secondary arguments to pass to signal_func or 
+            signal_reduced_func
+        signal_kargs : dictionnary
+            list of keyword arguments to pass to signal_func or 
+            signal_reduced_func           
         channels : list of ints
             TDI channels to consider
-        scale : float
-            rescaling factor for waveforms (data must already be rescaled)
         model_cls : bayesdawn.datamodel.GaussianStationaryModel instance
             data model used for missing data imputation
         psd_cls : list bayesdawn.psdmodel.PSD instance
@@ -653,19 +674,23 @@ class LogLike(object):
         """
 
         self.data = data
-        self.scale = scale
         self.sn = sn
         self.tobs = tobs
         self.del_t = del_t
         # Full data size
         self.n_data = self.data[0].shape[0]
         self.nf = len(inds)
-        self.t_offset = t_offset
         self.df = 1 / (self.n_data * self.del_t)
         self.f = np.fft.fftfreq(self.n_data) / self.del_t
         # Fourier bin indices where we restrict the analysis
         # intersect, self.inds, comm2 = np.intersect1d(self.f, freq)
         self.inds = inds
+        
+        # Waveform generators
+        self.signal_func = signal_func
+        self.signal_reduced_func = signal_reduced_func
+        self.signal_args = signal_args
+        self.signal_kwargs = signal_kwargs
 
         # Time windowing for gapped data
         if wd is None:
@@ -691,12 +716,6 @@ class LogLike(object):
             self.ll_norm = self.log_norm(self.data_dft, sn)
         else:
             self.ll_norm = 0
-        # The full set of parameters is
-        # m1, m2, chi1, chi2, tc, dist, incl, phi0, lam, bet, psi
-        # Indices of extrinsic parameters
-        self.i_ext = [5, 6, 7, 10]
-        # Indices of intrinsic parameters m1, m2, chi1, chi2, tc, bet, psi
-        self.i_intr = [0, 1, 2, 3, 4, 8, 9]
 
         if channels is None:
             self.channels = [1, 2]
@@ -762,6 +781,58 @@ class LogLike(object):
         # self.data_dft = data_dft[:]
         
         return y_imp, data_dft
+    
+    def compute_signal(self, par):
+        """
+        Compute the GW signal in the frequency domain
+
+        Parameters
+        ----------
+        par : array_like
+            array of sampling parameters 
+            [Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0]
+
+        Returns
+        -------
+        ch_list : list[ndarray]
+            list of frequency-domain signal for each channel. Should be 
+            directly comparable to the Fourier-transformed data with the 
+            following normalization:
+            FFT(y) * scale * del_t, where del_t is the sampling time and 
+            scale is any rescaling factor applied to the data.
+            This waveform generator does not account for any smooth windowing.
+
+        """
+        
+        return self.signal_func(par, self.f[self.inds], 
+                                *self.signal_args,
+                                **self.signal_kwargs)
+        
+    def compute_signal_reduced(self, par_intr, data_dft, sn):
+        """
+
+        Parameters
+        ----------
+        par_intr : array_like
+            vector of intrinsic waveform parameters in the following order:
+            [Mc, q, tc, chi1, chi2, sb, lam]
+        data_dft :  list[ndarray]
+            List of windowed frequency-domain data restricted to the band 
+            of interest
+        sn : list of ndarrays
+            list of noise PSDs computed at freq for each channel
+
+        Returns
+        -------
+        ch_list : list[ndarrays]
+            list of complex GW strains for each channel
+
+        """
+        return self.signal_reduced_func(par_intr, self.f[self.inds], data_dft,
+                                        sn, 
+                                        *self.signal_args,
+                                        **self.signal_kwargs)
+        
 
     def update_auxiliary_params(self, par, par_aux, 
                                 reduced=True,
@@ -844,32 +915,6 @@ class LogLike(object):
 
         return ll_norm
 
-    def compute_signal(self, par):
-        """
-        Compute the GW signal in the frequency domain
-
-        Parameters
-        ----------
-        par : array_like
-            array of sampling parameters
-
-        Returns
-        -------
-        ch_list : list[ndarray]
-            list of frequency-domain signal for each channel
-
-        """
-
-        # Convert likelihood parameters into waveform-compatible parameters
-        params = physics.like_to_waveform(par)
-
-        # Compute waveform template
-        ch = lisaresp.lisabeta_template(params, self.f[self.inds], self.tobs,
-                                        tref=0, t_offset=self.t_offset,
-                                        channels=self.channels)
-
-        return [ch_i * self.scale for ch_i in ch]
-
     def frequency_to_time(self, y_gw_fft_pos):
         """
         Compute the waveform in the time domain from the waveform values in the
@@ -928,49 +973,53 @@ class LogLike(object):
 
         return np.real(ll_a + ll_e + self.ll_norm)
 
-    def compute_signal_reduced(self, par_intr, data_dft, sn):
-        """
+    # def compute_signal_reduced(self, par_intr, data_dft, sn):
+    #     """
 
-        Parameters
-        ----------
-        par_intr : array_like
-            vector of intrinsic waveform parameters in the following order:
-            [Mc, q, tc, chi1, chi2, sb, lam]
-        data_dft :  list[ndarray]
-            List of windowed frequency-domain data restricted to the band 
-            of interest
-        sn : list of ndarrays
-            list of noise PSDs computed at freq for each channel
+    #     Parameters
+    #     ----------
+    #     par_intr : array_like
+    #         vector of intrinsic waveform parameters in the following order:
+    #         [Mc, q, tc, chi1, chi2, sb, lam]
+    #     data_dft :  list[ndarray]
+    #         List of windowed frequency-domain data restricted to the band 
+    #         of interest
+    #     sn : list of ndarrays
+    #         list of noise PSDs computed at freq for each channel
 
-        Returns
-        -------
+    #     Returns
+    #     -------
+    #     ch_list : list[ndarrays]
+    #         list of complex GW strains for each channel
 
-        """
+    #     """
 
-        # Transform parameters into waveform-compatible ones
-        params_intr = physics.like_to_waveform_intr(par_intr)
+    #     # Transform parameters into waveform-compatible ones
+    #     params_intr = physics.like_to_waveform_intr(par_intr)
 
-        # Design matrices for each channel
-        mat_list = lisaresp.design_matrix(params_intr, self.f[self.inds],
-                                          self.tobs,
-                                          tref=0, t_offset=self.t_offset,
-                                          channels=self.channels)
-        # Weighted design matrices
-        mat_list_weighted = [mat_list[i] / np.array([sn[i]]).T
-                             for i in range(len(self.channels))]
-        # Compute amplitudes
-        amps = [LA.pinv(np.dot(mat_list_weighted[i].conj().T,
-                               mat_list[i])).dot(
-                                   np.dot(mat_list_weighted[i].conj().T,
-                                          data_dft[i]))
-                for i in range(len(self.channels))]
-        # amps = [LA.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, self.data[i]))
-        #         for i in range(len(self.channels))]
-        # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
-        # at = np.dot(mat_list[0], amps[0])
-        # et = np.dot(mat_list[1], amps[1])
+    #     # Design matrices for each channel
+    #     mat_list = lisaresp.design_matrix(params_intr, self.f[self.inds],
+    #                                       self.tobs,
+    #                                       tref=0, t_offset=self.t_offset,
+    #                                       channels=self.channels)
+    #     # # Weighted design matrices
+    #     # mat_list_weighted = [mat_list[i] / np.array([sn[i]]).T
+    #     #                      for i in range(len(self.channels))]
+    #     # Compute amplitudes
+    #     amps = [matrixalgebra.gls(data_dft[i], mat_list[i], sn[i]) 
+    #             for i in range(len(self.channels))]
+    #     # amps = [linalg.pinv(np.dot(mat_list_weighted[i].conj().T,
+    #     #                        mat_list[i])).dot(
+    #     #                            np.dot(mat_list_weighted[i].conj().T,
+    #     #                                   data_dft[i]))
+    #     #         for i in range(len(self.channels))]
+    #     # amps = [LA.pinv(np.dot(mat_list[i].conj().T, mat_list[i])).dot(np.dot(mat_list[i].conj().T, self.data[i]))
+    #     #         for i in range(len(self.channels))]
+    #     # aet_rec = [np.dot(mat_list[i], amps[i]) for i in range(len(aet))]
+    #     # at = np.dot(mat_list[0], amps[0])
+    #     # et = np.dot(mat_list[1], amps[1])
 
-        return [np.dot(mat_list[i-1], amps[i-1]) for i in self.channels]
+    #     return [np.dot(mat_list[i], amps[i]) for i in range(len(self.channels))]
 
     def log_likelihood_reduced(self, par_intr, par_aux):
         """

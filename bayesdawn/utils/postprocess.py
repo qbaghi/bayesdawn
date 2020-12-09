@@ -4,7 +4,10 @@ from scipy import stats
 import configparser
 import os
 from . import loadings, physics
-
+import pyfftw
+from pyfftw.interfaces.scipy_fftpack import fft, ifft
+# Enable the cache to save FFTW plan to perform faster fft for the subsequent calls of pyfftw
+pyfftw.interfaces.cache.enable()
 
 # def postprocess(chain, lnprob, names, par0, n_burn=500, n_thin=1, n_bins=40, k=4):
 #     """
@@ -152,3 +155,51 @@ def get_simu_parameters(config_path, simu_path=None, ldc=True, intrinsic=True):
                                            + '/' + prefix + '_initial_save.p')
 
     return names, par0, chain0, lnprob, sampler_type
+
+
+def periodogram(y, wd='blackman', del_t=1.0, module=True, sqroot=True,
+                onesided=True):
+    """
+    Compute periodogram with time-domain windowing, using convensions of 
+    one-sided power spectral density.
+
+    Parameters
+    ----------
+    y : ndarray
+        input time series
+    wd : ndarray or str
+        time window
+    del_t : float, optional
+        sampling time, by default 1.0
+    module : bool
+        if True, the module of the FFT is taken, so that the output is real
+    sqroot : bool
+        if True, the output is in sqrt{PSD}
+    onesided : bool
+        if True, the output is equivalent to the one-sided PSD
+    """
+    
+    if type(wd) == str:
+        if wd == 'hannning':
+            wd = np.hanning(y.shape[0])
+        elif wd == 'blackman':
+            wd = np.blackman(y.shape[0])
+        elif wd == 'rect':
+            wd = np.ones(y.shape[0])
+    
+    if onesided:
+        fact = 2.0
+    else:
+        fact = 1.0
+    
+    y_fft = fft(y * wd) * np.sqrt(fact * del_t / np.sum(wd**2))
+    
+    if module:
+        per = np.abs(y_fft)
+    else:
+        per = y_fft[:]
+    if not sqroot:
+        per = np.sqrt(per)
+        
+    return per
+    
