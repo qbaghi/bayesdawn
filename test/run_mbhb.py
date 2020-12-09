@@ -339,7 +339,7 @@ if __name__ == '__main__':
     frequency_windowing = config["Model"].getboolean('accountForDistortions')
 
     if (include_gaps) & (not imputation) & frequency_windowing:
-        f1, f2 = physics.find_distorted_interval(mask, p_sampl, t_offset,
+        f1, f2 = physics.find_distorted_interval(mask, p_sampl, tstart,
                                                  del_t, margin=0.5)
         f1 = np.max([f1, 0])
         f2 = np.min([f2, 1 / (2 * del_t)])
