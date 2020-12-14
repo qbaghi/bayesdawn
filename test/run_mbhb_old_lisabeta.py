@@ -40,6 +40,23 @@ def generate_lisa_signal(wftdi, freq=None, channels=[1, 2, 3]):
     
     return signal
 
+
+def make_params_dict(paramslist):
+    params={}
+    params['m1']   = paramslist[0]
+    params['m2']   = paramslist[1]
+    params['chi1'] = paramslist[2]
+    params['chi2'] = paramslist[3]
+    params['Deltat']=paramslist[4]
+    params['dist'] = paramslist[5]
+    params['inc']  = paramslist[6]
+    params['phi']  = paramslist[7]
+    params['lambda']=paramslist[8]
+    params['beta'] = paramslist[9]
+    params['psi']  = paramslist[10]
+    return params
+
+
 # Creating a waveform generator from a vector of parameters
 def lisabeta_waveform(params, freq, 
                       minf=1e-5, 
@@ -51,7 +68,7 @@ def lisabeta_waveform(params, freq,
                       scale=1.0):
     # params = m1s, m2s, a1, a2, tc, DL, inc, phi0, lam, beta, psi
     # Convert vector to dictionary
-    params_dic = ldctools.make_params_dict(params)
+    params_dic = make_params_dict(params)
     # Compute waveform on coarse grid
     wftdi=lisa.GenerateLISATDI(params_dic, 
                                minf=minf, 
