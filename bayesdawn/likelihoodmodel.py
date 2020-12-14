@@ -624,7 +624,8 @@ class LogLike(object):
                  signal_args=[],
                  signal_kwargs={},
                  normalized=False, channels=None,
-                 model_cls=None, psd_cls=None, wd=None, wd_full=None):
+                 model_cls=None, psd_cls=None, wd=None, wd_full=None,
+                 gap_convolution=False):
         """
 
         Parameters
@@ -669,6 +670,9 @@ class LogLike(object):
             data model used for missing data imputation
         psd_cls : list bayesdawn.psdmodel.PSD instance
             noise PSD model
+        gap_convolution : boolean
+            if True, the waveform is convolved with the gap window.
+            Significantly increases the likelihood evaluation time.
 
 
         """
@@ -726,6 +730,8 @@ class LogLike(object):
         self.model = model_cls
         # For noise PSD estimation
         self.psd_list = psd_cls
+        # Gap convolution flag
+        self.gap_convolution = gap_convolution
 
     def update_psd(self, y_gw_list, data):
         """
@@ -929,6 +935,30 @@ class LogLike(object):
         y_gw_fft[self.n_data - self.inds] = np.conj(y_gw_fft_pos)
 
         return np.real(ifft(y_gw_fft))/self.del_t
+    
+    def apply_gap_convolution(self, y_gw_fft_pos):
+        """
+        Transform the frequency-domain waveform to account for gaps.
+
+        Parameters
+        ----------
+        y_gw_fft_pos : list[ndarray]
+            list of frequency-domain waveforms for all channels.
+            
+        Returns
+        -------
+        y_gw_masked_fft : list[ndarray]
+            list of distorted frequency-domain waveforms for all channels.
+        """
+        
+        # Convert waveform to time domain
+        y_gw_list = [self.frequency_to_time(y_gw_fft_pos[i]) 
+                     for i in range(len(y_gw_fft_pos))]
+        # Apply mask window and Fourier transform back
+        y_gw_masked_fft = [fft(self.wd * dat)[self.inds] * self.del_t * self.resc
+                           for dat in y_gw_list]
+        
+        return y_gw_masked_fft
 
     def log_likelihood(self, par, par_aux):
         """
@@ -960,6 +990,9 @@ class LogLike(object):
 
         # Compute waveform template
         at, et = self.compute_signal(par)
+        # Convolve with gap window if requested
+        if self.gap_convolution:
+            at, et = self.apply_gap_convolution([at, et])
 
         # (h | y)
         sna = np.sum(np.real(data_dft[0] * np.conjugate(at)) / sn[0])
@@ -1052,6 +1085,9 @@ class LogLike(object):
 
         # Compute the signal in the frequency domain
         at, et = self.compute_signal_reduced(par_intr, data_dft, sn)
+        # Convolve with gap window if requested
+        if self.gap_convolution:
+            at, et = self.apply_gap_convolution([at, et])
 
         # (h | y)
         sna = np.sum(np.real(data_dft[0] * np.conjugate(at)) / sn[0])

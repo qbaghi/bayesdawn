@@ -409,6 +409,8 @@ if __name__ == '__main__':
     # =========================================================================
     # Normalization of DFT to account for windowing
     normalized = config['Model'].getboolean('normalized')
+    # Whether to apply the gap distortion to the waveform
+    gap_convolution = config['Model'].getboolean('gapConvolution')
     # Arguments of waveform generator
     signal_kwargs = {"minf": 1e-5, 
                     "maxf": 0.1,
@@ -426,7 +428,8 @@ if __name__ == '__main__':
                                     model_cls=data_cls,
                                     psd_cls=psd_cls,
                                     wd=wd,
-                                    wd_full=wd_full)
+                                    wd_full=wd_full,
+                                    gap_convolution=gap_convolution)
 
     # =========================================================================
     # Testing likelihood
