@@ -71,7 +71,7 @@ def lisabeta_waveform(params, freq,
     wftdi=lisa.GenerateLISATDI(params_dic, 
                                minf=minf, 
                                maxf=maxf,
-                               TDI='TDIAET', 
+                               TDItag='TDIAET', 
                                order_fresnel_stencil=0, 
                                TDIrescaled=False, 
                                approximant='IMRPhenomD')
