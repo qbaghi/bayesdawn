@@ -861,7 +861,9 @@ class LogLike(object):
         if (self.psd_list is not None) | (self.model is not None):
             # Compute waveform template in the frequency domain
             if reduced:
-                at, et = self.compute_signal_reduced(par, data_dft, self.sn)
+                sn = [par_aux[i*self.nf:(i+1)*self.nf] 
+                      for i in range(2, 2 + len(self.channels))]
+                at, et = self.compute_signal_reduced(par, data_dft, sn)
             else:
                 at, et = self.compute_signal(par)
 
