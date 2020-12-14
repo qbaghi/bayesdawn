@@ -269,7 +269,7 @@ if __name__ == '__main__':
 
         # Pre-processing data: anti-aliasing, filtering and rescaling
         preproc_data = preprocess.preprocess_ldc_data(p, tdi_data, config)
-        tm, xd, yd, zd, q, t_offset, tobs, del_t, p_sampl = preproc_data
+        tm, xd, yd, zd, q, tstart, tobs, del_t, p_sampl = preproc_data
 
         # Convert Michelson TDI to a_mat, E, T (time domain)
         ad, ed, td = ldctools.convert_XYZ_to_AET(xd, yd, zd)
