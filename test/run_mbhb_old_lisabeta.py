@@ -63,8 +63,6 @@ def lisabeta_waveform(params, freq,
                       maxf=0.1, 
                       tshift=0,
                       channels=[1, 2],
-                      tmin=None, 
-                      tmax=None,
                       scale=1.0):
     # params = m1s, m2s, a1, a2, tc, DL, inc, phi0, lam, beta, psi
     # Convert vector to dictionary
@@ -73,8 +71,6 @@ def lisabeta_waveform(params, freq,
     wftdi=lisa.GenerateLISATDI(params_dic, 
                                minf=minf, 
                                maxf=maxf,
-                               tmin=tmin,
-                               tmax=tmax,
                                TDI='TDIAET', 
                                order_fresnel_stencil=0, 
                                TDIrescaled=False, 
