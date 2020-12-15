@@ -7,7 +7,7 @@ This module provide routines to perform fast toeplitz matrix computations
 """
 from . import matrixalgebra
 import numpy as np
-from scipy import sparse
+from scipy import sparse, linalg
 # FTT modules
 import pyfftw
 pyfftw.interfaces.cache.enable()
@@ -178,7 +178,8 @@ def toepltiz_inverse_jain(c, lambda_n, a):
     return np.real(we_2n[0:n]/lambda_n)
 
 
-def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4, precond='taper'):
+def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4, method='PCG',
+                        precond='taper'):
     """
     Solve the system T y = e1 where T is symmetric Toepltiz.
     where e1 = [1 0 0 0 0 0].T to compute the vector a and lambda_n for
@@ -220,25 +221,28 @@ def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4, precond='taper'):
     ndim = len(r)
     # First basis vector (of orthonormal cartesian basis)
     e1 = np.concatenate(([1],np.zeros(ndim-1)))
-    # Compute spectrum
-    s_2n = fft(np.concatenate((r, [0] , r[1:][::-1])))
-    # Linear operator correponding to the Toeplitz matrix
-    t_op = toepltiz_linear_op(ndim, s_2n)
-    # Preconditionner to approximate T^{-1}
-    if precond == 'taper':
-        psolver = compute_toepltiz_precond(r, p=p)
-    elif precond == 'circulant':
-        psolver = toepltiz_linear_op(ndim, fft(r))
-    # Build the associated linear operator
-    p_op = matrixalgebra.precond_linear_op(psolver, ndim, ndim)
-    # Initial guess
-    z, info = sparse.linalg.bicgstab(t_op, e1, 
-                                     x0=np.zeros(ndim),
-                                     tol=tol,
-                                     maxiter=nit,
-                                     M=p_op,
-                                     callback=None)
-    matrixalgebra.print_pcg_status(info)
+    if method == 'PCG':
+        # Compute spectrum
+        s_2n = fft(np.concatenate((r, [0] , r[1:][::-1])))
+        # Linear operator correponding to the Toeplitz matrix
+        t_op = toepltiz_linear_op(ndim, s_2n)
+        # Preconditionner to approximate T^{-1}
+        if precond == 'taper':
+            psolver = compute_toepltiz_precond(r, p=p)
+        elif precond == 'circulant':
+            psolver = toepltiz_linear_op(ndim, fft(r))
+        # Build the associated linear operator
+        p_op = matrixalgebra.precond_linear_op(psolver, ndim, ndim)
+        # Initial guess
+        z, info = sparse.linalg.bicgstab(t_op, e1, 
+                                        x0=np.zeros(ndim),
+                                        tol=tol,
+                                        maxiter=nit,
+                                        M=p_op,
+                                        callback=None)
+        matrixalgebra.print_pcg_status(info)
+    elif method == 'levinson':
+        z = linalg.solve_toeplitz(r, e1)
 
     lambda_n = 1/z[0]
     a = lambda_n * z[1:]

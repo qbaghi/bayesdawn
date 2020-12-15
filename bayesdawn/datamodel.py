@@ -322,8 +322,8 @@ class GaussianStationaryProcess(object):
     """
 
     def __init__(self, y_mean, mask, psd_cls,
-                 method='nearest', na=150, nb=150, p=60,
-                 tol=1e-6, n_it_max=1000):
+                 method='nearest', precond='taper', na=150, nb=150, p=60,
+                 tol=1e-6, n_it_max=1000, n_wood_max=5000):
         """
 
         Parameters
@@ -339,6 +339,8 @@ class GaussianStationaryProcess(object):
             'nearest': nearest neighboors, approximate method.
             'PCG': preconjugate gradient, iterative exact method.
             'woodbury': low-rank formulation, non-iterative, exact method.
+        precond : str
+            Preconditionning methods among {'taper', 'circulant'}.
         na : scalar integer
             number of points to consider before each gap (for the conditional
             distribution of gap data)
@@ -359,12 +361,16 @@ class GaussianStationaryProcess(object):
         self.n = len(mask)
         # Imputation method
         self.method = method
+        # Preconditionning method
+        self.precond = precond
         # Tappering number for sparse approximation of the covariance
         self.p = p
         # Error tolerance to reach to end PCG algorithm iterations
         self.tol = tol
         # Maximum number of iterations for the PCG algorithm
         self.n_it_max = n_it_max
+        # Maximum missing data length accepted by Woodbury method 
+        self.n_wood_max = n_wood_max
         # Check whether there are gaps
         if np.any(self.mask == 0):
             # Starting and ending points of gaps
@@ -486,7 +492,7 @@ class GaussianStationaryProcess(object):
         print("Computation of autocovariance + PSD took " + str(t2-t1))
         
         if self.method == 'woodbury':
-            if len(self.ind_mis) < 1e3:
+            if len(self.ind_mis) <= self.n_wood_max:
                 print("Start Toeplitz system precomputations...")
                 self.w_m_cls = operators.MappingOperator(self.ind_mis, self.n)
                 w_m = self.w_m_cls.build_matrix(sp=False)
@@ -500,7 +506,8 @@ class GaussianStationaryProcess(object):
                 # Precompute quantities for calculating the inverse of Sigma
                 self.lambda_n, self.a = fastoeplitz.teopltiz_precompute(
                     autocorr,  p=self.p, nit=self.n_it_max, tol=self.tol,
-                    precond='taper')
+                    method='levinson',
+                    precond=self.precond)
                 sigma_inv_wmt = fastoeplitz.multiple_toepltiz_inverse(
                     w_m.T, self.lambda_n, self.a)
                 self.sig_inv_mm_inv = linalg.pinv(w_m.dot(sigma_inv_wmt))

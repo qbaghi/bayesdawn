@@ -393,6 +393,7 @@ if __name__ == '__main__':
         data_cls = datamodel.GaussianStationaryProcess(
             data_mean, mask, psd_cls,
             method=config["Imputation"]['method'],
+            precond=config["Imputation"]['precond'],
             na=150, nb=150, p=config["Imputation"].getint("precondOrder"),
             tol=config["Imputation"].getfloat("tolerance"),
             n_it_max=config["Imputation"].getint("maximumIterationNumber"))
@@ -409,6 +410,7 @@ if __name__ == '__main__':
     # =========================================================================
     # Normalization of DFT to account for windowing
     normalized = config['Model'].getboolean('normalized')
+    reduced = config['Model'].getboolean('reduced')
     # Whether to apply the gap distortion to the waveform
     gap_convolution = config['Model'].getboolean('gapConvolution')
     # Arguments of waveform generator
@@ -436,7 +438,7 @@ if __name__ == '__main__':
     # =========================================================================
     par_aux0 = np.concatenate(ll_cls.data_dft + sn)
     t1 = time.time()
-    if config['Model'].getboolean('reduced'):
+    if reduced:
         aft, eft = ll_cls.compute_signal_reduced(p_sampl[i_sampl_intr],
                                                  ll_cls.data_dft,
                                                  sn)
@@ -460,7 +462,6 @@ if __name__ == '__main__':
     [print("Bounds for parameter " + names[i] + ": " + str(bounds[i]))
      for i in range(len(names))]
     # If reduced likelihood is chosen, sample only intrinsic parameters
-    reduced = config['Model'].getboolean('reduced')
     if reduced:
         names = np.array(names)[i_sampl_intr]
         lower_bounds = lower_bounds[i_sampl_intr]
@@ -591,11 +592,11 @@ if __name__ == '__main__':
         aux0 = np.full((nwalkers, par_aux0.shape[0]), par_aux0, 
                         dtype=np.complex128)
         result = sampler.run(n_iter, n_save, n_thin,
-                                n_update=n_callback,
-                                n_start_update=n_start_callback,
-                                pos0=pos0,
-                                aux0=aux0,
-                                save_path=out_dir + prefix,
-                                verbose=2)
+                             n_update=n_callback,
+                             n_start_update=n_start_callback,
+                             pos0=pos0,
+                             aux0=aux0,
+                             save_path=out_dir + prefix,
+                             verbose=2)
         t2 = time.time()
     print("MC completed in " + str(t2 - t1) + " seconds.")

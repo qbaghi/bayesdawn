@@ -860,20 +860,19 @@ class LogLike(object):
         update_psd : bool, optional
             If True, perform PSD estimation step to update PSD
         """
-        
+        # Extract Fourier-domain data
         data_dft = [par_aux[i*self.nf:(i+1)*self.nf] 
                     for i in range(len(self.channels))]
+        # Extract PSD
+        sn = [par_aux[i*self.nf:(i+1)*self.nf] 
+                for i in range(2, 2 + len(self.channels))]
 
         if (self.psd_list is not None) | (self.model is not None):
             # Compute waveform template in the frequency domain
             if reduced:
-                sn = [par_aux[i*self.nf:(i+1)*self.nf] 
-                      for i in range(2, 2 + len(self.channels))]
                 at, et = self.compute_signal_reduced(par, data_dft, sn)
             else:
                 at, et = self.compute_signal(par)
-
-            # y_gw_fft_list = [at, et]
             # Convert the signal in the time domain (factor 1 / del_t incluced)
             y_gw_list = [self.frequency_to_time(y_gw_fft_pos)
                          for y_gw_fft_pos in [at, et]]
@@ -890,8 +889,6 @@ class LogLike(object):
                 self.model.update_psd(self.psd_list)
                 # Pre-compute quantities depending on PSD
                 self.model.compute_offline()
-        else:
-            sn = self.sn[:]
 
         # Encapsulate auxiliary parameters lists
         return np.concatenate(data_dft + sn)
