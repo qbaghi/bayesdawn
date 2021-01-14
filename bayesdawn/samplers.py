@@ -10,11 +10,11 @@ import ptemcee
 import h5py
 import pickle
 # import tables
-import pandas as pd
 try:
     import dynesty
     from dynesty import NestedSampler, DynamicNestedSampler
     from dynesty.dynamicsampler import stopping_function, weight_function
+    import pandas as pd
     dynesty_on = True
 except:
     print("dynesty does not seem to be installed. Proceed without it.")
