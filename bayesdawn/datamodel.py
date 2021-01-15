@@ -332,8 +332,11 @@ class GaussianStationaryProcess(object):
             mean vector of the Gaussian process, size n
         mask : array_like
             binary mask
-        psd_cls : psdmodel.PSD instance
-            power spectral density class
+        psd_cls : psdmodel.PSD instance or callable
+            power spectral density class. Should have a method called 
+            calculate() that takes a frequency vector as input.
+            Alternatively, it can be a function that takes a frequency vector 
+            as input.
         method : str
             method to use to perform imputation. 
             'nearest': nearest neighboors, approximate method.
@@ -396,7 +399,8 @@ class GaussianStationaryProcess(object):
             self.n_max = len(mask)
         else:
             if self.n_max > 2000:
-                warnings.warn("The maximum size of gap + conditional is high.", UserWarning)
+                warnings.warn("The maximum size of gap + conditional is high.", 
+                              UserWarning)
 
         # Indices of embedding segments around each gap
         # The edges of each segment is set such that there are Na + Nb observed
@@ -543,89 +547,40 @@ class GaussianStationaryProcess(object):
             #                                             taper='Wendland2') 
             print("Preconditionner built.")
 
-    def impute(self, y):
+    def impute(self, y, draw=True):
         """
 
+        Draw the missing data from their conditional distributions on the
+        observed data. The difference with the draw_missing_data method is that
+        it checks whether there are gaps or not. If not, this function is 
+        identity.
+        
         Parameters
         ----------
         y : ndarray or list
             masked data vector, size n
+        draw : bool
+            if True (default), the data vector is drawn from the conditional 
+            distribution given the observed data. If False, the expectation of 
+            the conditional distribution is returned (in that case the output 
+            is deterministic, as it does not involved any random number 
+            generation.)
 
         Returns
         -------
         y_rec : array_like
-            realization of the full data vector conditionnally to the observed data
+            realization of the full data vector conditionnally to the observed 
+            data, or its mean.
 
         """
 
         # If there is only one single channel
         if self.n_gaps > 0:
-            return self.draw_missing_data(y)
+            return self.draw_missing_data(y, draw=draw)
         else:
             return y
 
-    def conditional_draw(self, z_o, psd_2n, c_oo_inv, c_mo, 
-                         ind_obs, ind_mis, mask, c):
-        """
-        Function performing random draws of the complete data noise vector
-        conditionnaly on the observed data.
-
-        Parameters
-        ----------
-        z_o : numpy array
-            vector of observed residuals (size No)
-        psd_2n : numpy array (size P >= 2N)
-            PSD vector
-        c_oo_inv : 2d numpy array
-            Inverse of covariance matrix of observed data
-        c_mo : callable
-            function computing the product of Matrix of covariance between 
-            missing data with observed data with any vector: Cmo.x
-        ind_obs : array_like (size No)
-            vector of chronological indices of the observed data points in the
-            complete data vector
-        ind_mis : array_like (size No)
-            vector of chronological indices of the missing data points in the
-            complete data vector
-        mask : numpy array (size n_data)
-            mask vector (with entries equal to 0 or 1)
-
-        Returns
-        -------
-        eps : numpy array (size Nm)
-            realization of the vector of missing noise given the observed data
-
-
-        References
-        ----------
-        n_knots. Stroud et al, Bayesian and Maximum Likelihood Estimation for Gaussian
-        Processes on an Incomplete Lattice, 2014
-
-
-        """
-
-        # the size of the vector that is randomly drawn is
-        # equal to the size of the mask.
-        # e = np.real(noise.generateNoiseFromDSP(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
-        e = np.random.multivariate_normal(np.zeros(mask.shape[0]), 
-                                          c[0:mask.shape[0], 0:mask.shape[0]])
-
-        # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
-        eps = e[ind_mis] + c_mo.dot(c_oo_inv.dot(z_o - e[ind_obs]))
-
-        return eps
-
-    def conditional_draw_fast(self, z_o, psd_2n, c_oo_inv, c_mo, 
-                              ind_obs, ind_mis, mask):
-
-        e = np.real(generate_noise_from_psd(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
-
-        # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
-        eps = e[ind_mis] + c_mo(c_oo_inv.dot(z_o - e[ind_obs]))
-
-        return eps
-
-    def draw_missing_data(self, y):
+    def draw_missing_data(self, y, draw=True):
         """
 
         Draw the missing data from their conditional distributions on the
@@ -633,8 +588,15 @@ class GaussianStationaryProcess(object):
 
         Parameters
         ----------
-        y : ndarray or list
-            masked data y = mask * x
+        y : ndarray or list of ndarrays
+            masked data y = mask * x. If a list is given, draw as many 
+            vectors as there are arrays in the list.
+        draw : bool
+            if True (default), the data vector is drawn from the conditional 
+            distribution given the observed data. If False, the expectation of 
+            the conditional distribution is returned (in that case the output 
+            is deterministic, as it does not involved any random number 
+            generation.)
 
         Returns
         -------
@@ -650,36 +612,100 @@ class GaussianStationaryProcess(object):
             self.compute_preconditioner()
         # If there is only one array
         if type(y) == np.ndarray:
-            t1 = time.time()
+            # t1 = time.time()
             # Impute the missing data: estimation of missing residuals
             y_mis_res = self.imputation(y - self.y_mean, 
                                         self.autocorr, 
                                         self.s2,
-                                        solve=self.solve)
+                                        solve=self.solve,
+                                        draw=draw)
             # Construct the full imputed data vector
             # at observed value this is the same
             y_rec = copy.deepcopy(y)
             y_rec[self.ind_mis] = y_mis_res + self.y_mean[self.ind_mis]
-            t2 = time.time()
-            print("Missing data imputation took " + str(t2-t1))
+            # t2 = time.time()
+            # print("Missing data imputation took " + str(t2-t1))
             
         elif type(y) == list:
             
             y_mis_res = [self.imputation(y[i] - self.y_mean[i], 
                                          self.autocorr[i], self.s2[i],
-                                         solve=self.solve[i]) 
+                                         solve=self.solve[i], draw=draw) 
                          for i in range(len(y))]
             y_rec = copy.deepcopy(y)
             
             for i in range(len(y)):
                 y_rec[i][self.ind_mis] = y_mis_res[i] + self.y_mean[i][self.ind_mis]
+                
+        else:
+            raise ValueError("Unknown input type for y")
             
         return y_rec
-
-    def imputation(self, y, r, s2, solve=None):
+    
+    def apply_coo_inv(self, z_o, r, s2, solve=None):
         """
 
-        Imputation method
+        Operator performing the product Coo^{-1} z on any vector z
+
+        Parameters
+        ----------
+        z_o : array_like
+            vector of size n_obs
+        r : array_like
+            autocovariance function until lag N_max
+        s2 : array_like
+            values of the noise spectrum calculated on a Fourier grid of size
+            2 N_max
+        solve : linear operator
+            preconditionner
+
+        Returns
+        -------
+        x : 1d numpy array
+            vector of size n_obs, such that x = Coo^{-1} z
+
+        """
+        
+        if self.method == 'tapered':
+            # Approximately solve the linear system C_oo x = eps
+            x = solve(z_o)
+        elif self.method == 'PCG':
+            # Precompute solver if necessary
+            if solve is None:
+                # self.compute_preconditioner(r)
+                raise ValueError("Please provide preconditionning operator")
+            # First guess
+            x0 = np.zeros(len(self.ind_obs))
+            # Solve the linear system C_oo x = eps
+            x, _ = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
+                                           z_o, x0,
+                                           self.tol, self.n_it_max,
+                                           solve,
+                                          'scipy')
+        elif self.method == 'woodbury':
+
+            epsilon_masked = np.zeros(self.n)
+            epsilon_masked[self.ind_obs] = z_o
+            # Apply inverse sigma
+            v_ = fastoeplitz.toepltiz_inverse_jain(epsilon_masked, 
+                                                   self.lambda_n, 
+                                                   self.a)
+            y_ = np.zeros(self.n)
+            y_[self.ind_mis] = self.sig_inv_mm_inv.dot(v_[self.ind_mis])
+            e_ = v_ - fastoeplitz.toepltiz_inverse_jain(y_, self.lambda_n, 
+                                                        self.a)
+            x = e_[self.ind_obs]
+            
+        else:
+            raise ValueError("Unknown imputation method.")
+            
+        return x
+
+
+    def imputation(self, y, r, s2, solve=None, draw=True):
+        """
+
+        Impute the missing data using a conditional draw.
 
         Parameters
         ----------
@@ -692,6 +718,11 @@ class GaussianStationaryProcess(object):
             2 N_max
         solve : linear operator
             preconditionner
+        draw : bool, optional
+            if True (default), the missing data are drawn from their 
+            conditional distribution. If False, their conditional expectation 
+            is returned.
+            
 
         Returns
         -------
@@ -705,73 +736,97 @@ class GaussianStationaryProcess(object):
             # Gap per gap imputation
             # =================================================================
             if self.n_max <= 2000:
-
                 c = linalg.toeplitz(r)
-
-                results = [self.single_imputation(y[indj], self.mask[indj], c,
-                                                  s2) 
-                           for indj in self.indices]
             else:
-                # If the number of points inside the gaps is too large, use a
-                # FFT-based method
-                results = [self.single_imputation_fast(y[indj],
-                                                       self.mask[indj],
-                                                       r,
-                                                       s2)
-                           for indj in self.indices]
-            y_mis = np.concatenate(results)
-            # y_rec = np.zeros(n_data, dtype = np.float64)
-            # y_rec[self.ind_obs] = y[self.ind_obs]
-            # y_rec[self.ind_mis] = y_mis
-        elif self.method == 'tapered':
-            # # Sparse approximation of the covariance
-            # print("Build preconditionner...")
-            # self.solve = matrixalgebra.compute_precond(r, 
-            #                                            self.mask, p=self.p,
-            #                                            taper='Wendland2')
-            # print("Preconditionner built.")
-            # Approximately solve the linear system C_oo x = eps
-            u = solve(y[self.ind_obs])
-            # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
-            y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
-                                                self.mask, s2)
-        elif self.method == 'PCG':
-            # Precompute solver if necessary
-            if solve is None:
-                # self.compute_preconditioner(r)
-                raise ValueError("Please provide preconditionning operator")
-            # First guess
-            x0 = np.zeros(len(self.ind_obs))
-            # Solve the linear system C_oo x = eps
-            u, _ = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
-                                           y[self.ind_obs], x0,
-                                           self.tol, self.n_it_max,
-                                           solve,
-                                          'scipy')
-            # Compute the missing data estimate via z | o = Cmo Coo^-1 z_o
-            y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
-                                                self.mask, s2)
-            
-        elif self.method == 'woodbury':
+                c = None
 
-            epsilon_masked = self.mask * y
-            # Apply inverse sigma
-            a_o = fastoeplitz.toepltiz_inverse_jain(epsilon_masked, 
-                                                    self.lambda_n, self.a)
-            b_o = self.sig_inv_mm_inv.dot(a_o[self.ind_mis])
-            y_o = np.zeros(self.mask.shape[0])
-            y_o[self.ind_mis] = b_o
-            e_o = a_o - fastoeplitz.toepltiz_inverse_jain(y_o, 
-                                                          self.lambda_n, 
-                                                          self.a)
-            # Apply Sigma after multiplying by the mask
-            eps_given_o = fastoeplitz.toeplitz_multiplication(
-                self.mask * e_o, r, r)  
-            y_mis = eps_given_o[self.ind_mis]
+            if draw:
+                results = [self.single_imputation(y[indj], 
+                                                self.mask[indj], 
+                                                c,
+                                                r,
+                                                s2) 
+                            for indj in self.indices]
+            else:
+                results = [self.single_conditional_mean(y[indj], 
+                                                        self.mask[indj], 
+                                                        c, r, s2) 
+                           for indj in self.indices]
+            # else:
+            #     # If the number of points inside the gaps is too large, use a
+            #     # FFT-based method
+            #     results = [self.single_imputation_fast(y[indj],
+            #                                            self.mask[indj],
+            #                                            r,
+            #                                            s2)
+            #                for indj in self.indices]
+            y_mis = np.concatenate(results)
+            
+        else:
+
+            if draw:
+                # For missing data draw:
+                e = np.real(generate_noise_from_psd(np.sqrt(s2*2.), 1.)[0:self.n])
+                u = self.apply_coo_inv(y[self.ind_obs] - e[self.ind_obs], r, s2, 
+                                    solve=solve)
+                # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
+                y_mis = e[self.ind_mis] + matrixalgebra.mat_vect_prod(u, 
+                                                                    self.ind_obs, 
+                                                                    self.ind_mis, 
+                                                                    self.mask, 
+                                                                    s2)
+            else:
+                # For conditional mean computation:
+                # Compute u = C_oo^{-1} z_o
+                u = self.apply_coo_inv(y[self.ind_obs], r, s2, solve=solve)
+                # Compute the missing data conditional mean via z|o = Cmo u
+                y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
+                                                    self.mask, s2)
+            
+        # elif self.method == 'tapered':
+        #     # Approximately solve the linear system C_oo x = eps
+        #     u = solve(y[self.ind_obs])
+        #     # Compute the missing data conditional mean via z | o = Cmo Coo^-1 z_o
+        #     y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
+        #                                         self.mask, s2)
+        # elif self.method == 'PCG':
+        #     # Precompute solver if necessary
+        #     if solve is None:
+        #         # self.compute_preconditioner(r)
+        #         raise ValueError("Please provide preconditionning operator")
+        #     # First guess
+        #     x0 = np.zeros(len(self.ind_obs))
+        #     # Solve the linear system C_oo x = eps
+        #     u, _ = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
+        #                                    y[self.ind_obs], x0,
+        #                                    self.tol, self.n_it_max,
+        #                                    solve,
+        #                                   'scipy')
+        #     # Compute the missing data conditional mean z | o = Cmo Coo^-1 z_o
+        #     y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
+        #                                         self.mask, s2)
+            
+        # elif self.method == 'woodbury':
+
+        #     epsilon_masked = self.mask * y
+        #     # Apply inverse sigma
+        #     v = fastoeplitz.toepltiz_inverse_jain(epsilon_masked, 
+        #                                           self.lambda_n, 
+        #                                           self.a)
+        #     y_ = np.zeros(self.mask.shape[0])
+        #     y_[self.ind_mis] = self.sig_inv_mm_inv.dot(v[self.ind_mis])
+        #     e_ = v - fastoeplitz.toepltiz_inverse_jain(y_, 
+        #                                                self.lambda_n, 
+        #                                                self.a)
+        #     # Apply Sigma after multiplying by the mask
+        #     eps_given_o = fastoeplitz.toeplitz_multiplication(self.mask * e_, 
+        #                                                       r, r)  
+        #     y_mis = eps_given_o[self.ind_mis]
 
         return y_mis
+            
 
-    def single_imputation(self, yj, maskj, c, psd_2n):
+    def single_imputation(self, yj, maskj, c, r, psd_2n, threshold=2000):
         """
         Sample the missing data distribution conditionally on the observed
         data, using direct brute-force computation.
@@ -784,12 +839,17 @@ class GaussianStationaryProcess(object):
             local mask
         c : ndarray
             covariance matrix of sized nj x nj
+        r : ndarray
+            autocovariance computed until lag n_max
         psd_2n : ndarray
             psd computed on a Fourier grid of size 2nj
+        threshold : int, optional
+            Threshold for the size of the neighbooring segments, above which
+            the methods switches from matrix-based to FFT-based.
 
         Returns
         -------
-        out : ndarray
+        eps : ndarray
             imputed missing data, of size len(np.where(maskj == 0)[0])
 
         """
@@ -798,19 +858,48 @@ class GaussianStationaryProcess(object):
         ind_obsj = np.where(maskj == 1)[0]
         ind_misj = np.where(maskj == 0)[0]
 
-        c_mo = c[np.ix_(ind_misj, ind_obsj)]
-        #C_mm = C[np.ix_(ind_misj,ind_misj)]
-        c_oo_inv = linalg.inv(c[np.ix_(ind_obsj, ind_obsj)])
+        # Compute the size of the neighbooring observed points + gap size
+        segment_size = np.int(self.na + self.nb + len(ind_misj))
+        
+        # If the size is below some threshold, apply full-matrix method:
+        if segment_size <= threshold:
+        
+            c_mo = c[np.ix_(ind_misj, ind_obsj)]
+            #C_mm = C[np.ix_(ind_misj,ind_misj)]
+            c_oo_inv = linalg.inv(c[np.ix_(ind_obsj, ind_obsj)])
+            # out = self.conditional_draw(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
+            #                             ind_obsj, ind_misj, maskj, c)
+            e = np.random.multivariate_normal(
+                np.zeros(maskj.shape[0]), 
+                c[0:maskj.shape[0], 0:maskj.shape[0]])
 
-        out = self.conditional_draw(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
-                                    ind_obsj, ind_misj, maskj, c)
-        #out = conditionalDraw2(yj[ind_obsj],C_mm,c_mo,c_oo_inv)
+            # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
+            eps = e[ind_misj] + c_mo.dot(c_oo_inv.dot(yj[ind_obsj] - e[ind_obsj]))
+        
+        # Otherwise, use FFT-based method:
+        else:
+            # Covariance of observed data and its inverse
+            c_oo = toeplitz(r, ind_obsj)
+            c_oo_inv = linalg.inv(c_oo)
+            # Covariance missing / observed data : matrix operator
+            c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
+                                                        maskj, psd_2n)
 
-        return out
+            # eps = self.conditional_draw_fast(yj[ind_obsj], psd_2n, c_oo_inv, 
+            #                                  c_mo, ind_obsj, ind_misj, maskj)
+            e = np.real(generate_noise_from_psd(
+                np.sqrt(psd_2n*2.), 1.)[0:maskj.shape[0]])
 
-    def single_imputation_fast(self, yj, maskj, r, psd_2n):
+            # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
+            eps = e[ind_misj] + c_mo(c_oo_inv.dot(yj[ind_obsj] - e[ind_obsj]))
+            
+        return eps
+    
+    def single_conditional_mean(self, yj, maskj, c, r, psd_2n, threshold=2000):
         """
-        Sample the missing data distribution conditionally on the observed data, computed usin g
+        Compute the conditional expectation of missing data given the observed
+        data, using direct brute-force computation 
+        (to be used on short segments with the nearest-neighboor method.)
 
         Parameters
         ----------
@@ -818,30 +907,187 @@ class GaussianStationaryProcess(object):
             segment of masked data
         maskj : ndarray
             local mask
+        c : ndarray
+            covariance matrix of sized nj x nj
         r : ndarray
             autocovariance computed until lag n_max
         psd_2n : ndarray
             psd computed on a Fourier grid of size 2nj
+        threshold : int, optional
+            Threshold for the size of the neighbooring segments, above which
+            the methods switches from matrix-based to FFT-based.
 
         Returns
         -------
-        out : ndarray
-            imputed missing data, of size len(np.where(maskj == 0)[0])
+        mu_mis_j : ndarray
+            conditional expectation of missing data, 
+            of size len(np.where(maskj == 0)[0])
 
         """
 
         # Local indices of missing and observed data
         ind_obsj = np.where(maskj == 1)[0]
         ind_misj = np.where(maskj == 0)[0]
-        # Covariance of observed data and its inverse
-        c_oo = toeplitz(r, ind_obsj)
-        c_oo_inv = linalg.inv(c_oo)
-        # Covariance missing / observed data : matrix operator
-        c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
-                                                     maskj, psd_2n)
 
-        return self.conditional_draw_fast(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
-                                          ind_obsj, ind_misj, maskj)
+        # Compute the size of the neighbooring observed points + gap size
+        segment_size = np.int(self.na + self.nb + len(ind_misj))
+        
+        # If the size is below some threshold, apply full-matrix method:
+        if segment_size <= threshold:
+        
+            c_mo = c[np.ix_(ind_misj, ind_obsj)]
+            c_oo_inv = linalg.inv(c[np.ix_(ind_obsj, ind_obsj)])
+            mu_mis_j = c_mo.dot(c_oo_inv.dot(yj[ind_obsj]))
+        
+        # Otherwise, use FFT-based method:
+        else:
+            # Covariance of observed data and its inverse
+            c_oo = toeplitz(r, ind_obsj)
+            c_oo_inv = linalg.inv(c_oo)
+            # Covariance missing / observed data : matrix operator
+            c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
+                                                        maskj, psd_2n)
+
+            mu_mis_j = c_mo(c_oo_inv.dot(yj[ind_obsj]))
+            
+        return mu_mis_j
+
+
+    # def conditional_draw(self, z_o, psd_2n, c_oo_inv, c_mo, 
+    #                      ind_obs, ind_mis, mask, c):
+    #     """
+    #     Function performing random draws of the complete data noise vector
+    #     conditionnaly on the observed data.
+    #     Uses NumPy's multivariate normal function.
+
+    #     Parameters
+    #     ----------
+    #     z_o : numpy array
+    #         vector of observed residuals (size No)
+    #     psd_2n : numpy array (size P >= 2N)
+    #         PSD vector
+    #     c_oo_inv : 2d numpy array
+    #         Inverse of covariance matrix of observed data
+    #     c_mo : callable
+    #         function computing the product of Matrix of covariance between 
+    #         missing data with observed data with any vector: Cmo.x
+    #     ind_obs : array_like (size No)
+    #         vector of chronological indices of the observed data points in the
+    #         complete data vector
+    #     ind_mis : array_like (size No)
+    #         vector of chronological indices of the missing data points in the
+    #         complete data vector
+    #     mask : numpy array (size n_data)
+    #         mask vector (with entries equal to 0 or 1)
+
+    #     Returns
+    #     -------
+    #     eps : numpy array (size Nm)
+    #         realization of the vector of missing noise given the observed data
+
+
+    #     References
+    #     ----------
+    #     n_knots. Stroud et al, Bayesian and Maximum Likelihood Estimation for Gaussian
+    #     Processes on an Incomplete Lattice, 2014
+
+
+    #     """
+
+    #     # the size of the vector that is randomly drawn is
+    #     # equal to the size of the mask.
+    #     # e = np.real(noise.generateNoiseFromDSP(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
+    #     e = np.random.multivariate_normal(np.zeros(mask.shape[0]), 
+    #                                       c[0:mask.shape[0], 0:mask.shape[0]])
+
+    #     # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
+    #     eps = e[ind_mis] + c_mo.dot(c_oo_inv.dot(z_o - e[ind_obs]))
+
+    #     return eps
+
+    # def conditional_draw_fast(self, z_o, psd_2n, c_oo_inv, c_mo, 
+    #                           ind_obs, ind_mis, mask):
+    #     """
+    #     Function performing random draws of the complete data noise vector
+    #     conditionnaly on the observed data.
+    #     Uses generate_noise_from_psd function based on FFT.
+
+    #     Parameters
+    #     ----------
+    #     z_o : numpy array
+    #         vector of observed residuals (size No)
+    #     psd_2n : numpy array (size P >= 2N)
+    #         PSD vector
+    #     c_oo_inv : 2d numpy array
+    #         Inverse of covariance matrix of observed data
+    #     c_mo : callable
+    #         function computing the product of Matrix of covariance between 
+    #         missing data with observed data with any vector: Cmo.x
+    #     ind_obs : array_like (size No)
+    #         vector of chronological indices of the observed data points in the
+    #         complete data vector
+    #     ind_mis : array_like (size No)
+    #         vector of chronological indices of the missing data points in the
+    #         complete data vector
+    #     mask : numpy array (size n_data)
+    #         mask vector (with entries equal to 0 or 1)
+
+    #     Returns
+    #     -------
+    #     eps : numpy array (size Nm)
+    #         realization of the vector of missing noise given the observed data
+
+
+    #     References
+    #     ----------
+    #     n_knots. Stroud et al, Bayesian and Maximum Likelihood Estimation for Gaussian
+    #     Processes on an Incomplete Lattice, 2014
+
+
+    #     """
+
+    #     e = np.real(generate_noise_from_psd(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
+
+    #     # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
+    #     eps = e[ind_mis] + c_mo(c_oo_inv.dot(z_o - e[ind_obs]))
+
+    #     return eps
+
+    # def single_imputation_fast(self, yj, maskj, r, psd_2n):
+    #     """
+    #     Sample the missing data distribution conditionally on the observed data, 
+    #     computed usin g
+
+    #     Parameters
+    #     ----------
+    #     yj : ndarray
+    #         segment of masked data
+    #     maskj : ndarray
+    #         local mask
+    #     r : ndarray
+    #         autocovariance computed until lag n_max
+    #     psd_2n : ndarray
+    #         psd computed on a Fourier grid of size 2nj
+
+    #     Returns
+    #     -------
+    #     out : ndarray
+    #         imputed missing data, of size len(np.where(maskj == 0)[0])
+
+    #     """
+
+    #     # Local indices of missing and observed data
+    #     ind_obsj = np.where(maskj == 1)[0]
+    #     ind_misj = np.where(maskj == 0)[0]
+    #     # Covariance of observed data and its inverse
+    #     c_oo = toeplitz(r, ind_obsj)
+    #     c_oo_inv = linalg.inv(c_oo)
+    #     # Covariance missing / observed data : matrix operator
+    #     c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
+    #                                                  maskj, psd_2n)
+
+    #     return self.conditional_draw_fast(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
+    #                                       ind_obsj, ind_misj, maskj)
 
 
 class GSP(object):
