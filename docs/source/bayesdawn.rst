@@ -8,7 +8,6 @@ Subpackages
 
    bayesdawn.algebra
    bayesdawn.gaps
-   bayesdawn.postproc
    bayesdawn.utils
    bayesdawn.waveforms
 

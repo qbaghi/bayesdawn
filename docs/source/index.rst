@@ -12,7 +12,7 @@ method to handle data gaps in gravitational-wave data analysis, as described in 
 .. toctree::
    :maxdepth: 2
 
-   quickstart
+   quickstart_link
    methods
    modules
    

@@ -24,34 +24,40 @@ def modified_hann(n_data, n_wind=60):
     w[0:n_w] = 0.5 * (1 - np.cos(np.pi * n[0:n_w] / n_w))
 
     # w[n_data-n_w:] = 0.5 * ( 1 - np.cos( 2*np.pi * (n[n_data-n_w:]-n_data+1+2*n_w) / (2*n_w) ) )
-    w[n_data - n_w:] = 0.5 * (1 - np.cos(np.pi * (n[n_data - n_w:] - n_data + 1) / n_w))
+    w[n_data - n_w:] = 0.5 * \
+        (1 - np.cos(np.pi * (n[n_data - n_w:] - n_data + 1) / n_w))
 
     return w
 
 
 def windowing(nd, nf, n, window='rect', n_wind=160):
     """
-    Function that produces a mask vector M from the index locations of gaps edges.
-    The non-zero values can be chosen to be just ones (rectangular window, default)
-    or apodization windows smoothly going to zero at the gap edges.
-
-
-    @param nd : vector containing the indices of the begening of each hole
-    @type nd : nh x 1 vector where nh is the number of holes
-    @param nf : vector containing the indices of the end of each hole
-    @type nf : nh x 1 vector where nh is the number of holes
-    @param n : size of the data
-    @type n : integer scalar
-    n_wind
-
-    @param window : option to choose the type of window to apply
-    @type window :
-    @return: ...
-        The vector mw containg the softened hole vector M with the selected
-        type of window
+    Function that produces a mask vector M from the index locations of gaps 
+    edges. The non-zero values can be chosen to be just ones (rectangular 
+    window, default) or apodization windows smoothly going to zero at the gap 
+    edges.
 
     Parameters
     ----------
+    nd : array_like 
+        vector containing the indices of the begening of each hole. has size
+        nh x 1 where nh is the number of holes
+    nf : array_like 
+        vector containing the indices of the end of each hole, size nh x 1 
+        where nh is the number of holes
+    n : int
+        size of the data
+    window : str
+        window type
+    n_wind : int
+        window parameter
+
+    Returns
+    -------
+    mw : ndarray
+        The vector mw containg the softened hole vector M with the selected
+        type of window.
+
 
     """
 
@@ -64,7 +70,7 @@ def windowing(nd, nf, n, window='rect', n_wind=160):
     mw = np.zeros((n))
 
     if window == 'rect':
-        windowfunc = lambda x: np.ones(x)
+        def windowfunc(x): return np.ones(x)
         # First window
         mw[0:nd[0]] = windowfunc(nd[0])
 
@@ -77,11 +83,11 @@ def windowing(nd, nf, n, window='rect', n_wind=160):
     else:
 
         if window == 'hann':
-            windowfunc = lambda x: np.hanning(x)
+            def windowfunc(x): return np.hanning(x)
         elif window == 'blackman':
-            windowfunc = lambda x: np.blackman(x)
+            def windowfunc(x): return np.blackman(x)
         elif window == 'modified_hann':
-            windowfunc = lambda x: modified_hann(x, n_wind)
+            def windowfunc(x): return modified_hann(x, n_wind)
 
         # First window
         # we want that the window has value zero at entry n = Nd[0]
@@ -155,13 +161,15 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
         elif isinstance(t_gaps, (list, tuple, np.ndarray)):
             d_n = np.array(fs * t_gaps).astype(np.int)
         # Small deviations in the gap duration
-        d_n = d_n + std_dur * fs * np.random.normal(loc=0.0, scale=1.0, size=len(d_n))
+        d_n = d_n + std_dur * fs * \
+            np.random.normal(loc=0.0, scale=1.0, size=len(d_n))
         # Uniform random location of gaps
         if 'poisson' in gap_type:
             # Calculate the average inter-gap inverval
             inter_gap_mean = (n_data - np.sum(d_n)) / (n_gaps + 1)
             # Draw the inter-gap durations from a Poisson distribution
-            inter_gap = np.random.exponential(scale=inter_gap_mean, size=n_gaps)
+            inter_gap = np.random.exponential(
+                scale=inter_gap_mean, size=n_gaps)
             # Set the gaps locations
             nd = np.empty(n_gaps, dtype=np.int)
             ref_point = 0
@@ -194,9 +202,11 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
         # Calculate CDF for all n
         nd = np.arange(fs / f_gaps, n_data, fs / f_gaps).astype(np.int)
         # Introduce some randomness on the gap locations
-        nd = (nd + std_loc * fs * np.random.normal(loc=0.0, scale=1.0, size=len(nd))).astype(np.int)
+        nd = (nd + std_loc * fs * np.random.normal(loc=0.0,
+                                                   scale=1.0, size=len(nd))).astype(np.int)
         # Length of gaps in term of data points, including possible deviations
-        d_n = t_gaps * fs + std_dur * fs * np.random.normal(loc=0.0, scale=1.0, size=len(nd))
+        d_n = t_gaps * fs + std_dur * fs * \
+            np.random.normal(loc=0.0, scale=1.0, size=len(nd))
         d_n = d_n.astype(np.int)
         # d_n = (T_gaps*fs*np.ones(len(nd))).astype(np.int)
 

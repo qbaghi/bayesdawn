@@ -76,34 +76,38 @@ def like_to_waveform(par):
 
 
 def waveform_to_dic(params):
-    
+
     # Convert parameters back to dictionary
     params_dic = {}
-    params_dic['m1'] = params[0] # Redshifted mass of body 1 (solar masses)        
-    params_dic['m2'] = params[1] # Redshifted mass of body 1 (solar masses)
-    params_dic['chi1'] = params[2] # Dimensionless spin of body 1 (in [-1, 1])
-    params_dic['chi2'] = params[3] # Dimensionless spin of body 2 (in [-1, 1])
-    params_dic['Deltat'] = params[4] # Time shift (s)
-    params_dic['dist'] = params[5] # Luminosity distance (Mpc)
-    params_dic['inc'] = params[6] # Inclination angle (rad)
-    params_dic['phi'] = params[7] # Observer's azimuthal phase (rad)
-    params_dic['lambda'] = params[8] # Source longitude (rad)
-    params_dic['beta'] = params[9] # Source latitude (rad)
-    params_dic['psi'] = params[10] # Polarization angle (rad)
-    
-    return params_dic
+    params_dic['m1'] = params[0]  # Redshifted mass of body 1 (solar masses)
+    params_dic['m2'] = params[1]  # Redshifted mass of body 1 (solar masses)
+    params_dic['chi1'] = params[2]  # Dimensionless spin of body 1 (in [-1, 1])
+    params_dic['chi2'] = params[3]  # Dimensionless spin of body 2 (in [-1, 1])
+    params_dic['Deltat'] = params[4]  # Time shift (s)
+    params_dic['dist'] = params[5]  # Luminosity distance (Mpc)
+    params_dic['inc'] = params[6]  # Inclination angle (rad)
+    params_dic['phi'] = params[7]  # Observer's azimuthal phase (rad)
+    params_dic['lambda'] = params[8]  # Source longitude (rad)
+    params_dic['beta'] = params[9]  # Source latitude (rad)
+    params_dic['psi'] = params[10]  # Polarization angle (rad)
 
+    return params_dic
 
 
 def waveform_to_like(params):
     """
+
     Convert lisabeta waveform parameters to sampled parameters
+
     Parameters
     ----------
-    params
+    params : array_like
+        vector of waveform parameters
 
     Returns
     -------
+    par : ndarray
+        vector of sampled parameters
 
     """
 
@@ -122,6 +126,7 @@ def waveform_to_like(params):
 def like_to_waveform_intr(par_intr):
     """
     Convert likelihood parameters into waveform-compatible parameters
+
     Parameters
     ----------
     par : array_like
@@ -154,6 +159,7 @@ def like_to_waveform_intr(par_intr):
 def get_params(p_gw, sampling=False):
     """
     returns array of parameters from hdf5 structure
+
     Parameters
     ----------
     p_gw : ParsUnits instance

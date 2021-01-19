@@ -51,14 +51,16 @@ def periodogram_mean(func, fe, n_data, f_zero=None):
     return 1. / fe * (fft(X) + n_data * ifft(X) - R[0]), R[0:n_data]
 
 
-def periodogram_mean_masked(func, fe, n_data, n_freq, mask, n_points=None, n_conv=None, normal=True):
+def periodogram_mean_masked(func, fe, n_data, n_freq, mask, 
+                            n_points=None, n_conv=None, normal=True):
     """
-    Function calculating the theoretical mean of the periodogram of a masked signal
-    (defined as the squared modulus of the fft devided by fe*n_data) given the theoretical PSD (func)
-    , the sampling frequency fe and the number of points n_data.
+    Function calculating the theoretical mean of the periodogram of a masked
+    signal (defined as the squared modulus of the fft devided by fe*n_data) 
+    given the theoretical PSD (func), the sampling frequency fe and the number
+    of points n_data.
 
-
-    @param func: function of one parameter giving the PSD as a function of frequency
+    @param func: function of one parameter giving the PSD as a function of
+    frequency
     @type func : function
     @param fe: sampling frequency
     @type fe : scalar (float)

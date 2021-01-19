@@ -75,12 +75,12 @@ class MappingOperator(object):
                                     shape=(len(self.inds), self.n_data))
             return w_o
         else:
-            return np.array([self.binary_vector(id) for id in self.inds])
+            return np.array([self.binary_vector(ids) for ids in self.inds])
 
-    def binary_vector(self, id):
+    def binary_vector(self, ids):
 
         v = np.zeros(self.n_data)
-        v[id] = 1
+        v[ids] = 1
 
         return v
 

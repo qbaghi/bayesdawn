@@ -19,6 +19,7 @@ try:
 except ImportError:
     print("Proceed without lisabeta package.")
 import numpy as np
+import time
 from scipy import special
 from scipy.interpolate import InterpolatedUnivariateSpline as spline
 from . import coeffs
@@ -145,6 +146,33 @@ def form_design_matrix(uc, k_p, k_c, complex=False):
         a_tmp[:, 3] = -1j * ac_cros  # S_func*Dxi_c
 
     return a_tmp
+
+
+def compute_full_series(v_list, c_mat):
+    """Short summary.
+
+    Parameters
+    ----------
+    v_list : ndarra
+        list of nc values v(f - n / Tobs) where v is the exponential GW
+        phase for frequencies f. Size 2nc x nf
+    c_mat : ndarray
+        Fourier series coefficients of a_slow, size n_channel x 2nc x 2
+
+    Returns
+    -------
+    series: ndarray
+        Array of size n_channel x nc x 2 giving the Fourier-series approximation
+        of a_slow(f) in the frequency domain.
+        a_slow(f) = sum_{n=-nc}^{+nc} c[n] v(f - n / Tobs)
+
+    """
+    
+    # np.array([v_list]).T has size nf x 2nc
+    # We used to multiply a 2nc x 2 matrix by a nf x 2nc matrix
+    # to get a 2nc x nf x 2 array
+    return np.sum(c_mat * np.array([v_list]).T, axis=1)
+
 
 
 class GWwaveform(object):
@@ -941,7 +969,7 @@ class UCBWaveformFull(GWwaveform):
         Returns
         -------
         mat_list : list of numpy arrays
-            list containing the design matrices of size nf x 2
+            list containing the 3 design matrices of size nf x 2
 
 
         """
@@ -953,6 +981,7 @@ class UCBWaveformFull(GWwaveform):
         # a_slow_list = [self.compute_slow_part(theta, phi, f_0, f_dot, i,
         #                                       channel=channel)
         #                for i in index_list]
+        # t1 = time.time()
         a_slow_list = [self.compute_slow_part(theta, phi, f_0, f_dot,
                                               self.index_list[j],
                                               channel=channel,
@@ -960,23 +989,36 @@ class UCBWaveformFull(GWwaveform):
                        for j in range(len(self.index_list))]
         # Compute its FFC to get Fourier series coefficients
         # (list ot nc x 2 matrices)
+        # t2 = time.time()
+        # print("Slow part computation: " + str(t2 - t1))
+        # t1 = time.time()
         c_list = fft(np.array(a_slow_list), axis=1) / self.t_samples.size
         # Compute corresponding frequency vector
         f_vect = np.fft.fftfreq(c_list[0].shape[0],
                                 d=self.tobs / c_list[0].shape[0])
-
-        # Form the grid of frequency differences
+        # t2 = time.time()
+        #print("FFT: " + str(t2 - t1))
+        # print("Shape of c_list" + str(c_list.shape))
+        # t1 = time.time()
+        # Form the grid of frequency differences, size nf x nc
         f_grid = np.array([f]) - np.array([f_vect]).T
+        # t2 = time.time()
+        # print("Frequency grid: " + str(t2 - t1))
         # Assume that v_func includes f_dot dependence
         # v_list = self.v_func(f_grid, f_0, f_dot, self.tobs, self.del_t)
         # Assume that v_func is monochromatic
+        # t1 = time.time()
         v_list = self.v_func(f_grid, f_0, self.tobs, self.del_t)
+        # t2 = time.time()
+        # print("Waveform grid: " + str(t2 - t1))
+        # print("Shape of v_list" + str(v_list.shape))
         # v_list = [self.v_func(f - f_vect[k], f_0, f_dot, self.tobs, self.del_t)
         #           for k in range(c_list[0].shape[0])]
-
+        # t1 = time.time()
         a_mat_list = [self.compute_series(v_list, c_list[i]) / 2
                       for i in range(len(c_list))]
-
+        # t2 = time.time()
+        # print("Series computation: " + str(t2 - t1))
         # # Extend with 3 primed channels: h3, h1, h2
         # if channel == 'phasemeters':
         #     # You have to include primed channels: h3, h1, h2
@@ -993,7 +1035,7 @@ class UCBWaveformFull(GWwaveform):
         v_list : list of ndarrays
             list of nc values v(f - n / Tobs) where v is the exponential GW
             phase for frequencies f. Each list item is an array of
-            size nf
+            size nf.
         c : ndarray
             Fourier series coefficients of a_slow, size nc x 2
 
@@ -1285,8 +1327,8 @@ class MBHBWaveform(GWwaveform):
         params_1[self.i_dist] = 1e3
         params_2[self.i_dist] = 1e3
         # Inclination
-        params_1[self.i_inc] = 0  # 0.5 * np.pi
-        params_2[self.i_inc] = 0  # 0.5 * np.pi
+        params_1[self.i_inc] = 0.5 * np.pi # 0 
+        params_2[self.i_inc] = 0.5 * np.pi # 0 
         # Polarization angle
         params_1[self.i_psi] = 0.0
         params_2[self.i_psi] = np.pi / 4
@@ -1368,14 +1410,33 @@ def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657,
 
     Parameters
     ----------
-    params
-    freq
-    tobs
-    tref
+    params : ndarray
+        full vector of parameters with format:  
+        m1     Redshifted mass of body 1 (solar masses)  
+        m2     Redshifted mass of body 2 (solar masses)  
+        chi1   Dimensionless spin of body 1 (in [-1, 1])  
+        chi2   Dimensionless spin of body 2 (in [-1, 1])  
+        Deltat Time shift (in seconds)  
+        dist   Luminosity distance (Mpc)  
+        inc    Inclination angle (rad)  
+        phi    Observer's azimuthal phase (rad)  
+        lambda Source longitude in SSB-frame (rad)  
+        beta   Source latitude in SSB-frame (rad)  
+        psi    Polarization angle (rad) 
+    freq : ndarray
+        array of frequency bins
+    tobs : float
+        observation time
+    tref : float
+        reference time (starting time of time series? TBD)
     toffset
+        offset time to match LDC waveform.
 
     Returns
     -------
+    ch_interp : list of ndarrays
+        list of waveform values interpolated at frequency bins.
+        What is the normalization?
 
     """
 
@@ -1401,6 +1462,107 @@ def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657,
     return ch_interp
 
 
+# def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657,
+#                   channels=None, complex_amplitudes=1):
+#     """
+#     Design matrix for reduced order likelihood
+#     Parameters
+#     ----------
+#     par_intr : ndarray
+#         instrinsic sampling parameters Mc, q, tc, chi1, chi2, np.sin(bet), lam
+#     freq :
+#     tobs
+#     tref
+#     t_offset
+#     channels
+
+#     Returns
+#     -------
+#     mat_list : list
+#         list of design matrices for each channel
+
+#     """
+
+#     # First column
+#     # m1, m2, chi1, chi2, tc, dist, inc, phi, lambd, beta, psi = params
+#     params_1 = np.zeros(11)
+#     # Save intrinsic parameters
+#     params_1[i_intr] = params_intr
+#     # Luminosity distance (Mpc)
+#     params_1[i_dist] = 1e3
+#     # Inclination
+#     params_1[i_inc] = 0.5 * np.pi
+#     # Polarization angle
+#     params_1[i_psi] = 0.0
+    
+#     if channels is None:
+#         channels = [1, 2, 3]
+
+#     # TDI response 1
+#     wftdi_1 = lisa.GenerateLISATDI(params_1, tobs=tobs, minf=1e-5, maxf=1.,
+#                                    tref=tref, torb=0., TDItag='TDIAET',
+#                                    acc=1e-4, order_fresnel_stencil=0,
+#                                    approximant='IMRPhenomD',
+#                                    responseapprox='full', frozenLISA=False,
+#                                    TDIrescaled=False)
+
+#     if freq is not None:
+#         fs1 = wftdi_1['freq']
+#         amp = pyspline.resample(freq, fs1, wftdi_1['amp'])
+#         phase = pyspline.resample(freq, fs1, wftdi_1['phase'])
+#         tr_int1 = [pyspline.resample(freq, fs1, 
+#                                      wftdi_1['transferL' + str(np.int(i))])
+#                    for i in channels]
+#     else:
+#         freq = wftdi_1['freq']
+#         tr_int1 = [wftdi_1['transferL' + str(np.int(i))] for i in channels]
+    
+#     # Complex strain
+#     h = amp * np.exp(1j * phase)
+#     # Phasor for the time shift
+#     z = np.exp(-2j * np.pi * freq * t_offset)
+#     # If only one column
+#     if complex_amplitudes == 1:
+#         mat_list = [np.array([h * tr_int1[i - 1] * z]).conj().T 
+#                     for i in channels]
+#     # Second column if required
+#     elif complex_amplitudes == 2:
+#         params_2 = np.zeros(11)
+#         # Save intrinsic parameters
+#         params_2[i_intr] = params_intr
+#         # Luminosity distance (Mpc)
+#         params_2[i_dist] = 1e3
+#         # Inclination
+#         params_2[i_inc] = 0.5 * np.pi
+#         # Polarization angle
+#         params_2[i_psi] = np.pi / 4
+        
+#         # TDI response 2
+#         wftdi_2 = lisa.GenerateLISATDI(params_2, tobs=tobs, minf=1e-5, maxf=1.,
+#                                        tref=tref, torb=0., TDItag='TDIAET',
+#                                        acc=1e-4, order_fresnel_stencil=0,
+#                                        approximant='IMRPhenomD',
+#                                        responseapprox='full', frozenLISA=False,
+#                                        TDIrescaled=False)
+#         if freq is not None:
+#             fs2 = wftdi_2['freq']
+#             amp2 = pyspline.resample(freq, fs2, wftdi_1['amp'])
+#             phase2 = pyspline.resample(freq, fs2, wftdi_1['phase'])
+#             tr_int2 = [pyspline.resample(freq, fs2,
+#                                          wftdi_2['transferL' + str(np.int(i))])
+#                        for i in channels]
+#         else:
+#             freq = wftdi_2['freq']
+#             tr_int2 = [wftdi_2['transferL' + str(np.int(i))] for i in channels]
+
+#         h2 = amp2 * np.exp(1j * phase2)
+#         mat_list = [np.vstack((h * tr_int1[i - 1] * z,
+#                                h2 * tr_int2[i - 1] * z)).conj().T
+#                     for i in channels]
+
+#     return mat_list# , tr_int1, tr_int2
+
+
 def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657,
                   channels=None):
     """
@@ -1417,71 +1579,49 @@ def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657,
 
     Returns
     -------
+    mat_list : list
+        list of design matrices for each channel
+        
+    Reference
+    ---------
+    Marsat, Sylvain and Baker, John G, Fourier-domain modulations and delays of 
+    gravitational-wave signals, 2018
+    Neil J. Cornish and Kevin Shuman, Black Hole Hunting with LISA, 2020
 
     """
 
+    # First column
     # m1, m2, chi1, chi2, tc, dist, inc, phi, lambd, beta, psi = params
-    params_1 = np.zeros(11)
-    params_2 = np.zeros(11)
+    # Building the F-statistics basis
+    
+    params_0 = np.zeros(11)
     # Save intrinsic parameters
-    params_1[i_intr] = params_intr
-    params_2[i_intr] = params_intr
+    params_0[i_intr] = params_intr
     # Luminosity distance (Mpc)
-    params_1[i_dist] = 1e3
-    params_2[i_dist] = 1e3
-    # # Coalescence time
-    # params_1[i_tc] = 0  # 0.5 * np.pi
-    # params_2[i_tc] = tobs/2  # 0.5 * np.pi
-    # Polarization angle
-    params_1[i_psi] = 0.0
-    params_2[i_psi] = np.pi / 4
-    if channels is None:
-        channels = [1, 2, 3]
+    params_0[i_dist] = 1e3
+    # Inclination
+    params_0[i_inc] = 0.5 * np.pi
+    # 4 elements
+    params_list = [params_0 for j in range(4)]
+    # First element (phi_c, phi) = (0, 0)
+    params_list[0][i_phi0] = 0
+    params_list[0][i_psi] = 0
+    # Second element (phi_c, phi) = (pi/2, pi/4)
+    params_list[1][i_phi0] = np.pi / 2
+    params_list[1][i_psi] = np.pi / 4
+    # Third element (phi_c, phi) = (3pi/4, 0)
+    params_list[2][i_phi0] = 3 * np.pi / 4
+    params_list[2][i_psi] = 0
+    # Fourth element (phi_c, phi) = (pi/4, pi/4)
+    params_list[3][i_phi0] = np.pi / 4
+    params_list[3][i_psi] = np.pi / 4
+    # Compute all 4 elements for all channels
+    elements = [lisabeta_template(params, freq, tobs, 
+                                  tref=tref, 
+                                  t_offset=t_offset, 
+                                  channels=channels) for params in params_list]
+    # Compute the design matrices for each channel
+    mat_list = [np.vstack([el[i] for el in elements]).T 
+                for i in range(len(elements[0]))]
 
-    # TDI response 1
-    wftdi_1 = lisa.GenerateLISATDI(params_1, tobs=tobs, minf=1e-5, maxf=1.,
-                                   tref=tref, torb=0., TDItag='TDIAET',
-                                   acc=1e-4, order_fresnel_stencil=0,
-                                   approximant='IMRPhenomD',
-                                   responseapprox='full', frozenLISA=False,
-                                   TDIrescaled=False)
-    # TDI response 2
-    # wftdi_2 = lisa.GenerateLISATDI(params_2, tobs=tobs, minf=1e-5, maxf=1.,
-    #                                tref=tref, torb=0., TDItag='TDIAET',
-    #                                acc=1e-4, order_fresnel_stencil=0,
-    #                                approximant='IMRPhenomD',
-    #                                responseapprox='full', frozenLISA=False,
-    #                                TDIrescaled=False)
-
-    fs1 = wftdi_1['freq']
-    # fs2 = wftdi_2['freq']
-    # tr1 = [wftdi_1['transferL' + str(np.int(i))] for i in channels]
-    # tr2 = [wftdi_2['transferL' + str(np.int(i))] for i in channels]
-
-    if freq is not None:
-        amp = pyspline.resample(freq, fs1, wftdi_1['amp'])
-        phase = pyspline.resample(freq, fs1, wftdi_1['phase'])
-        # amp2 = pyspline.resample(freq, fs2, wftdi_1['amp'])
-        # phase2 = pyspline.resample(freq, fs2, wftdi_1['phase'])
-        tr_int1 = [pyspline.resample(freq, fs1,
-                                     wftdi_1['transferL' + str(np.int(i))])
-                   for i in channels]
-        # tr_int2 = [pyspline.resample(freq, fs2,
-        #                              wftdi_2['transferL' + str(np.int(i))])
-        #            for i in channels]
-    else:
-        freq = wftdi_1['freq']
-        tr_int1 = [wftdi_1['transferL' + str(np.int(i))] for i in channels]
-        # tr_int2 = [wftdi_2['transferL' + str(np.int(i))] for i in channels]
-
-    h = amp * np.exp(1j * phase)
-    # h2 = amp2 * np.exp(1j * phase2)
-    # Phasor for the time shift
-    z = np.exp(-2j * np.pi * freq * t_offset)
-
-    # mat_list = [np.vstack((h * tr_int1[i - 1] * z,
-    #                        h2 * tr_int2[i - 1] * z)).conj().T
-    #             for i in channels]
-    mat_list = [np.array([h * tr_int1[i - 1] * z]).conj().T for i in channels]
-
-    return mat_list  # , tr_int1, tr_int2
+    return mat_list

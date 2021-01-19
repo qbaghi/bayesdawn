@@ -3,6 +3,8 @@ import numpy as np
 from scipy import stats
 import configparser
 import os
+from matplotlib import pyplot as plt
+import matplotlib as mpl
 from . import loadings, physics
 import pyfftw
 from pyfftw.interfaces.scipy_fftpack import fft, ifft
@@ -84,15 +86,19 @@ def get_simu_parameters(config_path, simu_path=None, ldc=True, intrinsic=True):
 
     # Load config file
     config = configparser.ConfigParser()
-    prefix = os.path.basename(config_path)[0:19]
+    prefix = os.path.splitext(os.path.basename(config_path))[0]
+    # Assuming that the end of the config file is _config.ini
+    prefix = prefix[:-7]
+    # prefix = os.path.basename(config_path)[0:19]
     config.read(config_path)
     # Determinte which sampler was used
     try:
-        sampler_type = config["Sampler"]["Type"]
+        # sampler_type = config["Sampler"]["Type"]
+        input_path = config["InputData"]["FilePath"]
     except KeyError:
         print("No configuration file found.")
         config = None
-        sampler_type = 'dynesty'
+        # sampler_type = 'dynesty'
 
     # Load the corresponding simulation
     names_full = np.array([key for key in config['ParametersLowerBounds']])
@@ -101,9 +107,7 @@ def get_simu_parameters(config_path, simu_path=None, ldc=True, intrinsic=True):
                   r'$\log D_L$', r'$\cos \i$',
                   r'$\cos \beta$', r'$\lambda$', r'$\psi$', r'$\phi_0$']
 
-    if simu_path is None:
-        input_path = config["InputData"]["FilePath"]
-    else:
+    if simu_path is not None:
         input_path = simu_path + '/' + simu_name
 
     if ldc:
@@ -115,46 +119,51 @@ def get_simu_parameters(config_path, simu_path=None, ldc=True, intrinsic=True):
         i_intr = [0, 1, 2, 3, 4, 7, 8]
     else:
         simu_path = '/Users/qbaghi/Codes/data/simulations/mbhb/'
-        time_vect, signal_list, noise_list, par = loadings.load_simulation(simu_name)
-        i_intr = [0, 1, 2, 3, 4, 8, 9]
+        print("Simulation name: " + str(simu_name))
+        tvect, signal_list, noise_list, params, tstart, del_t, tobs = loadings.load_simulation(
+            simu_path + simu_name)
+        # Convert to sampling parameters
+        par = physics.waveform_to_like(params)
+        # i_intr = [0, 1, 2, 3, 4, 8, 9]
+        i_intr = [0, 1, 2, 3, 4, 7, 8]
 
-    if sampler_type == 'ptemcee':
-        # Load the MCMC samples
-        chain = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_chain.p')
-        lnprob = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_lnprob.p')
+    # if sampler_type == 'ptemcee':
+    # Load the MCMC samples
+    chain = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_chain.p')
+    lnprob = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_lnprob.p')
 
-        if not config["Model"].getboolean('reduced') and intrinsic:
-            # Even if all parameters were sampled, restrict to intrinsic ones
-            names = np.array(names_math)[i_intr]
-            par0 = np.array(par)[i_intr]
-            chain0 = chain[:, :, :, i_intr]
-            inds = np.where(chain0[0, 0, :, 0] != 0)[0]
-            chain0 = chain0[:, :, inds, :]
-        elif not config["Model"].getboolean('reduced') and not intrinsic:
-            # Keep all parameters
-            names = np.array(names_math)
-            par0 = np.array(par)
-            chain0 = chain[:, :, chain[0, 0, :, 0] != 0, :]
-        else:
-            # Restrict to instrinsic parameters
-            names = np.array(names_math)[i_intr]
-            par0 = np.array(par)[i_intr]
-            chain0 = chain[:, :, chain[0, 0, :, 0] != 0, :]
+    if not config["Model"].getboolean('reduced') and intrinsic:
+        # Even if all parameters were sampled, restrict to intrinsic ones
+        names = np.array(names_math)[i_intr]
+        par0 = np.array(par)[i_intr]
+        chain0 = chain[:, :, :, i_intr]
+        inds = np.where(chain0[0, 0, :, 0] != 0)[0]
+        chain0 = chain0[:, :, inds, :]
+    elif not config["Model"].getboolean('reduced') and not intrinsic:
+        # Keep all parameters
+        names = np.array(names_math)
+        par0 = np.array(par)
+        chain0 = chain[:, :, chain[0, 0, :, 0] != 0, :]
+    else:
+        # Restrict to instrinsic parameters
+        names = np.array(names_math)[i_intr]
+        par0 = np.array(par)[i_intr]
+        chain0 = chain[:, :, chain[0, 0, :, 0] != 0, :]
 
-        print("Shape of loaded sample array: " + str(chain.shape))
-        print("Shape of non-zero sample array: " + str(chain0.shape))
+    print("Shape of loaded sample array: " + str(chain.shape))
+    print("Shape of non-zero sample array: " + str(chain0.shape))
 
-    elif sampler_type == 'dynesty':
-        # fig, axes = dyplot.runplot(chain)  # summary (run) plot
-        try:
-            chain0 = loadings.load_samples(os.path.dirname(config_path) 
-                                           + '/' + prefix + '_final_save.p')
-        except ValueError:
-            print("No final dinesty result, loading the initial file.")
-            chain0 = loadings.load_samples(os.path.dirname(config_path) 
-                                           + '/' + prefix + '_initial_save.p')
+    # elif sampler_type == 'dynesty':
+    #     # fig, axes = dyplot.runplot(chain)  # summary (run) plot
+    #     try:
+    #         chain0 = loadings.load_samples(os.path.dirname(config_path) 
+    #                                        + '/' + prefix + '_final_save.p')
+    #     except ValueError:
+    #         print("No final dinesty result, loading the initial file.")
+    #         chain0 = loadings.load_samples(os.path.dirname(config_path) 
+    #                                        + '/' + prefix + '_initial_save.p')
 
-    return names, par0, chain0, lnprob, sampler_type
+    return names, par0, chain0, lnprob #, sampler_type
 
 
 def periodogram(y, wd='blackman', del_t=1.0, module=True, sqroot=True,
@@ -202,4 +211,29 @@ def periodogram(y, wd='blackman', del_t=1.0, module=True, sqroot=True,
         per = np.sqrt(per)
         
     return per
-    
+
+
+def plotconfig(lbsize=17, lgsize=14, autolayout=True, figsize=[8, 6],
+               ticklabelsize=16):
+
+    ticks_font = mpl.font_manager.FontProperties(family='serif',
+                                                 style='normal',
+                                                 weight='normal',
+                                                 stretch='normal',
+                                                 size=lbsize)
+
+    mpl.rcParams['xtick.labelsize'] = ticklabelsize
+    mpl.rcParams['ytick.labelsize'] = ticklabelsize
+    mpl.rcParams['font.size'] = 15
+    mpl.rcParams['figure.autolayout'] = autolayout
+    # mpl.rcParams['figure.figsize'] = 7.2, 4.45
+    mpl.rcParams['figure.figsize'] = figsize[0], figsize[1]
+    mpl.rcParams['axes.titlesize'] = 16
+    mpl.rcParams['axes.labelsize'] = lbsize
+    mpl.rcParams['lines.linewidth'] = 2
+    mpl.rcParams['lines.markersize'] = 6
+    mpl.rcParams['legend.fontsize'] = lgsize
+    mpl.rcParams['mathtext.fontset'] = 'stix'
+    mpl.rcParams['font.family'] = 'STIXGeneral'
+
+    return ticks_font
