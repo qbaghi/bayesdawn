@@ -53,7 +53,7 @@ templates_path = ['_templates']
 # List of patterns, relative to source directory, that match files and
 # directories to ignore when looking for source files.
 # This pattern also affects html_static_path and html_extra_path.
-exclude_patterns = ['_build']
+exclude_patterns = ['_build', '**.ipynb_checkpoints']
 
 # To use Markdown files
 source_suffix = {
@@ -61,6 +61,16 @@ source_suffix = {
     '.txt': 'markdown',
     '.md': 'markdown',
 }
+
+# -- Options for jupyter notebook output -------------------------------------
+# Avoid annoying links to original on scaled images
+html_scaled_image_link = False
+# To get the same behavior as in Jupyter:
+highlight_language = 'none'
+# to avoid the additional suffix .ipynb.txt
+html_sourcelink_suffix = ''
+# Default Pygments lexer for syntax highlighting in code cells
+nbsphinx_codecell_lexer = 'default'
 
 # -- Options for HTML output -------------------------------------------------
 
@@ -74,6 +84,3 @@ html_theme = 'sphinx_rtd_theme'
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
-
-# -- Options for jupyter notebook output -------------------------------------
-highlight_language = 'none'
