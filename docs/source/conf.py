@@ -70,7 +70,7 @@ highlight_language = 'none'
 # to avoid the additional suffix .ipynb.txt
 html_sourcelink_suffix = ''
 # Default Pygments lexer for syntax highlighting in code cells
-nbsphinx_codecell_lexer = 'default'
+nbsphinx_codecell_lexer = 'ipython3'
 
 # -- Options for HTML output -------------------------------------------------
 
