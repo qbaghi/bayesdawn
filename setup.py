@@ -29,7 +29,7 @@ with open(path.join(here, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='bayesdawn',
-    version='1.0.0',
+    version='0.1.0',
     description='a bayesian data augmentation algorithm',
     long_description=long_description,
     long_description_content_type='text/markdown',
@@ -40,21 +40,21 @@ setup(
         #   3 - Alpha
         #   4 - Beta
         #   5 - Production/Stable
-        'Development Status :: 3 - Alpha',
+        "Development Status :: 3 - Alpha",
 
         # Indicate who your project is intended for
-        'Intended Audience :: Developers',
-        'Topic :: Software Development :: Build Tools',
+        "Intended Audience :: Developers",
+        "Topic :: Software Development :: Build Tools",
 
         # Pick your license as you wish
-        'License :: OSI Approved :: GNU License',
+        "License :: OSI Approved :: GNU General Public License (GPL)",
 
         # Python versions
-        'Programming Language :: Python :: 3',
-        'Programming Language :: Python :: 3.4',
-        'Programming Language :: Python :: 3.5',
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
+        "Programming Language :: Python :: 3",
+        "Programming Language :: Python :: 3.4",
+        "Programming Language :: Python :: 3.5",
+        "Programming Language :: Python :: 3.6",
+        "Programming Language :: Python :: 3.7",
     ],
 
     keywords='bayesesian data analysis',
