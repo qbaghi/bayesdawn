@@ -3,10 +3,13 @@
 import h5py
 import configparser
 import pickle
-from LISAhdf5 import LISAhdf5
 import re
 import numpy as np
 from bayesdawn.gaps import gapgenerator
+try:
+    from LISAhdf5 import LISAhdf5
+except:
+    print("MLDC modules could not be loaded.")
 
 
 def load_samples(hdf5_name):

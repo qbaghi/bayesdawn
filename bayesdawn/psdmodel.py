@@ -6,11 +6,15 @@ import copy
 import numpy as np
 # FTT modules
 import pyfftw
-import tdi
 from scipy import interpolate
 from scipy import linalg as la
 from scipy import optimize
 from pyfftw.interfaces.numpy_fft import fft, ifft
+try:
+    import tdi
+except:
+    print("MLDC modules could not be loaded.")
+
 pyfftw.interfaces.cache.enable()
 
 

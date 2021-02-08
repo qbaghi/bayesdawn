@@ -1,9 +1,14 @@
 import numpy as np
-import pyFDresponse as fd_resp
-import Cosmology
-import LISAConstants as LC
-import lisabeta.lisa.ldctools as ldctools
-import pyFDresponse as FD_Resp
+try:
+    import pyFDresponse as fd_resp
+    import Cosmology
+    import LISAConstants as LC
+except:
+    print("MLDC modules could not be loaded.")
+try:
+    import lisabeta.lisa.ldctools as ldctools
+except:
+    print("LISABeta could not be loaded.")
 from bayesdawn.gaps import gapgenerator
 # Global variables
 c_light = 299792458.0
@@ -188,7 +193,7 @@ def get_params(p_gw, sampling=False):
         return m1, m2, tc, chi1, chi2, dist, incl, bet, lam, psi, phi0, DL
     else:
         # Get parameters as an array from the hdf5 structure (table)
-        Mc = FD_Resp.funcMchirpofm1m2(m1, m2)
+        Mc = fd_resp.funcMchirpofm1m2(m1, m2)
         q = m1 / m2
         # transforming into sampling parameters
         ps_sampl = np.array([Mc, q, tc, chi1, chi2, np.log10(DL), np.cos(incl),
@@ -280,7 +285,7 @@ def compute_frequency_vs_time(t, m_chirp, t_merger):
 
     # Compute starting frequency (source frequency at t=0 [Hz]) as a function
     # of time to merger
-    f_start = FD_Resp.funcNewtonianfoft(m_chirp, t_merger_years)
+    f_start = fd_resp.funcNewtonianfoft(m_chirp, t_merger_years)
 
     # Convert chirp mass in kg
     # m_chirp_kg = m_chirp*LC.MsunKG
