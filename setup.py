@@ -64,7 +64,8 @@ setup(
                                                'scipy',
                                                'numpy',
                                                'corner',
-                                               'pyfftw'],
+                                               'pyfftw',
+                                               'numba'],
     # ext_modules=cythonize(extensions),
     # include_dirs=[numpy.get_include(),
     #               os.path.join(numpy.get_include(), 'numpy')]
