@@ -6,12 +6,6 @@ Created on Fri Feb  1 15:09:36 2019
 @author: qbaghi
 """
 
-# For MBHB only, use MLDC code
-try:
-    import GenerateFD_SignalTDIs
-    import LISAConstants as LC
-except ImportError:
-    print("Proceed without MLDC packages.")
 # from lisabeta.lisa import lisa
 try:
     import lisabeta.lisa.lisa as lisa
@@ -21,6 +15,7 @@ except ImportError:
 import numpy as np
 import time
 from scipy import special
+from scipy.constants import c, au, year
 from scipy.interpolate import InterpolatedUnivariateSpline as spline
 from . import coeffs
 import pyfftw
@@ -88,8 +83,8 @@ def optimal_order(theta, f_0):
 
     """
 
-    R = LC.ua
-    d0 = R * np.sin(theta) / LC.c
+    R = au
+    d0 = R * np.sin(theta) / c
     # Modulation index
     mf = 2 * np.pi * f_0 * np.abs(d0)
     # Empirical model
@@ -197,8 +192,8 @@ class GWwaveform(object):
         self.phi_rot = phi_rot
         self.armlength = armlength
 
-        self.R = LC.ua
-        self.f_t = 1. / LC.year
+        self.R = au
+        self.f_t = 1. / year
 
 
 class UCBWaveform(GWwaveform):
@@ -335,7 +330,7 @@ class UCBWaveform(GWwaveform):
         f_0 = params[2]
         f_dot = params[3]
 
-        d0 = self.R * np.sin(theta) / LC.c
+        d0 = self.R * np.sin(theta) / c
         varphi = phi + np.pi/2
 
         # Precompute the Bessel coefficients f, f_0, f_dot, ts, T1, T2
@@ -403,7 +398,7 @@ class UCBWaveform(GWwaveform):
         # a_tmp[:, 1] = np.dot(uc, k_c_tot)  # C_func*Dxi_c
         # a_tmp[:, 2] = np.dot(us, k_p_tot)  # S_func*Dxi_p
         # a_tmp[:, 3] = np.dot(us, k_c_tot)  # S_func*Dxi_c
-        # # a_mat = (armlength/LC.c)**2*a_tmp
+        # # a_mat = (armlength/c)**2*a_tmp
 
         if full:
             # Alternate way, using the fact that us = - 1j * uc:
@@ -501,7 +496,7 @@ class UCBWaveform(GWwaveform):
         """
         # domain and in each channel
         if channel == 'phasemeters':
-            pre = (self.armlength / (4 * LC.c))
+            pre = (self.armlength / (4 * c))
             derivative = 1
             # There is a mixing to convert it in the phasemeter measurements!
             # i_mix = [2, 0, 1]
@@ -516,7 +511,7 @@ class UCBWaveform(GWwaveform):
             k_c_list = [kc3, kc1, kc2]
 
         elif (channel == 'TDIAET') | (channel == 'TDIXYZ'):
-            pre = (self.armlength / LC.c) ** 2
+            pre = (self.armlength / c) ** 2
             derivative = 2
             # Compute the required coefficients response depending on channel
             i, j = indices_low_freq('X1')  # 23
@@ -652,14 +647,14 @@ class UCBWaveform(GWwaveform):
         a0, incl, phi_0, psi, theta, phi, f_0, f_dot = params
         # Vector of intrinsic parameters
         param_intr = np.array([theta, phi, f_0, f_dot])
-        d0 = self.R * np.sin(theta) / LC.c
+        d0 = self.R * np.sin(theta) / c
         varphi = phi + np.pi/2
         m_vect = np.arange(0, 5)
         e_vect = np.exp(1j*m_vect*varphi)
 
         # domain and in each channel
         if channel == 'phasemeters':
-            pre = (self.armlength / (4 * LC.c))
+            pre = (self.armlength / (4 * c))
             derivative = 1
             # Compute the required coefficients response depending on channel
             kp3, kc3 = coeffs.k_coeffs_single(param_intr, self.phi_rot, 3)
@@ -671,7 +666,7 @@ class UCBWaveform(GWwaveform):
 
         elif (channel == 'TDIAET') | (channel == 'TDIXYZ'):
             print(channel)
-            pre = (self.armlength / LC.c) ** 2
+            pre = (self.armlength / c) ** 2
             derivative = 2
             # Compute the required coefficients response depending on channel
             i, j = indices_low_freq('X1')  # 23
@@ -925,7 +920,7 @@ class UCBWaveformFull(GWwaveform):
         phasing *= np.exp(1j * np.pi * f_dot * self.t_samples**2)
 
         # Sinc formulation
-        # pref = np.pi * f_0 * self.arm_list[i-1] / LC.c
+        # pref = np.pi * f_0 * self.arm_list[i-1] / c
         # prefact = 1j * pref * np.sinc(pref * (1 - kni))
         # Copmute
         # # Compute the phase perturbation
@@ -939,7 +934,7 @@ class UCBWaveformFull(GWwaveform):
         #            + self.sinphit_mat[:, 0:3].dot(br)
         # kr_bar_i = kr0 + 2 * self.e * self.R * kn_bar_i
         # kr_bar_i = kr0[:]
-        # d = (2 * kr_bar_i + self.arm_list[i-1]) / LC.c
+        # d = (2 * kr_bar_i + self.arm_list[i-1]) / c
         # phasing = np.exp(-1j * np.pi * f_0 * d)
         return np.array([phasing / denom]).T * np.array([xpi, xci]).T
         # return np.array([prefact * phasing]).T * np.array([xpi, xci]).T
