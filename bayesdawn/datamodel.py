@@ -22,17 +22,8 @@ import pyfftw
 from pyfftw.interfaces.numpy_fft import fft, ifft
 pyfftw.interfaces.cache.enable()
 
-# import librosa
-# from pycbc.filter.qtransform import qtiling, qplane
-# from scipy.interpolate import interp2d
 
-
-# class time_series(np.array):
-#
-#     def __init__(self, *args):
-#
-# class NDTimeSeries(ndarray):
-def generate_freq_noise_from_psd(psd, fe, myseed=None):
+def generate_freq_noise_from_psd(psd, fs, myseed=None):
     """
     Generate noise in the frequency domain from the values of the DSP.
     """
@@ -40,7 +31,7 @@ def generate_freq_noise_from_psd(psd, fe, myseed=None):
 
     """
     Function generating a colored noise from a vector containing the DSP.
-    The DSP contains Np points such that Np > 2N and the output noise should
+    The PSD contains Np points such that Np > 2N and the output noise should
     only contain N points in order to avoid boundary effects. However, the
     output is a 2N vector containing all the generated data. The troncature
     should be done afterwards.
@@ -49,8 +40,8 @@ def generate_freq_noise_from_psd(psd, fe, myseed=None):
 
     Parameters
     ----------
-    DSP : array_like
-        vector of size N_DSP continaing the noise DSP calculated at frequencies
+    psd : array_like
+        vector of size N_DSP continaing the noise one-sided PSD calculated at frequencies
         between -fe/N_DSP and fe/N_DSP where fe is the sampling frequency and N
         is the size of the time series (it will be the size of the returned
         temporal noise vector b)
@@ -74,11 +65,11 @@ def generate_freq_noise_from_psd(psd, fe, myseed=None):
 
     n_fft = np.int((n_psd-1)/2)
     # Real part of the Noise fft : it is a gaussian random variable
-    noise_ft_real = np.sqrt(0.5)*psd[0:n_fft+1]*np.random.normal(loc=0.0, 
+    noise_ft_real = np.sqrt(0.5 * psd[0:n_fft+1])*np.random.normal(loc=0.0, 
                                                                  scale=1.0, 
                                                                  size=n_fft+1) 
     # Imaginary part of the Noise fft :
-    noise_ft_imag = np.sqrt(0.5)*psd[0:n_fft+1]*np.random.normal(loc=0.0, 
+    noise_ft_imag = np.sqrt(0.5 * psd[0:n_fft+1])*np.random.normal(loc=0.0, 
                                                                scale=1.0, 
                                                                size=n_fft+1)
     # The Fourier transform must be real in f = 0
@@ -91,7 +82,7 @@ def generate_freq_noise_from_psd(psd, fe, myseed=None):
     # To get a real valued signal we must have NoiseTF(-f) = NoiseTF*
     if n_psd % 2 == 0 :
         # The TF at Nyquist frequency must be real in the case of an even number of data
-        Noise_sym0 = np.array([ psd[n_fft+1]*np.random.normal(0,1) ])
+        Noise_sym0 = np.array([ np.sqrt(psd[n_fft+1])*np.random.normal(0,1) ])
         # Add the symmetric part corresponding to negative frequencies
         Noise_TF = np.hstack( (Noise_TF, Noise_sym0, np.conj(Noise_TF[1:n_fft+1])[::-1]) )
 
@@ -100,13 +91,13 @@ def generate_freq_noise_from_psd(psd, fe, myseed=None):
         # Noise_TF = np.hstack( (Noise_TF, Noise_sym[::-1]) )
         Noise_TF = np.hstack( (Noise_TF, np.conj(Noise_TF[1:n_fft+1])[::-1]) )
 
-    return np.sqrt(n_psd*fe/2.) * Noise_TF
+    return np.sqrt(n_psd*fs/2.) * Noise_TF
 
 
-def generate_noise_from_psd(DSP, fe, myseed=None) :
+def generate_noise_from_psd(psd, fs, myseed=None) :
     """
     Function generating a colored noise from a vector containing the DSP.
-    The DSP contains Np points such that Np > 2N and the output noise should
+    The PSD contains Np points such that Np > 2N and the output noise should
     only contain N points in order to avoid boundary effects. However, the
     output is a 2N vector containing all the generated data. The troncature
     should be done afterwards.
@@ -115,11 +106,11 @@ def generate_noise_from_psd(DSP, fe, myseed=None) :
 
     Parameters
     ----------
-    DSP : array_like
-        vector of size N_DSP continaing the noise DSP calculated at frequencies
-        between -fe/N_DSP and fe/N_DSP where fe is the sampling frequency and N
-        is the size of the time series (it will be the size of the returned
-        temporal noise vector b)
+    psd : array_like
+        vector of size N_DSP continaing the one-sided 
+        noise DSP calculated at frequencies between -fe/N_DSP and fe/N_DSP where 
+        fe is the sampling frequency and N is the size of the time series 
+        (it will be the size of the returned temporal noise vector b)
     N : scalar integer
         Size of the output time series
     fe : scalar float
@@ -133,7 +124,7 @@ def generate_noise_from_psd(DSP, fe, myseed=None) :
         time sample of the colored noise (size N)
     """
 
-    return ifft(generate_freq_noise_from_psd(DSP,fe,myseed = myseed))
+    return ifft(generate_freq_noise_from_psd(psd, fs, myseed=myseed))
 
 
 class NdTimeSeries(ndarray):
@@ -214,46 +205,6 @@ class NdTimeSeries(ndarray):
 
         return np.abs(fft(self * w)) ** 2 / (k2 * self.fs)
 
-    def qtransform(self, delta_t=None, delta_f=None, logfsteps=None,
-                   frange=None, qrange=(4,64), mismatch=0.2,
-                   return_complex=False):
-        """ Return the interpolated 2d qtransform of this data
-
-        FROM PYCBC
-
-        Parameters
-        ----------
-        delta_t : {self.delta_t, float}
-            The time resolution to interpolate to
-        delta_f : float, Optional
-            The frequency resolution to interpolate to
-        logfsteps : int
-            Do a log interpolation (incompatible with delta_f option) and set
-            the number of steps to take.
-        frange : {(30, nyquist*0.8), tuple of ints}
-            frequency range
-        qrange : {(4, 64), tuple}
-            q range
-        mismatch : float
-            Mismatch between frequency tiles
-        return_complex: {False, bool}
-            return the raw complex series instead of the normalized power.
-
-        Returns
-        -------
-        times : numpy.ndarray
-            The time that the qtransform is sampled.
-        freqs : numpy.ndarray
-            The frequencies that the qtransform is sampled.
-        qplane : numpy.ndarray (2d)
-            The two dimensional interpolated qtransform of this time series.
-        """
-
-        z = np.abs(librosa.cqt(self, sr=1/self.fs, fmin=1/self.tobs,
-                               hop_length=2**10, window='hann'))
-
-        return z
-
 
 def time_series(object, del_t=1.0):
     """
@@ -298,19 +249,6 @@ def toeplitz(r, inds):
     indx = np.abs(ix - iy)
 
     return np.vstack([r[indx[i, :]] for i in range(indx.shape[0])])
-    # c = np.asarray(c).ravel()
-    # if r is None:
-    #     r = c.conjugate()
-    # else:
-    #     r = np.asarray(r).ravel()
-    # # Form a 1D array of values to be used in the matrix, containing a reversed
-    # # copy of r[1:], followed by c.
-    # vals = np.concatenate((r[-1:0:-1], c))
-    # a, b = np.ogrid[0:len(c), len(r) - 1:-1:-1]
-    # indx = a + b
-    # # `indx` is a 2D array of indices into the 1D array `vals`, arranged so
-    # # that `vals[indx]` is the Toeplitz matrix.
-    # return vals[indx]
 
 
 class GaussianStationaryProcess(object):
@@ -441,7 +379,7 @@ class GaussianStationaryProcess(object):
         # Power spectral density computed on a frequency grid of size 2n
         self.s2 = None
         # Preconditionner for PCG or tapered methods
-        self.solve = [None for channel in y_mean]
+        self.solve = None
         # Inverted matrix for woodbury method
         self.sig_inv_mm_inv = None
         self.w_m_cls = None
@@ -766,7 +704,7 @@ class GaussianStationaryProcess(object):
 
             if draw:
                 # For missing data draw:
-                e = np.real(generate_noise_from_psd(np.sqrt(s2*2.), 1.)[0:self.n])
+                e = np.real(generate_noise_from_psd(s2, self.psd_cls.fs)[0:self.n])
                 u = self.apply_coo_inv(y[self.ind_obs] - e[self.ind_obs], r, s2, 
                                     solve=solve)
                 # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
@@ -887,8 +825,7 @@ class GaussianStationaryProcess(object):
 
             # eps = self.conditional_draw_fast(yj[ind_obsj], psd_2n, c_oo_inv, 
             #                                  c_mo, ind_obsj, ind_misj, maskj)
-            e = np.real(generate_noise_from_psd(
-                np.sqrt(psd_2n*2.), 1.)[0:maskj.shape[0]])
+            e = np.real(generate_noise_from_psd(psd_2n, self.psd_cls.fs)[0:maskj.shape[0]])
 
             # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
             eps = e[ind_misj] + c_mo(c_oo_inv.dot(yj[ind_obsj] - e[ind_obsj]))
@@ -951,143 +888,6 @@ class GaussianStationaryProcess(object):
             mu_mis_j = c_mo(c_oo_inv.dot(yj[ind_obsj]))
             
         return mu_mis_j
-
-
-    # def conditional_draw(self, z_o, psd_2n, c_oo_inv, c_mo, 
-    #                      ind_obs, ind_mis, mask, c):
-    #     """
-    #     Function performing random draws of the complete data noise vector
-    #     conditionnaly on the observed data.
-    #     Uses NumPy's multivariate normal function.
-
-    #     Parameters
-    #     ----------
-    #     z_o : numpy array
-    #         vector of observed residuals (size No)
-    #     psd_2n : numpy array (size P >= 2N)
-    #         PSD vector
-    #     c_oo_inv : 2d numpy array
-    #         Inverse of covariance matrix of observed data
-    #     c_mo : callable
-    #         function computing the product of Matrix of covariance between 
-    #         missing data with observed data with any vector: Cmo.x
-    #     ind_obs : array_like (size No)
-    #         vector of chronological indices of the observed data points in the
-    #         complete data vector
-    #     ind_mis : array_like (size No)
-    #         vector of chronological indices of the missing data points in the
-    #         complete data vector
-    #     mask : numpy array (size n_data)
-    #         mask vector (with entries equal to 0 or 1)
-
-    #     Returns
-    #     -------
-    #     eps : numpy array (size Nm)
-    #         realization of the vector of missing noise given the observed data
-
-
-    #     References
-    #     ----------
-    #     n_knots. Stroud et al, Bayesian and Maximum Likelihood Estimation for Gaussian
-    #     Processes on an Incomplete Lattice, 2014
-
-
-    #     """
-
-    #     # the size of the vector that is randomly drawn is
-    #     # equal to the size of the mask.
-    #     # e = np.real(noise.generateNoiseFromDSP(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
-    #     e = np.random.multivariate_normal(np.zeros(mask.shape[0]), 
-    #                                       c[0:mask.shape[0], 0:mask.shape[0]])
-
-    #     # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
-    #     eps = e[ind_mis] + c_mo.dot(c_oo_inv.dot(z_o - e[ind_obs]))
-
-    #     return eps
-
-    # def conditional_draw_fast(self, z_o, psd_2n, c_oo_inv, c_mo, 
-    #                           ind_obs, ind_mis, mask):
-    #     """
-    #     Function performing random draws of the complete data noise vector
-    #     conditionnaly on the observed data.
-    #     Uses generate_noise_from_psd function based on FFT.
-
-    #     Parameters
-    #     ----------
-    #     z_o : numpy array
-    #         vector of observed residuals (size No)
-    #     psd_2n : numpy array (size P >= 2N)
-    #         PSD vector
-    #     c_oo_inv : 2d numpy array
-    #         Inverse of covariance matrix of observed data
-    #     c_mo : callable
-    #         function computing the product of Matrix of covariance between 
-    #         missing data with observed data with any vector: Cmo.x
-    #     ind_obs : array_like (size No)
-    #         vector of chronological indices of the observed data points in the
-    #         complete data vector
-    #     ind_mis : array_like (size No)
-    #         vector of chronological indices of the missing data points in the
-    #         complete data vector
-    #     mask : numpy array (size n_data)
-    #         mask vector (with entries equal to 0 or 1)
-
-    #     Returns
-    #     -------
-    #     eps : numpy array (size Nm)
-    #         realization of the vector of missing noise given the observed data
-
-
-    #     References
-    #     ----------
-    #     n_knots. Stroud et al, Bayesian and Maximum Likelihood Estimation for Gaussian
-    #     Processes on an Incomplete Lattice, 2014
-
-
-    #     """
-
-    #     e = np.real(generate_noise_from_psd(np.sqrt(psd_2n*2.), 1.)[0:mask.shape[0]])
-
-    #     # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
-    #     eps = e[ind_mis] + c_mo(c_oo_inv.dot(z_o - e[ind_obs]))
-
-    #     return eps
-
-    # def single_imputation_fast(self, yj, maskj, r, psd_2n):
-    #     """
-    #     Sample the missing data distribution conditionally on the observed data, 
-    #     computed usin g
-
-    #     Parameters
-    #     ----------
-    #     yj : ndarray
-    #         segment of masked data
-    #     maskj : ndarray
-    #         local mask
-    #     r : ndarray
-    #         autocovariance computed until lag n_max
-    #     psd_2n : ndarray
-    #         psd computed on a Fourier grid of size 2nj
-
-    #     Returns
-    #     -------
-    #     out : ndarray
-    #         imputed missing data, of size len(np.where(maskj == 0)[0])
-
-    #     """
-
-    #     # Local indices of missing and observed data
-    #     ind_obsj = np.where(maskj == 1)[0]
-    #     ind_misj = np.where(maskj == 0)[0]
-    #     # Covariance of observed data and its inverse
-    #     c_oo = toeplitz(r, ind_obsj)
-    #     c_oo_inv = linalg.inv(c_oo)
-    #     # Covariance missing / observed data : matrix operator
-    #     c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
-    #                                                  maskj, psd_2n)
-
-    #     return self.conditional_draw_fast(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
-    #                                       ind_obsj, ind_misj, maskj)
 
 
 class GSP(object):

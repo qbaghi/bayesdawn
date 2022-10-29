@@ -404,7 +404,7 @@ class PSD(object):
 
         """
 
-        return np.real(ifft(self.calculate(2 * N))[0:N])
+        return np.real(ifft(self.calculate(2 * N))[0:N]) * self.fs / 2
 
 
 # ==============================================================================
