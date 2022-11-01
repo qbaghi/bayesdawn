@@ -205,6 +205,28 @@ class bdPSDmodel(psdmodel.PSD):
             psd[xx<cut]*=(xx[xx<cut]/cut)**self.dered_pow #hack the low-f fall-off test
         return psd
 
+def splinePSDs_from_time_data(tdataset,fsamp):
+    n_chan=len(tdataset)
+    n_data=len(tdataset[0])
+    t_obs = n_data / fs
+    # Lower frequency for the PSD estimation
+    fmin = 1 / t_obs * 1.05
+    # Upper frequency
+    fmax=fs/2
+    # Instantiate PSD estimator class
+    psd_sets=[]
+    for ichan in range(n_chan):
+        psd_cls = psdmodel.PSDSpline(n_data, fsamp,
+                                     n_knots=20,
+                                     d=3,
+                                     fmin=fmin,
+                                     fmax=fmax,
+                                     ext=0)
+        psd_cls.estimate(tdataset[ichan])
+        psd_sets.append(psd_cls)
+    return psd_sets
+        
+
 def create_imputation(gapinfo,psd,nchan,method=None):
     '''
     Function to define a set of imputation models for multi-channel data
