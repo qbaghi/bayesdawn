@@ -35,7 +35,8 @@ def mat_vect_prod(y_in, ind_in, ind_out, mask, s_2n):
     N : scalar integer
         Size of the complete data vector
     s_2n : numpy array (size P >= 2N)
-        PSD vector
+        Vector of DFT covariances. Should be be S(f) * fs / 2, where
+        S(f) is the one-sided PSD.
 
 
     Returns
@@ -76,7 +77,8 @@ def matmat_prod(a_in, ind_in, ind_out, mask, s_2n):
     N : scalar integer
         Size of the complete data vector
     s_2n : numpy array (size P >= 2N)
-        PSD vector
+        Vector of DFT covariances. Should be be S(f) * fs / 2, where
+        S(f) is the one-sided PSD.
 
 
     Returns
@@ -279,7 +281,8 @@ def cov_linear_op(ind_in, ind_out, mask, s_2n):
     mask : numpy array (size N)
         mask vector (with entries equal to 0 or 1)
     s_2n : numpy array (size P >= 2N)
-        PSD vector
+        Vector of DFT covariances. Should be be S(f) * fs / 2, where
+        S(f) is the one-sided PSD.
 
 
     Returns
@@ -318,7 +321,8 @@ def pcg_solve(ind_obs, mask, s_2n, b, x0, tol, maxiter, p_solver, pcg_algo):
     mask : numpy array (size N)
         mask vector (with entries equal to 0 or 1)
     s_2n : numpy array (size P >= 2N)
-        PSD vector
+        Vector of DFT covariances. Should be be S(f) * fs / 2, where
+        S(f) is the one-sided PSD.
     b : numpy array
         vector of size n_o containing the right-hand side of linear system to
         solve
@@ -383,8 +387,7 @@ def pcg_solve(ind_obs, mask, s_2n, b, x0, tol, maxiter, p_solver, pcg_algo):
     return u, info
 
 
-def compute_precond(autocorr, mask, p=10, ptype='sparse', taper='Wendland2',
-                    square=True):
+def compute_precond(autocorr, mask, p=10, ptype='sparse', taper='Wendland2'):
     """
     For a given mask and a given PSD function, this function approximately 
     computes the linear operator x = C_OO^{-1} b for any vector b, 
