@@ -3,79 +3,72 @@
 # based on previous version by John Baker NASA-GSFC 2021 
 import numpy as np
 import matplotlib.pyplot as plt
-import scipy.signal as signal
+import scipy.signal
+from scipy.stats import norm
 from cycler import cycler
 
 from ldc.lisa.noise import get_noise_model
 from bayesdawn import datamodel, psdmodel
 
-def build_orthogonal_tdi(tdi_xyz, skip = 100):
-    """
-    Builds orthogonal TDi combinations and packs them in a recarray with fields ['t', A', 'E', 'T'].
-    
-    Parameters:
-        tdi_xyz: numpy rec-array
-            LDC imported data in numpy recarray format with fields ['t', A', 'E', 'T'].
-        skip: integer
-            number of samples to skip to remove margin effects
-    
-    Returns:
-        data: numpy rec-array
-            with fields ['t', A', 'E', 'T'].
-    """
-    # load tdi A, E, T
-    A = (tdi_xyz['Z'][skip:] -   tdi_xyz['X'][skip:])/np.sqrt(2)
-    E = (tdi_xyz['X'][skip:] - 2*tdi_xyz['Y'][skip:] + tdi_xyz['Z'][skip:])/np.sqrt(6)
-    T = (tdi_xyz['X'][skip:] +   tdi_xyz['Y'][skip:] + tdi_xyz['Z'][skip:])*float(1./np.sqrt(3))
 
-    data = np.rec.fromarrays([tdi_xyz['t'][skip:], A, E, T], names = ['t', 'A', 'E', 'T'])
-    
-    return data
-
-def generate_freq_data(data, tdi_vars = 'from_file'):
+def generate_freq_data(data, split = False):
     '''
     Applies `fft_olap_psd` to each group inside data and groups results in a single `numpy.recarray` with the same structure of time-domain data.
     
     Parameters:
     -----------
         data : numpy rec-array 
-            time-domain data whose fields are 't' for time-base 
-            and 'A', 'E', 'T' for the case of orthogonal TDI combinations.
-        tdi_vars : string
-            Key identifying the name of TDI variables under analysis. Default is 'orthogonal', 
-            resulting in 'A', 'E', 'T'. Other option is 'from_file', which acquires TDI names
-            from time-series file. **** TO DO: uniform this
+            time-domain data whose fields are ['t', 'A', 'E', 'T']
+        split : bool
+            False will output another recarray with fields ['f', 'A', 'E', 'T']
+            True will output an ordered ndarray to input to the MBHB search code 
+            containing ['f', 'A_real', 'A_imaginary', 'E_real', 'E_imaginary', 'T_real', 'T_imaginary']
         
     Returns:
     --------
         fdata : numpy rec-array  
-            frequency domain fft data whose fields are 'f' for freq-base 
-            and 'A', 'E', 'T' for the case of orthogonal TDI combinations.
+            frequency domain fft data whose fields are 'f', 'A', 'E', 'T'
         psddata : numpy rec-array 
-            frequency domain psd data whose fields are 'f' for freq-base 
-            and 'A', 'E', 'T' for the case of orthogonal TDI combinations.
+            frequency domain psd data whose fields are 'f', 'A', 'E', 'T'
         fftscalefac : float
     '''
-    # tdi label names
-    if tdi_vars == 'orthogonal': 
-        names = ['A', 'E', 'T']
-    elif tdi_vars == 'from_file':
-        names = data.dtype.names[1:]
-    
-    fdata = np.recarray(shape = (np.int32(data.shape[0]/2+1),), 
-                       dtype={'names':('f',)+names, 'formats':[np.float64]+3*[np.complex128]})
-    psddata = np.recarray(shape = (np.int32(data.shape[0]/2+1),), 
-                       dtype={'names':('f',)+names, 'formats':4*[np.float64]})
-    for tdi in names:
-        f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi)
-        fdata[tdi] = fft
-        psddata[tdi] = psd
-    fdata['f'] = f
-    psddata['f'] = f
-    
-    return fdata, psddata, fftscalefac
+    if split:
+        # tdi label names
+        fdata = np.zeros(shape = (7,np.int32(data.shape[0]/2)))
+        psddata = np.zeros(shape = (4,np.int32(data.shape[0]/2)))
+        tdi = 'A'
+        for n in range(7):
+            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi)
+            if n == 0:
+                fdata[n] = f
+                psddata[n] = f
+            else:
+                if n%2!=0:
+                    tdi = data.dtype.names[1:][int(n/2)]
 
-def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, scale_by_freq = True, plot = False):
+                    fdata[n] = fft.real
+                else:
+                    fdata[n] = fft.imag
+                    psddata[int(n/2)] = psd
+        
+        return fdata.T, psddata.T, fftscalefac
+
+    else:
+        # tdi label names
+        names = data.dtype.names[1:]
+
+        fdata = np.recarray(shape = (np.int32(data.shape[0]/2),), 
+                           dtype={'names':('f',)+names, 'formats':[np.float64]+3*[np.complex128]})
+        psddata = np.recarray(shape = (np.int32(data.shape[0]/2),), 
+                           dtype={'names':('f',)+names, 'formats':4*[np.float64]})
+        for tdi in names:
+            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi)
+            fdata[tdi] = fft
+            psddata[tdi] = psd
+    
+        return fdata, psddata, fftscalefac
+
+def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win = 'blackmanharris', scale_by_freq = True, plot = False):
     '''
     Evaluates one-sided FFT and PSD of time-domain data.
     
@@ -126,9 +119,12 @@ def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, scale
     overlap_fac = 0.5
     navs = navs
     segment_size = np.int32(ndata/navs) # Segment size = 50 % of data length
-    window = signal.hann(segment_size) # Hann window
+    if win == 'hanning':
+        window = scipy.signal.hann(segment_size) # Hann window
+    elif win == 'blackmanharris':
+        window = scipy.signal.blackmanharris(segment_size)
     # signal.welch
-    f, Pxx_spec = signal.welch(data, fs=fs, window='hanning', 
+    f, Pxx_spec = scipy.signal.welch(data, fs=fs, window=win, 
                                detrend='constant',average='mean',nperseg=segment_size)
 
     ## Own implementation
@@ -201,7 +197,7 @@ def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, scale
         ax.legend()
         ax.set_xlim([f[1], dt/2])
         ax.grid()
-    return fft_freq, PSD_own, fft_WelchEstimate_oneSided, scalefac
+    return fft_freq[1:], PSD_own[1:], fft_WelchEstimate_oneSided[1:], scalefac
 
 ###### define compare spectra function for time-series
 from scipy.stats import norm
@@ -332,19 +328,17 @@ def view_gaps(ts, ys, yg,
         gapends = maskinfo['ends']
     n=len(gapstarts)
     nchan=len(channels)
-    
+    ratio = np.zeros((2,3))
     # create figure
     fig = plt.figure(figsize=[5*n,4*nchan*2],constrained_layout=True)
     #     fig, axs = plt.subplots(nchan*2,n,figsize=[6.4*n,4.8*nchan*2],squeeze=False)
-#     fig.suptitle('View gaps')
     # create 3x1 subfigures for each channel
     subfigs = fig.subfigures(nrows = nchan, ncols = 1)
-    
     for chan, subfig in enumerate(subfigs):
         subfig.suptitle(f'Channel {channels[chan]}', size = 'xx-large')
         # create 2xn subplots per subfig
         axs = subfig.subplots(nrows = 2, ncols = n, sharey=True)
-        for j in range(2):
+        for j in range(nchan):
             for i in range(n):
                 i0 = gapstarts[i]-nwing
                 iend = gapends[i]+nwing
@@ -365,15 +359,39 @@ def view_gaps(ts, ys, yg,
                         ax.plot(ts[i0:iend],yi[chan][i0:iend] - yg[chan][i0:iend])
                     if len(ys)>1:
                         ax.set_title('std ratio = {:.2f}'.format(std[1]/std[0]))
-                    if labels is not None: ax.legend(labels=['gap = '+l+' - gapped data ' for l in labels])    
+                        ratio[chan][i] = std[1]/std[0]
+                    if labels is not None: ax.legend(labels=['gap = '+l+' - gapped data ' for l in labels])
                 ax.grid()
                 ax.set_xlabel('Time [s]')
                 ax.set_ylabel('Ampitude []')
     if save:
-        if fname is None:
-            raise ValueError('Missing filename for figure!')
-        else:
+        if fname is not None:
             fig.savefig(fname + '_gaps.png', dpi = 120, bbox_inches='tight', facecolor='white')
+            return ratio
+        
+def std_ratio_eval(ts, ys, yg, 
+              maskinfo=None, gapstarts=None, gapends=None, nwing=100, 
+              channels=['A', 'E', 'T']):
+    '''
+    A development utility for making plots of the gap relevant data
+    '''
+    if maskinfo:
+        gapstarts = maskinfo['starts']
+        gapends = maskinfo['ends']
+    n=len(gapstarts)
+    nchan=len(channels)
+    ratio = np.zeros((2,3))
+    
+    for chan in range(nchan):
+        for i in range(n):
+            i0 = gapstarts[i]-nwing
+            iend = gapends[i]+nwing
+            std = []
+            for yi in ys:
+                std += [np.std(yi[chan][i0:iend] - yg[chan][i0:iend])]
+            if len(ys)>1:
+                ratio[chan][i] = std[1]/std[0]
+    return ratio
             
 # Embed the PSD function in a class
 # psdmodel is imported from bayesdawn
@@ -452,3 +470,48 @@ class LDCCorrectedModelPSD(psdmodel.PSD):
         S = Nmodel.psd(tdi2=True, option=self.channel, freq=x)
         dm = np.abs(self.polyfit(x)*S)
         return dm
+
+
+def LDC_imputation(data_masked, maskinfo, psd_correction, names = ['A', 'E', 'T'], figname = None):
+    # create empty arrays for the imputation
+    imp_cls = []
+    psd_cls = []
+    y_res = []
+    # set up flags and variables
+    mask = maskinfo['mask']
+    psd_correction = False
+    data_rec = data_masked.copy()
+
+    # instantiate the PSD noise class
+    if psd_correction:
+        if figname: figname = figname + 'corrected' 
+        for tdi in names:
+            psd_cls.append(LDCCorrectedModelPSD(ndata, fs, noise_model = 'spritz', channel = tdi, polyfit = poly))
+    else:
+        if figname: figname = figname + 'original' 
+        for tdi in names:
+            psd_cls.append(LDCModelPSD(ndata, fs, noise_model = 'spritz', channel = tdi))#, fmax = 15e-3))    
+
+    # Perform data imputation
+    ### NB this can be streamlined a little bit more and/or transformed into a function 
+    for tdi in range(len(names)):
+        y_masked = data_masked[names[tdi]]
+        s = np.zeros(len(mask))  #for residual 'signal' is zero
+        # instantiate imputation class
+        imp_cls += [datamodel.GaussianStationaryProcess(s, mask, psd_cls[tdi], method='PCG', na=50*fs, nb=50*fs)]
+        # Initialize the (reconstructed) data residuals
+        y_res = np.squeeze(np.array(y_masked).T) # (ymasked - s)   
+        t1 = time.time()
+        # Re-compute of PSD-dependent terms
+        imp_cls[tdi].compute_offline()
+        # Imputation of missing data by randomly drawing from their conditional distribution
+        y_res = imp_cls[tdi].impute(y_masked, draw=True)
+        # Update the data residuals
+        t2 = time.time()
+        print("The imputation / PSD estimation for combination " + names[tdi] + " in iteration "+ str(i) +" took " + str(t2-t1))
+        data_rec[names[tdi]] = y_res
+    
+    if figname:
+        return data_rec, figname
+    else: 
+        return data_rec
