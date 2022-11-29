@@ -171,7 +171,7 @@ def build_orthogonal_tdi(tdi_xyz, skip = 100):
     return data
 
 # FFT and PSD evaluation function
-def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win = 'blackmanharris', scale_by_freq = True, plot = False):
+def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win = 'taper', scale_by_freq = True, plot = False):
     '''
     Evaluates one-sided FFT and PSD of time-domain data.
     
@@ -226,9 +226,11 @@ def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win =
         window = scipy.signal.hann(segment_size) # Hann window
     elif win == 'blackmanharris':
         window = scipy.signal.blackmanharris(segment_size)
+    elif win == 'taper':
+        window = scipy.signal.windows.tukey(segment_size, alpha=0.3)
     # signal.welch
-    f, Pxx_spec = scipy.signal.welch(data, fs=fs, window=win, 
-                               detrend='constant',average='mean',nperseg=segment_size)
+    f, Pxx_spec = scipy.signal.welch(data, fs=fs, window=window, 
+                        detrend='constant',average='mean',nperseg=segment_size)
 
     ## Own implementation
     # Number of segments
@@ -259,7 +261,7 @@ def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win =
             current_segment = current_segment - np.mean(current_segment)
         windowed_segment = np.multiply(current_segment,window)
         fft_segment[i] = np.fft.fft(windowed_segment,fft_size) # fft automatically pads if n<nfft
-
+        
     # Add FFTs of different segments
     fft_sum = np.zeros(fft_size,dtype=np.complex128)
     for segment in fft_segment:
@@ -277,23 +279,18 @@ def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win =
     else:
         powerDensity_transformation = 1
     # assess scale factor    
-    scalefac = powerDensity_averaging * powerDensity_normalization * powerDensity_transformation
+    scalefac = 2 * powerDensity_averaging * powerDensity_normalization * powerDensity_transformation
     # Make oneSided estimate 1st -> N+1st element
     fft_WelchEstimate_oneSided = fft_sum[0:PSD_size]
     # Convert FFT values to power density in U**2/Hz
     PSD_own = np.square(np.abs(fft_WelchEstimate_oneSided)) * scalefac
-    # Double frequencies except DC and Nyquist
-    PSD_own[2:PSD_size-1] *= 2
+    # Generate frequencies
     fft_freq = np.fft.rfftfreq(fft_size, 1/fs)
-    # Take absolute value of Nyquist frequency (negative using np.fft.fftfreq)
-#     fft_freq[-1] = np.abs(fft_freq[-1])
 
     if plot:
         fig, ax = plt.subplots(1,1, dpi = 120)
-        # plt.loglog(data_fft['f'], np.sqrt(scalefac*ps), label='fft')
         ax.loglog(fft_freq, (PSD_own), label = 'my own',ls='-')
         ax.loglog(f, (Pxx_spec), label = 'welch',ls='--')
-        # ax.loglog(freq, (PSD_own), label = 'own',ls='-')
         ax.set_xlabel('frequency [Hz]')
         ax.set_ylabel('Linear spectrum [V RMS]')
         ax.set_title('Power spectrum (sciy.signal.welch)')
@@ -303,7 +300,7 @@ def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win =
     return fft_freq[1:], PSD_own[1:], fft_WelchEstimate_oneSided[1:], scalefac
 
 
-def generate_freq_data(data, split = False):
+def generate_freq_data(data, split = False, win='blackmanharris'):
     '''
     Applies `fft_olap_psd` to each group inside data and groups results in a single `numpy.recarray` with the same structure of time-domain data.
     
@@ -328,16 +325,14 @@ def generate_freq_data(data, split = False):
         # tdi label names
         fdata = np.zeros(shape = (7,np.int32(data.shape[0]/2)))
         psddata = np.zeros(shape = (4,np.int32(data.shape[0]/2)))
-        tdi = 'A'
+        tdi = ['A','A','A','E','E','T','T']
         for n in range(7):
-            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi)
+            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi[n], win=win)
             if n == 0:
                 fdata[n] = f
                 psddata[n] = f
             else:
                 if n%2!=0:
-                    tdi = data.dtype.names[1:][int(n/2)]
-
                     fdata[n] = fft.real
                 else:
                     fdata[n] = fft.imag
@@ -354,7 +349,7 @@ def generate_freq_data(data, split = False):
         psddata = np.recarray(shape = (np.int32(data.shape[0]/2),), 
                            dtype={'names':('f',)+names, 'formats':4*[np.float64]})
         for tdi in names:
-            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi)
+            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi, win=win)
             fdata[tdi] = fft
             psddata[tdi] = psd
         fdata['f']=f
@@ -427,7 +422,7 @@ def plot_compare_spectra_timeseries(data, noise_models, fmax = 2e-2, tdi_vars = 
         for d in data:
             _, _, fft, fft_scalefac = fft_olap_psd(d, chan = n)
             # set up scale factor for fft
-            scalefac = np.sqrt(4*fft_scalefac)
+            scalefac = np.sqrt(2*fft_scalefac)
             ax.hist(fft[f<fmax].real*scalefac/np.sqrt(noise_models[names.index(n)][f<fmax]),
                  bins = nbins,
                  density = True,
@@ -446,7 +441,7 @@ def plot_compare_spectra_timeseries(data, noise_models, fmax = 2e-2, tdi_vars = 
         for d in data:
             _, _, fft, fft_scalefac = fft_olap_psd(d, chan = n)
             # set up scale factor for fft
-            scalefac = np.sqrt(4*fft_scalefac)
+            scalefac = np.sqrt(2*fft_scalefac)
             ax.hist(fft[f<fmax].imag*scalefac/np.sqrt(noise_models[names.index(n)][f<fmax]),
                  bins = nbins,
                  density = True,
@@ -822,5 +817,3 @@ def LDC_imputation(data_masked, maskinfo, psd_correction, names = ['A', 'E', 'T'
         return data_rec, figname
     else: 
         return data_rec
-    
-    
