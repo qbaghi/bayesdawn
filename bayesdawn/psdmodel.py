@@ -305,7 +305,7 @@ class PSD(object):
         Returns
         -------
         per : ndarray
-            periodogram scaled in Units / Hz. Consisten with one-sided
+            periodogram scaled in Units / Hz. Consistant with one-sided
             power spectral density.
 
         """
@@ -329,7 +329,8 @@ class PSD(object):
         Returns
         -------
         psd : ndarray
-            PSD values
+            one-sided PSD values in A^2 / Hz, where A is the unit of 
+            the time series
             
         """
         return np.exp(self.log_psd_fn(np.log(x)))

@@ -580,7 +580,7 @@ class GaussianStationaryProcess(object):
             
         return y_rec
     
-    def apply_coo_inv(self, z_o, r, s2, solve=None):
+    def apply_coo_inv(self, z_o, s2, solve=None):
         """
 
         Operator performing the product Coo^{-1} z on any vector z
@@ -589,11 +589,10 @@ class GaussianStationaryProcess(object):
         ----------
         z_o : array_like
             vector of size n_obs
-        r : array_like
-            autocovariance function until lag N_max
         s2 : array_like
-            values of the noise spectrum calculated on a Fourier grid of size
-            2 N_max
+            One-sided PSD values calculated on a Fourier grid of size 2 N_max
+            WARNING: used to be S(f) * fs / 2. Now the normalization is done
+            inside the function.
         solve : linear operator
             preconditionner
 
@@ -604,6 +603,11 @@ class GaussianStationaryProcess(object):
 
         """
         
+        # Compute the DFT covariances from the one-sided PSD
+        # The actual covariance is npoints x S(f) * fs / 2 but the factor
+        # of npoints is already accounted for in the IFFT normalization
+        cov_2n = s2 * self.psd_cls.fs / 2.0
+
         if self.method == 'tapered':
             # Approximately solve the linear system C_oo x = eps
             x = solve(z_o)
@@ -615,7 +619,7 @@ class GaussianStationaryProcess(object):
             # First guess
             x0 = np.zeros(len(self.ind_obs))
             # Solve the linear system C_oo x = eps
-            x, _ = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
+            x, _ = matrixalgebra.pcg_solve(self.ind_obs, self.mask, cov_2n,
                                            z_o, x0,
                                            self.tol, self.n_it_max,
                                            solve,
@@ -652,8 +656,8 @@ class GaussianStationaryProcess(object):
         r : array_like
             autocovariance function until lag N_max
         s2 : array_like
-            values of the noise spectrum calculated on a Fourier grid of size
-            2 N_max
+            values of the noise one-sided PSD calculated on a Fourier grid of size
+            2 N_max. WARNING: it used to be the noise spectrum S fs / 2
         solve : linear operator
             preconditionner
         draw : bool, optional
@@ -705,7 +709,7 @@ class GaussianStationaryProcess(object):
             if draw:
                 # For missing data draw:
                 e = np.real(generate_noise_from_psd(s2, self.psd_cls.fs)[0:self.n])
-                u = self.apply_coo_inv(y[self.ind_obs] - e[self.ind_obs], r, s2, 
+                u = self.apply_coo_inv(y[self.ind_obs] - e[self.ind_obs], s2, 
                                     solve=solve)
                 # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
                 y_mis = e[self.ind_mis] + matrixalgebra.mat_vect_prod(u, 
@@ -716,7 +720,7 @@ class GaussianStationaryProcess(object):
             else:
                 # For conditional mean computation:
                 # Compute u = C_oo^{-1} z_o
-                u = self.apply_coo_inv(y[self.ind_obs], r, s2, solve=solve)
+                u = self.apply_coo_inv(y[self.ind_obs], s2, solve=solve)
                 # Compute the missing data conditional mean via z|o = Cmo u
                 y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
                                                     self.mask, s2)
@@ -780,7 +784,7 @@ class GaussianStationaryProcess(object):
         r : ndarray
             autocovariance computed until lag n_max
         psd_2n : ndarray
-            psd computed on a Fourier grid of size 2nj
+            One-sided PSD computed on a Fourier grid of size 2nj
         threshold : int, optional
             Threshold for the size of the neighbooring segments, above which
             the methods switches from matrix-based to FFT-based.
@@ -791,6 +795,10 @@ class GaussianStationaryProcess(object):
             imputed missing data, of size len(np.where(maskj == 0)[0])
 
         """
+        # Compute the DFT covariances from the one-sided PSD
+        # The actual covariance is npoints x S(f) * fs / 2 but the factor
+        # of npoints is already accounted for in the IFFT normalization
+        cov_2n = psd_2n * self.psd_cls.fs / 2.0
 
         # Local indices of missing and observed data
         ind_obsj = np.where(maskj == 1)[0]
@@ -821,7 +829,7 @@ class GaussianStationaryProcess(object):
             c_oo_inv = linalg.inv(c_oo)
             # Covariance missing / observed data : matrix operator
             c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
-                                                        maskj, psd_2n)
+                                                         maskj, cov_2n)
 
             # eps = self.conditional_draw_fast(yj[ind_obsj], psd_2n, c_oo_inv, 
             #                                  c_mo, ind_obsj, ind_misj, maskj)
@@ -849,7 +857,7 @@ class GaussianStationaryProcess(object):
         r : ndarray
             autocovariance computed until lag n_max
         psd_2n : ndarray
-            psd computed on a Fourier grid of size 2nj
+            One-sided PSD computed on a Fourier grid of size 2nj
         threshold : int, optional
             Threshold for the size of the neighbooring segments, above which
             the methods switches from matrix-based to FFT-based.
@@ -861,6 +869,11 @@ class GaussianStationaryProcess(object):
             of size len(np.where(maskj == 0)[0])
 
         """
+
+        # Compute the DFT covariances from the one-sided PSD
+        # The actual covariance is npoints x S(f) * fs / 2 but the factor
+        # of npoints is already accounted for in the IFFT normalization
+        cov_2n = psd_2n * self.psd_cls.fs / 2.0
 
         # Local indices of missing and observed data
         ind_obsj = np.where(maskj == 1)[0]
@@ -883,7 +896,7 @@ class GaussianStationaryProcess(object):
             c_oo_inv = linalg.inv(c_oo)
             # Covariance missing / observed data : matrix operator
             c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
-                                                        maskj, psd_2n)
+                                                         maskj, cov_2n)
 
             mu_mis_j = c_mo(c_oo_inv.dot(yj[ind_obsj]))
             
