@@ -408,6 +408,44 @@ def generate_freq_data(data, split = False, win='blackmanharris'):
         psddata['f']=f
     
         return fdata, psddata, fftscalefac
+
+def pack_FD_data(array,channels=[ 'A', 'E', 'T' ]):
+    '''
+    Pack a numpy array to recarray as used in other functions here.
+
+    Arguments:
+         array: nd.array
+                Unlabeled with columns ordered as [ f, ch1R, ch1I, ch2R, ... ] 
+      channels: list of str, default ['A','E'] 
+                Names for the result channels
+    Returns:
+      np.recarray with columns labeled as, eg, [ 'f', 'A', 'E', ...]
+
+    Pack a numpy array with data with columns ordered as 
+    [ f, ch1R, ch1I, ch2R, ... ] into a recarray formatted as other functions 
+    in here use, with labeled columns and complex-valued channels, and column 
+    names, eg [ 'f', 'A', 'E', ...]. If there the number of array columns and
+    channel names are not consistent, the names are applied, sequentially until
+    they, or the data columns are exhausted.
+
+    '''
+    
+    if array.shape[1]%2 == 0:
+        raise ValueError('Expected an odd number of columns')
+
+    #Add check of data type?
+
+    nchan = ( array.shape[1] - 1 ) // 2
+    if nchan > len(channels): nchan = len(channels)
+    names=channels[:nchan]
+    
+    data = np.recarray(shape = (len(array),), 
+                       dtype={'names':['f']+names, 'formats':[np.float64]+nchan*[np.complex128]})
+    data['f']=array[:,0]
+    for ich in range(nchan):
+        data[names[ich]]=array[:,1+ich*2]+1j*array[:,2+ich*2]
+
+    return data
     
 ###### define compare spectra function for time-series
 def plot_compare_spectra_timeseries(data, noise_models, fmax = 2e-2, tdi_vars = 'orthogonal', labels = ['Signal + Noise','Noise','Signal'], save = False, fname = None):
@@ -957,7 +995,10 @@ class ModelFDDataPSD(psdmodel.PSD):
         else: 
             Sinit=None
             if fit_type is None: raise ValueError("Must specify at least fit_type or noise_model")
-        self.Sinit=Sinit
+        self.Sinit=None
+        if Sinit is not None:
+            self.logSinit=scipy.interpolate.interp1d(np.log(f),np.log(Sinit),fill_value="extrapolate")
+            self.Sinit=lambda x:np.exp(self.logSinit(np.log(x)))
         
         self.fit=None
         if fit_type is None: return
@@ -982,7 +1023,7 @@ class ModelFDDataPSD(psdmodel.PSD):
                 if self.Sinit is not None:
                     zero=2*(max(y)+max(Sinit))
                     #print('Sinit min/max',min(Sinit),max(Sinit))
-                    y=np.log(y/zero)/np.log(self.Sinit/zero)
+                    y=np.log(y/zero)/np.log(self.Sinit(self.fin)/zero)
                 else:
                     zero=2*(max(y))
                     y=np.log(y/zero)
@@ -1074,12 +1115,12 @@ class ModelFDDataPSD(psdmodel.PSD):
             if not self.fit_type.startswith('log_'):
                 if self.Sinit is not None:
                     #print('Sinit min/max',min(Sinit),max(Sinit))
-                    y=y/self.Sinit
+                    y=y/self.Sinit(self.fin)
             else:
                 zero=self.fit_zero
                 y=np.log(y/zero)
                 if self.Sinit is not None:
-                    y=y/np.log(self.Sinit/zero)
+                    y=y/(self.logSinit(np.log(self.fin))-np.log(zero))
                     
             print('x',x[:5])
             print('y',y[:5])
@@ -1104,22 +1145,22 @@ class ModelFDDataPSD(psdmodel.PSD):
                 plt.show() 
 
     def psd_fn(self, x):
-        # returns the psd function defined earlier   
-        
-
+        # returns the psd function defined earlier           
 
         if self.fit is not None:
-            if self.fit_logx: x=np.log(x)
+            xx=x.copy()
+            if self.fit_logx:
+                xx=np.log(x)
             if not self.fit_type.startswith('log_'):
-                dm = np.abs(self.fit(x))            
+                dm = np.abs(self.fit(xx))            
                 if self.Sinit is not None:
-                    dm = dm*self.Sinit
+                    dm = dm*self.Sinit(x)
             else:
-                logdm = self.fit(x)
+                logdm = self.fit(xx)
                 zero=self.fit_zero
                 if self.Sinit is not None:
-                    logdm*=np.log(self.Sinit/zero)
+                    logdm*=(self.logSinit(np.log(x))-np.log(zero))
                 dm=zero*np.exp(logdm)
         else:
-            dm = self.Sinit
+            dm = self.Sinit(x)
         return dm
