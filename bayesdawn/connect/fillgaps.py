@@ -768,9 +768,17 @@ class LDCModelPSD(psdmodel.PSD):
             self.f = self.f[self.f<fmax]
 
     def psd_fn(self, x):
-        # returns the psd function defined earlier   
-        Nmodel = get_noise_model(self.noise_model, x)
-        return Nmodel.psd(tdi2=True, option=self.channel, freq=x)            
+        # returns the psd function defined earlier
+        tobs = ndata / fs
+        orbits = lisaorbits.KeplerianOrbits(dt=cfg['dt_orbits'], 
+                                    L=cfg['nominal_arm_length'], 
+                                    a=149597870700.0, 
+                                    lambda1=0, 
+                                    m_init1=0, 
+                                    kepler_order=cfg['kepler_order']) 
+        
+        Nmodel = get_noise_model(self.noise_model, x, wd=0, orbits=orbits, t_obs=tobs)
+        return Nmodel.psd(tdi2=True, option=self.channel, freq=x, equal_arms=False)           
             
 # Embed the PSD function in a class
 # psdmodel is imported from bayesdawn
