@@ -12,65 +12,13 @@ from cycler import cycler
 from ldc.lisa.noise import get_noise_model
 from bayesdawn import datamodel, psdmodel
 
-# Blackman-Harris function
-def BH92(M:int):
-    z = np.arange(0,M)*2*np.pi/M
-    return 0.35875 - 0.48829 * np.cos(z) + 0.14128 * np.cos(2*z) - 0.01168 * np.cos(3*z)
-
-# Blackman-Harris sliding window low-pass filter 
-def BH_lowpass(data, t_win=100,t_sam=5,fs=10):
-    """
-    Lowpass data convolving with a BH92 windowing function.
-    based on LTPDA BH_lowpass.m by E Castelli, 2018
-    translated to python by L Sala UniTrento, December 2021
-    modified by E Castelli, Sept 2022
-    
-    Parameters:
-    -----------
-        data:  
-            tuple of synchronously sampled time series
-        t_win: 
-            window length, controls cut frequency
-        t_sam: 
-            output sampling time
-        fs:    
-            input sampling frequency
-    
-    Returns:
-    --------
-        datalp:
-            lowpassed data
-
-
-    """
-    names = data.dtype.names[1:]
-    dt = 1/fs
-    step_win = np.intc(t_win*fs)
-    step_sam = np.intc(t_sam*fs)
-    assert t_sam>=dt, 'Watch out, do not upsample your data.'
-    assert np.isclose(t_sam*fs,int(t_sam*fs),rtol=1e-5), 'Downsampling time must be multiple of sampling time.'
-    assert np.isclose(t_win*fs,int(t_win*fs),rtol=1e-5), 'Windowing time must be multiple of sampling time.'
-    assert np.isclose(step_win/step_sam,int(step_win/step_sam),rtol=1e-5), 'Watch out, t_win must be multiple of t_sam.'
-    
-    dtarr = np.diff(data['t'])
-    assert np.isclose(dtarr[0],dt,rtol=1e-5), 'Aaargh, sampling frequency is not consistent with data.' #just check fs
-    assert np.allclose(dtarr,dt,rtol=1e-5), 'Aaargh, your data are not equally sampled in time.' #just check sampling time
-
-    BHfilt = BH92(step_win) #build filter
-    BHarea = np.sum(BHfilt)
-    BHfilt = BHfilt/BHarea
-    onearray = np.ones(step_win)/step_win
-
-    #apply filter convolving
-    outts = [np.convolve(data['t'],onearray,mode='valid')] #just a simple way to get times, computationally more expensive than linspace, but safer
-    for tdi in names:
-        outts += [np.convolve(data[tdi], BHfilt,  mode='valid')]
-    #downsample it
-    for i in range(len(outts)):
-        outts[i] = outts[i][::step_sam]
-    datalp = np.rec.fromarrays(outts, names = ['t', 'A', 'E', 'T'])
-    return datalp
-
+# Function to print all attributes of hdf5 file recursively
+def print_attrs(name, obj):
+    shift = name.count('/') * '    '
+    print(shift + name)
+    for key, val in obj.attrs.items():
+        print(shift + '    ' + f"{key}: {val}")
+        
 # Function to import LDC 2 data and convert them in more convenient format 
 def load_tdi_timeseries(fname, 
                         import_datasets = ['obs','clean','sky','noisefree'], 
@@ -820,49 +768,18 @@ class LDCModelPSD(psdmodel.PSD):
             self.f = self.f[self.f<fmax]
 
     def psd_fn(self, x):
-        # returns the psd function defined earlier   
-        Nmodel = get_noise_model(self.noise_model, x)
-        return Nmodel.psd(tdi2=True, option=self.channel, freq=x)            
+        # returns the psd function defined earlier
+        tobs = ndata / fs
+        orbits = lisaorbits.KeplerianOrbits(dt=cfg['dt_orbits'], 
+                                    L=cfg['nominal_arm_length'], 
+                                    a=149597870700.0, 
+                                    lambda1=0, 
+                                    m_init1=0, 
+                                    kepler_order=cfg['kepler_order']) 
+        
+        Nmodel = get_noise_model(self.noise_model, x, wd=0, orbits=orbits, t_obs=tobs)
+        return Nmodel.psd(tdi2=True, option=self.channel, freq=x, equal_arms=False)           
             
-# Embed the PSD function in a class
-# psdmodel is imported from bayesdawn
-class LDCCorrectedModelPSD(psdmodel.PSD):
-    '''
-    Specialization of the bayesdawn psd model class which connects LDC noise models to lisabeta PSD models.
-    
-    Parameters
-    ----------
-    ndata : scalar integer
-        Size of input data
-    fs : scalar integer
-        Frequency sampling of the input time series
-    noise_model : scalar float
-        sampling frequency
-    channel : string
-        seed of the random number generator
-
-    Returns
-    -------
-        bf : numpy array
-        frequency sample of the colored noise (size N)
-    '''
-
-    def __init__(self, ndata, fs, noise_model, channel, polyfit, fmin=None, fmax=None):
-        # instantiates the PDS estimator from function psdmodel.PSD
-        self.noise_model = noise_model
-        self.channel = channel
-        self.polyfit = polyfit
-        psdmodel.PSD.__init__(self, ndata, fs, fmin=None, fmax=None)
-        if fmax is not None:
-            self.f = self.f[self.f<fmax]
-
-    def psd_fn(self, x):
-        # returns the psd function defined earlier   
-        Nmodel = get_noise_model(self.noise_model, x)
-        S = Nmodel.psd(tdi2=True, option=self.channel, freq=x)
-        dm = np.abs(self.polyfit(x)*S)
-        return dm
-
 
 def LDC_imputation(data_masked, maskinfo, psd_correction, names = ['A', 'E', 'T'], figname = None):
     # create empty arrays for the imputation
@@ -937,8 +854,12 @@ class ModelFDDataPSD(psdmodel.PSD):
         Minimum frequency for result
     fmax: float [default None]
         Maximum frequency for result
-    Returns: bayesdawn.psfmodel.PSD object
-    ----------
+        
+        
+    Returns
+    -------
+    bayesdawn.psfmodel.PSD object
+    
     For the specified channel analytic PSD model will be generated. If noise_model is not None,
     then the model will be generated by a ratio against the specified analytic noise model.
     
@@ -952,7 +873,10 @@ class ModelFDDataPSD(psdmodel.PSD):
     If fit_type is None, then the analytic model (possibly smoothed) is applied directly and only 'f' 
     will be used from the data.
     
-    Note: Long-term, it probably makes more sense to fold the functionality here into the underlying
+    Note 
+    ----
+    
+    Long-term, it probably makes more sense to fold the functionality here into the underlying
     bayesdawn.psdmodel.PSD code, which already includes a MCMC sampled spline fit for the PSD. Missing
     there is the crutch we use here for starting from, and scaling against an approximate analytic model.
     '''
