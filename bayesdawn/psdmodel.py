@@ -234,16 +234,21 @@ def spline_matrix(x, knots, D):
 
 def choose_frequency_knots(n_knots, freq_min=1e-5, freq_max=1.0, base=10):
     # Choose the frequency knots
-    ns = - np.log(freq_min) / np.log(base)
-    n0 = - np.log(freq_max) / np.log(base)
+    #JGB: Note. This function wasn't working in a sensible way, (alpha was<-1)
+    #so I fixed it as I believe must have been intended.
+    ns = np.log(freq_min) / np.log(base)
+    n0 = np.log(freq_max) / np.log(base)
     jvect = np.arange(0, n_knots)
-    alpha_guess = 0.8
+    alpha_guess = 1 + 1/(ns-n0) #Soln for k=inf
     targetfunc = lambda x: n0 - (1 - x ** (n_knots)) / (1 - x) - ns
     result = optimize.fsolve(targetfunc, alpha_guess)
     alpha = result[0]
-    n_knots = n0 - (1 - alpha ** jvect) / (1 - alpha)
-    f_knots = base ** (-n_knots)
-    f_knots = f_knots[(f_knots > freq_min) & (f_knots < freq_max)]
+    print('alpha',alpha)
+    n_knots = ns + (1 - alpha ** jvect) / (1 - alpha)
+    f_knots = base ** (n_knots)
+    print('knots before trim:',f_knots)
+    f_knots = f_knots[(f_knots >= freq_min) & (f_knots <= freq_max)]
+    print(len(f_knots))
     
     return np.unique(np.sort(f_knots))
 
@@ -526,7 +531,7 @@ class PSDSpline(PSD):
 
         f_knots = choose_frequency_knots(self.n_knots, freq_min=self.fmin, 
                                          freq_max=self.fmax, base=10)
-        f_knots = f_knots[1:-1]
+        f_knots = f_knots[1:-1] #don't include the boundary points
         
         return f_knots
     
