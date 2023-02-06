@@ -1,0 +1,19 @@
+
+20230109: Quentin Baghi
+## John put everything together to analyse the Spritz data with his code.
+Try to get the gap stuff wired to his code.
+Has already a corner plot showing the posteriors from full data, comparing two setups.
+Coalescence time is particularly off, also a bit the sky location. Probably because of the constellation response not being completely right. For one source, gets SNR = 4200. But the documentation says 2000. John will check this using the notebook that was made during data generation: https://gitlab.in2p3.fr/LISA/LDC/-/blob/develop/data_generation/spritz/notebooks/MBHB_glitch_test1.ipynb
+ACTION for Eleonora: will prepare a version of data with windowed gaps.
+## A standard thing to want:
+Instead of doing a regular FFT, we would like to have a frequency-dependent windowing.
+Wide window for low frequencies, and narrow window for high frequencies.
+There are 3 time scales:
+Low-enough frequency : gaps not relevant at all. (Are they?)
+Comparable frequencies : should be well windowed. Tapering width should be a few times the wavelength.
+High frequency : the gap is large compared to it, but has to deal with the edges carefully
+We could use the adaptive windowing method for all frequencies for the MBHB.
+ACTION for Quentin: shall show Eleonora where the code is exactly.
+We should include the windowing in the response as well.
+## Records of meeting minutes
+ACTION for Jake: create a fork of Bayesdawn and add the minutes in the Wiki.
