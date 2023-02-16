@@ -110,7 +110,7 @@ def view_gaps(ts,ys,maskinfo,nwing=20,labels=None):
             if labels is not None: ax.legend(labels=[l+' - '+labels[0] for l in labels[1:]])
     plt.show()
 
-def plot_compare_spectra(datasets,LISAnoise=None,nchan=3,labels=None,fs=None,PSDset=None):
+def plot_compare_spectra(datasets,LISAnoise=None,nchan=3,labels=None,fs=None,PSDset=None,TDItype='TDIAET'):
     '''
     A utility for plotting spectral comparisons
     '''
@@ -133,7 +133,7 @@ def plot_compare_spectra(datasets,LISAnoise=None,nchan=3,labels=None,fs=None,PSD
     noises=[]
     for ich in range(nchan):
         if LISAnoise is not None:
-            noises += [pyLISAnoise.LISANoisePSDFunction(LISAnoise,ich+1,TDIrescaled=resc).apply(fs)]
+            noises += [pyLISAnoise.LISANoisePSDFunction(LISAnoise,ich+1,TDIrescaled=resc,TDI=TDItype).apply(fs)]
         elif PSDset is not None:
             noises += [PSDset[ich].calculate(fs)]
         else:
