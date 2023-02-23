@@ -704,12 +704,20 @@ def view_gaps(ts, ys, yg,
                         Nmodel = get_noise_model(noise_model, f, wd=0, orbits=orbits, t_obs=len(yi[chan])/fs)
                         S = Nmodel.psd(tdi2=True, option=channels[chan], freq=f, equal_arms=False)
                         if j%2:
+<<<<<<< HEAD
                             plotvals=fft.imag*scalefac/np.sqrt(S)
                             ax.set_xlabel('Imag part deviation - whitened data')
                             ax.hist(plotvals,
                                  bins = nbins,
                                  density = True,
                                     label=labels[l])#+' '+str(int(min(plotvals)))+'<x<'+str(int(max(plotvals))))
+=======
+                            ax.set_xlabel('Imag part deviation - whitened data')
+                            ax.hist(fft.imag*scalefac/np.sqrt(S),
+                                 bins = nbins,
+                                 density = True,
+                                 label=labels[l])
+>>>>>>> 0f0b7a2 (Edit plotting functions)
                         else:
                             ax.set_xlabel('Real part deviation - whitened data')
                             ax.hist(fft.real*scalefac/np.sqrt(S),
@@ -817,6 +825,7 @@ def create_imputation(data, channel, mask, noise_model = 'spritz'):
     '''
     Initialize imputation
     
+<<<<<<< HEAD
     Parameters
     ----------
     data : numpy rec-array 
@@ -909,3 +918,9 @@ def update_imputation(data_rec, imp_cls, channel, fit_type = 'log_spline', fit_d
     y_res = y_rec - s
     
     return psdmod, imp_cls, y_res
+=======
+    if figname:
+        return data_rec, figname
+    else: 
+        return data_rec
+>>>>>>> 0f0b7a2 (Edit plotting functions)
