@@ -826,6 +826,9 @@ def create_imputation(data, channel, mask, noise_model = 'spritz'):
     Initialize imputation
     
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 23d04ac (Add functions to create and update imputation)
     Parameters
     ----------
     data : numpy rec-array 
@@ -917,6 +920,7 @@ def update_imputation(data_rec, imp_cls, channel, fit_type = 'log_spline', fit_d
     # Update the data residuals
     y_res = y_rec - s
     
+<<<<<<< HEAD
     return psdmod, imp_cls, y_res
 =======
     if figname:
@@ -924,3 +928,6 @@ def update_imputation(data_rec, imp_cls, channel, fit_type = 'log_spline', fit_d
     else: 
         return data_rec
 >>>>>>> 0f0b7a2 (Edit plotting functions)
+=======
+    return psdmod, imp_cls, y_res
+>>>>>>> 23d04ac (Add functions to create and update imputation)
