@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import scipy.signal
 from scipy.stats import norm
 from cycler import cycler
+import sys
 
 from ldc.lisa.noise import get_noise_model
 import lisaorbits
@@ -791,64 +792,119 @@ class LDCModelPSD(psdmodel.PSD):
         # instantiates the PDS estimator from function psdmodel.PSD
         self.noise_model = noise_model
         self.channel = channel
+        self.ndata = ndata
+        self.fs = fs
         psdmodel.PSD.__init__(self, ndata, fs, fmin=None, fmax=None)
         if fmax is not None:
             self.f = self.f[self.f<fmax]
 
     def psd_fn(self, x):
         # returns the psd function defined earlier
-        tobs = ndata / fs
-        orbits = lisaorbits.KeplerianOrbits(dt=cfg['dt_orbits'], 
-                                    L=cfg['nominal_arm_length'], 
+        tobs = self.ndata / self.fs
+        orbits = lisaorbits.KeplerianOrbits(dt=86400.0, 
+                                    L=2500000000.0, 
                                     a=149597870700.0, 
                                     lambda1=0, 
                                     m_init1=0, 
-                                    kepler_order=cfg['kepler_order']) 
+                                    kepler_order=2) 
         
         Nmodel = get_noise_model(self.noise_model, x, wd=0, orbits=orbits, t_obs=tobs)
         return Nmodel.psd(tdi2=True, option=self.channel, freq=x, equal_arms=False)           
             
 
-def LDC_imputation(data_masked, maskinfo, psd_correction, names = ['A', 'E', 'T'], figname = None):
-    # create empty arrays for the imputation
-    imp_cls = []
-    psd_cls = []
-    y_res = []
-    # set up flags and variables
-    mask = maskinfo['mask']
-    psd_correction = False
-    data_rec = data_masked.copy()
-
-    # instantiate the PSD noise class
-    if psd_correction:
-        if figname: figname = figname + 'corrected' 
-        for tdi in names:
-            psd_cls.append(LDCCorrectedModelPSD(ndata, fs, noise_model = 'spritz', channel = tdi, polyfit = poly))
-    else:
-        if figname: figname = figname + 'original' 
-        for tdi in names:
-            psd_cls.append(LDCModelPSD(ndata, fs, noise_model = 'spritz', channel = tdi))#, fmax = 15e-3))    
-
-    # Perform data imputation
-    ### NB this can be streamlined a little bit more and/or transformed into a function 
-    for tdi in range(len(names)):
-        y_masked = data_masked[names[tdi]]
-        s = np.zeros(len(mask))  #for residual 'signal' is zero
-        # instantiate imputation class
-        imp_cls += [datamodel.GaussianStationaryProcess(s, mask, psd_cls[tdi], method='PCG', na=50*fs, nb=50*fs)]
-        # Initialize the (reconstructed) data residuals
-        y_res = np.squeeze(np.array(y_masked).T) # (ymasked - s)   
-        t1 = time.time()
-        # Re-compute of PSD-dependent terms
-        imp_cls[tdi].compute_offline()
-        # Imputation of missing data by randomly drawing from their conditional distribution
-        y_res = imp_cls[tdi].impute(y_masked, draw=True)
-        # Update the data residuals
-        t2 = time.time()
-        print("The imputation / PSD estimation for combination " + names[tdi] + " in iteration "+ str(i) +" took " + str(t2-t1))
-        data_rec[names[tdi]] = y_res
+def create_imputation(data, channel, mask, noise_model = 'spritz'):
+    '''
+    Initialize imputation
     
-    if figname:
-        return data_rec, figname
-    else: 
-        return data_rec
+    Parameters
+    ----------
+    data : numpy rec-array 
+        time-domain data array of gapped data whose fields are 't' for time-base 
+        and 'A', 'E', 'T' for the case of orthogonal TDI combinations.
+    channel : string
+        TDI channel name
+    noise_model : string
+        noise model for LDC release. Defaults to 'spritz'.
+    
+    Returns
+    -------
+        psd_cls : psd cls object
+            PSD class used for imputation initialization
+        imp_cls : imp cls object
+            imputation bayesdawn class
+        y_res : numpy array
+            residual data after subtraciton of signal from reconstructed data
+    '''
+    y_masked = data[channel]
+    ndata = len(y_masked)
+    dt = data['t'][1]-data['t'][0]
+    fs = 1.0/dt
+    s = np.zeros(len(mask))  # for residual 'signal' is zero
+    # Initialize the (reconstructed) data residuals
+    y_res = np.squeeze(np.array(mask*(y_masked - s)).T) # (ymasked - s)
+    # initialize PSD-0 to the LDC unequal arm noise model
+    psd_cls = LDCModelPSD(ndata, fs, noise_model = 'spritz', channel = channel)
+    # instantiate imputation class
+    imp_cls = datamodel.GaussianStationaryProcess(s, mask, psd_cls, method='nearest', na=100, nb=100)
+    # Compute PSD dependent terms
+    imp_cls.compute_offline() 
+    # Impute missing data for iteration 0
+    y_rec = imp_cls.impute(y_res, draw=True)
+    # Update the data residuals
+    y_res = y_rec - s
+    
+    return psd_cls, imp_cls, y_res
+        
+    
+def update_imputation(data_rec, imp_cls, channel, fit_type = 'log_spline', fit_dof=15, fmin=7e-6):
+    '''
+    Update imputation
+    
+    Parameters
+    ----------
+    data_rec : numpy rec-array 
+        time-domain data array of reconstructed data whose fields are 't' for time-base 
+        and 'A', 'E', 'T' for the case of orthogonal TDI combinations.
+    imp_cls : imp cls object
+            imputation bayesdawn class previously initialized    
+    channel : string
+        TDI channel name
+    fit_type : string
+        type of PSD modeling fit to be applied to the reconstructed data
+        options are None, 'fit_poly', 'fit_spline', 'fit_logpoly', 'fit_logspline'
+    
+    Returns
+    -------
+        psdmod : psd class object
+            PSD class obtained as output for the fit
+        imp_cls : imp cls object
+            imputation bayesdawn class
+        y_res : numpy array
+            residual data after subtraciton of signal from reconstructed data
+    '''
+    # Do update PSD
+    # FT data residuals
+    fd = makeFDdata(data_rec)
+    y_res = data_rec[channel]
+    s = np.zeros(len(y_res))  # for residual 'signal' is zero
+    # Instantiate PSD estimator
+    save_stdout = sys.stdout
+    sys.stdout = open('trash', 'w')
+    psdmod = psdmodel.ModelFDDataPSD(data=fd, 
+                      channel=channel, 
+                      fit_type=fit_type,
+                      fit_dof=fit_dof,
+                      smooth_df=4e-4,
+                      fmin=fmin,
+                      offset_log_fit=True)
+    sys.stdout = save_stdout
+    # Update PSD
+    imp_cls.update_psd(psdmod)
+    # Re-compute of PSD-dependent terms
+    imp_cls.compute_offline()
+    # Imputation of missing data by randomly drawing from their conditional distribution
+    y_rec = imp_cls.impute(y_res, draw=True)
+    # Update the data residuals
+    y_res = y_rec - s
+    
+    return psdmod, imp_cls, y_res
