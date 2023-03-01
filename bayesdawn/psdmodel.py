@@ -278,7 +278,7 @@ class PSD(object):
         # Size of the sample
         self.n_data = n_data
         self.f = np.fft.fftfreq(n_data) * fs
-        self.n = np.int((n_data - 1) / 2.)
+        self.n = int((n_data - 1) / 2.)
 
         if fmin is None:
             self.fmin = fs / n_data
@@ -361,7 +361,7 @@ class PSD(object):
 
         """
 
-        if (type(arg) == np.int) | (type(arg) == np.int64):
+        if (type(arg) == int) | (type(arg) == np.int64):
             n_data = arg
             # Symmetrize the estimates
             if n_data % 2 == 0:  # if n_data is even
@@ -372,7 +372,7 @@ class PSD(object):
                                                    self.f[1:n + 2])))
                 else:
                     f = np.fft.fftfreq(n_data) * self.fs
-                    n = np.int((n_data - 1) / 2.)
+                    n = int((n_data - 1) / 2.)
                     f_tot = np.abs(np.concatenate(([f[1]], f[1:n + 2])))
 
                 spectr = self.psd_fn(f_tot)
@@ -386,7 +386,7 @@ class PSD(object):
                                                    self.f[1:n + 1])))
                 else:
                     f = np.fft.fftfreq(n_data) * self.fs
-                    n = np.int((n_data - 1) / 2.)
+                    n = int((n_data - 1) / 2.)
                     f_tot = np.abs(np.concatenate(([f[1]], f[1:n + 1])))
 
                 spectr = self.psd_fn(f_tot)
@@ -640,7 +640,7 @@ class PSDSpline(PSD):
             else:
                 f = np.concatenate(([0], np.exp(self.logf[NI])))
 
-            n = np.int((NI - 1) / 2.)
+            n = int((NI - 1) / 2.)
             z = per[1:n + 1]
             v = np.log(z) - self.C0
 

@@ -8,8 +8,10 @@ import matplotlib.pyplot as plt
 import scipy.signal
 from scipy.stats import norm
 from cycler import cycler
+import sys
 
 from ldc.lisa.noise import get_noise_model
+import lisaorbits
 from bayesdawn import datamodel, psdmodel
 
 # Function to print all attributes of hdf5 file recursively
@@ -71,8 +73,8 @@ def load_tdi_timeseries(fname,
             tdi[dsgap] = np.copy(tdi[ds])
             for comb in tdi['obs'].dtype.names[1:]:
                 tdi[dsgap][comb][np.isnan(tdi['obs']['X'])] = 0
-        for comb in tdi['obs'].dtype.names[1:]:
-                tdi['obs'][comb][np.isnan(tdi['obs']['X'])] = 0
+    for comb in tdi['obs'].dtype.names[1:]:
+        tdi['obs'][comb][np.isnan(tdi['obs']['X'])] = 0
     return tdi
 
 # Convert LDC2 TDI data to orthogonal TDI combinations
@@ -104,7 +106,7 @@ def build_orthogonal_tdi(tdi_xyz, skip = 100):
 
             data[k] = np.rec.fromarrays([tdi_xyz[k]['t'][skip:], A, E, T], names = ['t', 'A', 'E', 'T'])
             for comb in data[k].dtype.names[1:]:
-                data[k][comb][np.isnan(data[k]['A'])] = 0
+                data[k][comb][np.isnan(data[k][comb])] = 0
     
     elif type(tdi_xyz) is np.ndarray:
         # load tdi A, E, T
@@ -114,7 +116,7 @@ def build_orthogonal_tdi(tdi_xyz, skip = 100):
 
         data = np.rec.fromarrays([tdi_xyz['t'][skip:], A, E, T], names = ['t', 'A', 'E', 'T'])
         for comb in data.dtype.names[1:]:
-            data[comb][np.isnan(data['A'])] = 0
+            data[comb][np.isnan(data[comb])] = 0
     
     return data
 
@@ -122,28 +124,28 @@ def build_orthogonal_tdi(tdi_xyz, skip = 100):
 def makeFDdata(data):
     t = data['t']
     del_t = ( t[-1] - t[0] ) / ( len(t) - 1 )
-    #print('del_t',del_t)
+    # print('del_t',del_t)
     if isinstance(data,dict): 
         chans = list(data.keys())
     elif isinstance(data,(np.ndarray,np.recarray)):
         chans = list(data.dtype.fields.keys())
     chans.remove('t')
-    #print('channel names are',chans)
+    # print('channel names are',chans)
     chandata = [ data[ch] for ch in chans ]
     newchans = ['f'] + chans
-    #print('newchans',newchans)
+    # print('newchans',newchans)
     chFT = [np.fft.rfft(data[ch]*del_t).conj() for ch in chans]
     Nf=len(chFT[0])
     df=0.5/del_t/(Nf-1)
-    #print(df,1/del_t/len(t))
+    # print(df,1/del_t/len(t))
     fr=np.arange(Nf)*df
     fdata = np.rec.fromarrays([fr]+chFT, names = newchans)
     if t[0]!=0 and False:
         for ch in chans:
-            #print(fdata['f'].shape,fdata[ch].shape)
+            # print(fdata['f'].shape,fdata[ch].shape)
             fdata[ch]*=np.exp(-1j*2*np.pi*fdata['f']*t[0])
-    #print(fdata.shape)
-    #print(fdata.dtype)
+    # print(fdata.shape)
+    # print(fdata.dtype)
     return fdata      
 
 #Corresponding inverse transform
@@ -208,9 +210,9 @@ def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win =
     if fs is None:
         if data_array.dtype.names: 
             dt = data_array['t'][1]-data_array['t'][0]
+            fs = 1/dt
         else: # assume dt is 5 seconds
             raise ValueError("Specify the sampling frequency of data using keyword fs, e.g. fs = 0.01 ")
-        fs = 1/dt
     if chan is None:
         if not data_array.dtype.names: 
             data = data_array
@@ -396,7 +398,9 @@ def pack_FD_data(array,channels=[ 'A', 'E', 'T' ]):
     return data
     
 ###### define compare spectra function for time-series
-def plot_compare_spectra_timeseries(data, noise_models, fmax = 2e-2, tdi_vars = 'orthogonal', labels = ['Signal + Noise','Noise','Signal'], save = False, fname = None):
+def plot_compare_spectra_timeseries(data, noise_model='spritz', freq_bands = None, fmax = 2e-2, 
+                                    tdi_vars = 'orthogonal', labels = ['Signal + Noise','Noise','Signal'], 
+                                    save = False, fname = None):
     '''
     A utility for plotting spectral comparisons starting from time-domain data instead
     of frequency-domain data.
@@ -406,89 +410,132 @@ def plot_compare_spectra_timeseries(data, noise_models, fmax = 2e-2, tdi_vars = 
         data : numpy rec-array 
             time-domain data whose fields are 't' for time-base 
             and 'A', 'E', 'T' for the case of orthogonal TDI combinations.
-        noise_models : list of arrays
-            PSD of noise model pertaining to the data under analysis. 
-            Evaluated via the LDC get_noise_model function.     
+        noise_model : string
+            name of noise model to input to the LDC get_noise_model function.   
+        freq_bands : list
+            list of frequencies splitting the data into multiple frequency bands to evaluate
+            the histogram of fft real and imag part of the whitened data
         fmax : float scalar
-            maximum frequency at which we want to cut the analysis. 
+            maximum frequency at which we want to cut the analysis
         tdi_vars : string
-            Key identifying the name of TDI variables under analysis. Default is 'orthogonal', 
+            key identifying the name of TDI variables under analysis. Default is 'orthogonal', 
             resulting in 'A', 'E', 'T'. Other option is 'from_file', which acquires TDI names
-            from time-series file. **** TO DO: uniform this
+            from time-series file
+        labels : list of strings
+            labels for data variables
+        save : bool
+            flag for saving output plot. Defaults to False.
+        fname : string
+            path and filename to save plot
         
     Returns:
     --------
-        grid plot of noise spectra compared with histogram of real and imaginary parts of the fft.
+        grid plot of noise spectra compared to histogram of real and imaginary parts of the fft.
     '''
     # set max value of frequency
     fmax = fmax
     # tdi label names
     if tdi_vars == 'orthogonal': 
-        names = ['A', 'E', 'T']
+        names = ['A', 'E']#, 'T']
     elif tdi_vars == 'from_file':
         names = data.dtype.names[1:]
+    # number of channels
+    nchan = len(names)
+    if freq_bands:
+        nfbands = 3
+    else:
+        nfbands = 1
     # set up labels    
     data_labels = labels
-
-    fig, axs = plt.subplots(3,len(noise_models),figsize=[19.2,12],dpi=120)
-    for n in names[:len(noise_models)]: 
-        ax = axs[0,names.index(n)]
-        ax.set_title(r"Channel "+(n))
+    S={}
+    
+    # create figure
+    fig = plt.figure(figsize=[2*nchan*nfbands,3*nchan],constrained_layout=True, dpi=120)
+    # create 3x1 subfigures for each channel
+    subfigs = fig.subfigures(nrows = 1, ncols = nchan)
+    
+    for row, subrow in enumerate(subfigs):
+        subrow.suptitle(f'Channel {names[row]}', size = 'xx-large')
+        axs = subrow.subfigures(nrows = 3, ncols = 1)
+        
+        ax = axs[0].subplots(1,1)
         ax.set_xlabel(r"Frequency [Hz]")
         ax.set_ylabel("sqrt(PSD) [1/Hz]") 
-        idx = 0
-        for d in data:
-            f, psd, fft, _ = fft_olap_psd(d, chan = n)
+        for idx, d in enumerate(data):
+            dt = d['t'][1]-d['t'][0]
+            f, psd, fft, _ = fft_olap_psd(d, chan = names[row])
             ax.loglog(f[f<fmax], np.sqrt(psd[f<fmax]), label=data_labels[idx])
-            idx += 1
-        ax.loglog(f[f<fmax], np.sqrt(noise_models[names.index(n)][f<fmax]), label=n+" PSD model")  
+        if noise_model == 'spritz':
+            orbits = lisaorbits.KeplerianOrbits(dt=86400.0, 
+                                                L=2500000000.0, 
+                                                a=149597870700.0, 
+                                                lambda1=0, 
+                                                m_init1=0, 
+                                                kepler_order=2)
+        Nmodel = get_noise_model(noise_model, f, wd=0, orbits=orbits, t_obs=len(d)*dt)
+        S = Nmodel.psd(tdi2=True, option=names[row], freq=f, equal_arms=False)
+        ax.loglog(f[f<fmax], np.sqrt(S[f<fmax]), label=names[row]+" PSD model")  
         ax.grid()
         ax.legend()
-
-        # evaluate adherence of PDS to noise model data real part
-        ax = axs[1,names.index(n)]
         
+        ax = axs[1].subplots(nrows=1, ncols = 3, sharey=True)
+        axs[1].suptitle('Real part deviation - whitened data')
         # assess number of bins from noise data
         nbins = int(np.sqrt(len(fft[f<fmax])))
         # create linspace for gaussian noise
         x = np.linspace(-6,6,nbins)
+        ax[0].set_ylabel('Count density')
+        if freq_bands:
+            flims = [f[0]] + freq_bands + [fmax]
+            n = 2  # group size
+            m = 1  # overlap size
+            flim=[flims[i:i+n] for i in range(0, len(flims)-m, n-m)]
+        else:
+            flim=[f[0],f[-1]]
+        for i, a in enumerate(ax):
+            fband = np.logical_and(f>=flim[i][0],f<flim[i][1])
+            for idx, d in enumerate(data):
+                _, _, fft, fft_scalefac = fft_olap_psd(d, chan = names[row])
+                # set up scale factor for fft
+                scalefac = np.sqrt(2*fft_scalefac)
+                a.hist(fft[fband].real*scalefac/np.sqrt(S[fband]),
+                     bins = nbins,
+                     density = True,
+                     label = data_labels[idx])
+            a.plot(x, scipy.stats.norm.pdf(x), label='Normal distribution')
+            a.grid()
+            a.set_xlim([-6, 6])
+            a.set_title('{:0.1f}-{:0.1f} mHz'.format((flim[i][0]*1e3),(flim[i][1]*1e3)))
 
-    
-        ax.set_xlabel('Real part deviation')
-        ax.set_ylabel('Count density')
-        idx = 0
-        for d in data:
-            _, _, fft, fft_scalefac = fft_olap_psd(d, chan = n)
-            # set up scale factor for fft
-            scalefac = np.sqrt(2*fft_scalefac)
-            ax.hist(fft[f<fmax].real*scalefac/np.sqrt(noise_models[names.index(n)][f<fmax]),
-                 bins = nbins,
-                 density = True,
-                 label = data_labels[idx])
-            idx += 1
-        ax.plot(x,norm.pdf(x), label='Normal distribution')
-        ax.grid()
-        ax.set_xlim([-6, 6])
-        ax.legend()
+        ax = axs[2].subplots(nrows=1, ncols = 3, sharey=True)
+        axs[2].suptitle('Imaginary part deviation - whitened data')
+        # assess number of bins from noise data
+        nbins = int(np.sqrt(len(fft[f<fmax])))
+        # create linspace for gaussian noise
+        x = np.linspace(-6,6,nbins)
+        ax[0].set_ylabel('Count density')
+        if freq_bands:
+            flims = [f[0]] + freq_bands + [fmax]
+            n = 2  # group size
+            m = 1  # overlap size
+            flim=[flims[i:i+n] for i in range(0, len(flims)-m, n-m)]
+        else:
+            flim=[f[0],f[-1]]
+        for i, a in enumerate(ax):
+            fband = np.logical_and(f>=flim[i][0],f<flim[i][1])
+            for idx, d in enumerate(data):
+                _, _, fft, fft_scalefac = fft_olap_psd(d, chan = names[row])
+                # set up scale factor for fft
+                scalefac = np.sqrt(2*fft_scalefac)
+                a.hist(fft[fband].imag*scalefac/np.sqrt(S[fband]),
+                     bins = nbins,
+                     density = True,
+                     label = data_labels[idx])
+            a.plot(x, scipy.stats.norm.pdf(x), label='Normal distribution')
+            a.grid()
+            a.set_xlim([-6, 6])
+            a.set_title('{:0.1f}-{:0.1f} mHz'.format((flim[i][0]*1e3),(flim[i][1]*1e3)))
         
-        # evaluate adherence of PDS to noise model data real part
-        ax = axs[2,names.index(n)]
-        ax.set_xlabel('Imag part deviation')
-        ax.set_ylabel('Count density')
-        idx = 0
-        for d in data:
-            _, _, fft, fft_scalefac = fft_olap_psd(d, chan = n)
-            # set up scale factor for fft
-            scalefac = np.sqrt(2*fft_scalefac)
-            ax.hist(fft[f<fmax].imag*scalefac/np.sqrt(noise_models[names.index(n)][f<fmax]),
-                 bins = nbins,
-                 density = True,
-                 label = data_labels[idx])
-            idx += 1
-        ax.plot(x,norm.pdf(x), label='Normal distribution')
-        ax.set_xlim([-6, 6])
-        ax.grid()
-        ax.legend()
     if save:
         if fname is None:
             raise ValueError('Missing fname for figure!')
@@ -555,96 +602,28 @@ def construct_gap_mask(n_data,n_gaps=30,gap_length=10,verbose=False,seed=None):
     return {'mask':mask,'starts':gapstarts,'ends':gapends}
 
 
-def detect_glitch_outliers(data, plot = True, threshold = 10):
-    """
-    Detects glitches as outliers in the data. 
-    Adapted from LDC Spritz analysis notebook https://gitlab.in2p3.fr/LISA/LDC/-/blob/develop/notebooks/LDC2b-Spritz.ipynb
-    
-    Parameters:
-        data: numpy rec-array
-            LDC imported data. Format can be either dict containing multiple numpy recarrays 
-            or a single numpy rec-array with fields ['t', 'X', 'Y', 'Z'] or ['t', 'A', 'E', 'T'] 
-            Lowpassed data work better for this purpose.     
-        plot: bool
-            True or False in order to get a plot of the detected outliers.
-    
-    Returns:
-        peaks: numpy ndarray
-            indexes of all detected outliers from the width of the distribution.
-    """
-    n = data.dtype.names[1]
-    gaps = get_ldc_gap_mask(dataobs, mode='index')
-    
-    mad = scipy.stats.median_abs_deviation(data[n])
-    median = np.median(data[n][0:gaps[0][0]])
-    maxval = np.max(np.abs(data[n]))
-    peaks, properties = scipy.signal.find_peaks(np.abs(data[n]), height=threshold*mad, threshold=None, distance=1)
-
-    if plot:
-        fig, ax = plt.subplots(1,1,figsize=(8,4),dpi=100)
-        ax.plot(data['t'], data[n], label='Filtered data')
-        ax.vlines(data['t'][peaks], ymin=-1.1*maxval, ymax=1.1*maxval, color='red', linestyle='dashed', label='Detected outliers')
-        ax.set_ylabel('TDI'+n)
-        ax.set_xlabel('Time [s]')      
-        ax.legend()
-        ax.grid()
-
-    return peaks
-
-
-def mask_glitches(data, peaks, glitchnum):
-    """
-    Extracts gap times or indexes from LDC data. 
-    Adapted from LDC Spritz analysis notebook https://gitlab.in2p3.fr/LISA/LDC/-/blob/develop/notebooks/LDC2b-Spritz.ipynb
-    
-    Parameters:
-        data: dict or numpy rec-array
-            LDC imported data. Format can be either dict containing multiple numpy recarrays 
-            or a single numpy rec-array with fields ['t', 'X', 'Y', 'Z'] or ['t', 'A', 'E', 'T'] 
-        peaks: numpy ndarray
-            indexes of all detected outliers from the width of the distribution
-        glitchnum: int
-            expected number of glitches (in order to cut out outliers coming from the GW signal)
-    
-    Returns:
-        gaps: numpy ndarray
-            vstack numpy ndarray containing start times on first row and stop times on second row
-    """
-    data_mask = np.copy(data)
-    glitchlen = int(data['t'][peaks[1]] - data['t'][peaks[0]])
-
-    if type(data) is dict:
-        for k in data_mask.keys():
-            for tdi in data_mask[k].dtype.names[1:]:
-                for pk in peaks[:2*glitchnum]:
-                    data_mask[k][tdi][pk-glitchlen:pk+glitchlen] = 0.0
-    else:
-        print(data_mask.dtype)
-        for tdi in data_mask.dtype.names[1:]:
-            print(tdi)
-            for pk in peaks[:2*glitchnum]:
-                data_mask[tdi][pk-glitchlen:pk+glitchlen] = 0.0
-
-    return data_mask
-
 def view_gaps(ts, ys, yg, 
-              maskinfo=None, gapstarts=None, gapends=None, nwing=100, 
-              channels=['A', 'E', 'T'], labels=None, save = False, fname = None):
+              maskinfo=None, gapstarts=None, gapends=None, nwing=150, 
+              channels=['A', 'E', 'T'], labels=None, 
+              histogram = True, noise_model = 'spritz',
+              save = False, fname = None):
     '''
     A development utility for making plots of the gap relevant data
     
     Parameters:
-        ts
-        ys
-        yg
-        maskinfo
-        gapstarts
-        gapends
-        nwing
-        channels
-        labels
-        save
-        fname
+        ts : ndarray
+            time-base
+        ys : list of ndarrays
+            original data 
+        yg : list of ndarrays
+        maskinfo : gap mask
+        gapstarts : list
+        gapends : list
+        nwing : int
+        channels : list of strings
+        labels : list of strings
+        save : bool
+        fname : string
         
     Returns:
         ratio (optional)
@@ -652,44 +631,95 @@ def view_gaps(ts, ys, yg,
     if maskinfo:
         gapstarts = maskinfo['starts']
         gapends = maskinfo['ends']
-    n=len(gapstarts)
+    ngap=len(gapstarts)
     nchan=len(channels)
     ratio = np.zeros((2,3))
+    if histogram:
+        rows = 4
+    else:
+        rows = 2
     # create figure
-    fig = plt.figure(figsize=[5*n,4*nchan*2],constrained_layout=True)
-    #     fig, axs = plt.subplots(nchan*2,n,figsize=[6.4*n,4.8*nchan*2],squeeze=False)
+    fig = plt.figure(figsize=[5*ngap,3*nchan*rows],constrained_layout=True)
     # create 3x1 subfigures for each channel
     subfigs = fig.subfigures(nrows = nchan, ncols = 1)
     for chan, subfig in enumerate(subfigs):
         subfig.suptitle(f'Channel {channels[chan]}', size = 'xx-large')
-        # create 2xn subplots per subfig
-        axs = subfig.subplots(nrows = 2, ncols = n, sharey=True)
-        for j in range(nchan):
-            for i in range(n):
-                i0 = gapstarts[i]-nwing
-                iend = gapends[i]+nwing
-                ax = axs[j][i]
-                if j==0:
-                    ax.set_prop_cycle(cycler(color=['tab:blue', 'tab:green'],linestyle=['-',':']))
-                    l = 0
-                    for yi in ys:
-                        ax.plot(ts[i0:iend],yi[chan][i0:iend], label = labels[l])
-                        l+=1
-                    ax.plot(ts[i0:iend],yg[chan][i0:iend], label='gapped data', color='tab:orange', ls='-')
-                    ax.legend(loc = 'upper right')
-                else:
-                    ax.set_prop_cycle(cycler(color=['tab:purple', 'tab:cyan'], linestyle=['-', ':']))
-                    std = []
-                    for yi in ys:
-                        std += [np.std(yi[chan][i0:iend] - yg[chan][i0:iend])]
-                        ax.plot(ts[i0:iend],yi[chan][i0:iend] - yg[chan][i0:iend])
-                    if len(ys)>1:
-                        ax.set_title('std ratio = {:.2f}'.format(std[1]/std[0]))
-                        ratio[chan][i] = std[1]/std[0]
-                    if labels is not None: ax.legend(labels=['gap = '+l+' - gapped data ' for l in labels])
-                ax.grid()
-                ax.set_xlabel('Time [s]')
-                ax.set_ylabel('Ampitude []')
+        # create rows x ngap subplots per subfig
+        axs = subfig.subplots(nrows = rows, ncols = ngap, sharey='row')
+        for i in range(ngap):
+            # assess start and end bounds for the data stretch to plot
+            i0 = gapstarts[i]-nwing
+            iend = gapends[i]+nwing
+            # assign ax for first row with original data
+            ax = axs[0][i]
+            ax.set_prop_cycle(cycler(color=['tab:blue', 'tab:orange'],linestyle=['-',':']))
+            l = 0
+            for yi in ys:
+                ax.plot(ts[i0:iend],yi[chan][i0:iend], label = labels[l])
+                l+=1
+            ax.plot(ts[i0:iend],yg[chan][i0:iend], label='gapped', color='tab:cyan', ls='-')
+            ax.legend(loc = 'upper right')
+            ax.grid()
+            ax.set_xlabel('Time [s]')
+            ax.set_ylabel('Amplitude')
+            # assign ax for second row with gap data
+            ax = axs[1][i]
+            ax.set_prop_cycle(cycler(color=['tab:purple', 'tab:olive'], linestyle=['-', ':']))
+            std = []
+            for yi in ys:
+                std += [np.std(yi[chan][i0:iend] - yg[chan][i0:iend])]
+                ax.plot(ts[i0:iend],yi[chan][i0:iend] - yg[chan][i0:iend])
+            if len(ys)>1:
+                ax.set_title('std ratio = {:.2f}'.format(std[1]/std[0]))
+                ratio[chan][i] = std[1]/std[0]
+            if labels is not None: ax.legend(labels=[l+' - gapped ' for l in labels])
+            ax.grid()
+            ax.set_xlabel('Time [s]')
+            ax.set_ylabel('Amplitude')
+            
+            if histogram:
+                for j in range(2,4):
+                    # evaluate adherence of PSD to noise model data real part
+                    # assign ax for second row with gap data
+                    ax = axs[j,i]
+                    ax.set_ylabel('Count density')
+                    idx = 0
+                    fs = 1/(ts[1]-ts[0])
+                    for l, yi in enumerate(ys):
+                        f, _, fft, fft_scalefac = fft_olap_psd(yi[chan][i0:iend], fs=fs)
+                        # assess number of bins from noise data
+                        nbins = int(np.sqrt(len(fft)))
+                        # create linspace for gaussian noise
+                        x = np.linspace(-6,6,nbins)
+                        # set up scale factor for fft
+                        scalefac = np.sqrt(2*fft_scalefac)
+                        # Comparison with LISA Orbits
+                        if noise_model == 'spritz':
+                            orbits = lisaorbits.KeplerianOrbits(dt=86400.0, 
+                                                                L=2500000000.0, 
+                                                                a=149597870700.0, 
+                                                                lambda1=0, 
+                                                                m_init1=0, 
+                                                                kepler_order=2)
+                        Nmodel = get_noise_model(noise_model, f, wd=0, orbits=orbits, t_obs=len(yi[chan])/fs)
+                        S = Nmodel.psd(tdi2=True, option=channels[chan], freq=f, equal_arms=False)
+                        if j%2:
+                            plotvals=fft.imag*scalefac/np.sqrt(S)
+                            ax.set_xlabel('Imag part deviation - whitened data')
+                            ax.hist(plotvals,
+                                 bins = nbins,
+                                 density = True,
+                                    label=labels[l])#+' '+str(int(min(plotvals)))+'<x<'+str(int(max(plotvals))))
+                        else:
+                            ax.set_xlabel('Real part deviation - whitened data')
+                            ax.hist(fft.real*scalefac/np.sqrt(S),
+                                 bins = nbins,
+                                 density = True,
+                                 label=labels[l])
+                    ax.plot(x,scipy.stats.norm.pdf(x), label='noise model', color='tab:green')
+                    ax.set_xlim([-6, 6])
+                    ax.grid()
+                    ax.legend()               
     if save:
         if fname is not None:
             fig.savefig(fname + '_gaps.png', dpi = 120, bbox_inches='tight', facecolor='white')
@@ -763,66 +793,119 @@ class LDCModelPSD(psdmodel.PSD):
         # instantiates the PDS estimator from function psdmodel.PSD
         self.noise_model = noise_model
         self.channel = channel
+        self.ndata = ndata
+        self.fs = fs
         psdmodel.PSD.__init__(self, ndata, fs, fmin=None, fmax=None)
         if fmax is not None:
             self.f = self.f[self.f<fmax]
 
     def psd_fn(self, x):
         # returns the psd function defined earlier
-        tobs = ndata / fs
-        orbits = lisaorbits.KeplerianOrbits(dt=cfg['dt_orbits'], 
-                                    L=cfg['nominal_arm_length'], 
+        tobs = self.ndata / self.fs
+        orbits = lisaorbits.KeplerianOrbits(dt=86400.0, 
+                                    L=2500000000.0, 
                                     a=149597870700.0, 
                                     lambda1=0, 
                                     m_init1=0, 
-                                    kepler_order=cfg['kepler_order']) 
+                                    kepler_order=2) 
         
         Nmodel = get_noise_model(self.noise_model, x, wd=0, orbits=orbits, t_obs=tobs)
         return Nmodel.psd(tdi2=True, option=self.channel, freq=x, equal_arms=False)           
             
 
-def LDC_imputation(data_masked, maskinfo, psd_correction, names = ['A', 'E', 'T'], figname = None):
-    # create empty arrays for the imputation
-    imp_cls = []
-    psd_cls = []
-    y_res = []
-    # set up flags and variables
-    mask = maskinfo['mask']
-    psd_correction = False
-    data_rec = data_masked.copy()
-
-    # instantiate the PSD noise class
-    if psd_correction:
-        if figname: figname = figname + 'corrected' 
-        for tdi in names:
-            psd_cls.append(LDCCorrectedModelPSD(ndata, fs, noise_model = 'spritz', channel = tdi, polyfit = poly))
-    else:
-        if figname: figname = figname + 'original' 
-        for tdi in names:
-            psd_cls.append(LDCModelPSD(ndata, fs, noise_model = 'spritz', channel = tdi))#, fmax = 15e-3))    
-
-    # Perform data imputation
-    ### NB this can be streamlined a little bit more and/or transformed into a function 
-    for tdi in range(len(names)):
-        y_masked = data_masked[names[tdi]]
-        s = np.zeros(len(mask))  #for residual 'signal' is zero
-        # instantiate imputation class
-        imp_cls += [datamodel.GaussianStationaryProcess(s, mask, psd_cls[tdi], method='PCG', na=50*fs, nb=50*fs)]
-        # Initialize the (reconstructed) data residuals
-        y_res = np.squeeze(np.array(y_masked).T) # (ymasked - s)   
-        t1 = time.time()
-        # Re-compute of PSD-dependent terms
-        imp_cls[tdi].compute_offline()
-        # Imputation of missing data by randomly drawing from their conditional distribution
-        y_res = imp_cls[tdi].impute(y_masked, draw=True)
-        # Update the data residuals
-        t2 = time.time()
-        print("The imputation / PSD estimation for combination " + names[tdi] + " in iteration "+ str(i) +" took " + str(t2-t1))
-        data_rec[names[tdi]] = y_res
+def create_imputation(data, channel, mask, noise_model = 'spritz'):
+    '''
+    Initialize imputation
     
-    if figname:
-        return data_rec, figname
-    else: 
-        return data_rec
-
-
+    Parameters
+    ----------
+    data : numpy rec-array 
+        time-domain data array of gapped data whose fields are 't' for time-base 
+        and 'A', 'E', 'T' for the case of orthogonal TDI combinations.
+    channel : string
+        TDI channel name
+    noise_model : string
+        noise model for LDC release. Defaults to 'spritz'.
+    
+    Returns
+    -------
+        psd_cls : psd cls object
+            PSD class used for imputation initialization
+        imp_cls : imp cls object
+            imputation bayesdawn class
+        y_res : numpy array
+            residual data after subtraciton of signal from reconstructed data
+    '''
+    y_masked = data[channel]
+    ndata = len(y_masked)
+    dt = data['t'][1]-data['t'][0]
+    fs = 1.0/dt
+    s = np.zeros(len(mask))  # for residual 'signal' is zero
+    # Initialize the (reconstructed) data residuals
+    y_res = np.squeeze(np.array(mask*(y_masked - s)).T) # (ymasked - s)
+    # initialize PSD-0 to the LDC unequal arm noise model
+    psd_cls = LDCModelPSD(ndata, fs, noise_model = 'spritz', channel = channel)
+    # instantiate imputation class
+    imp_cls = datamodel.GaussianStationaryProcess(s, mask, psd_cls, method='nearest', na=100, nb=100)
+    # Compute PSD dependent terms
+    imp_cls.compute_offline() 
+    # Impute missing data for iteration 0
+    y_rec = imp_cls.impute(y_res, draw=True)
+    # Update the data residuals
+    y_res = y_rec - s
+    
+    return psd_cls, imp_cls, y_res
+        
+    
+def update_imputation(data_rec, imp_cls, channel, fit_type = 'log_spline', fit_dof=15, fmin=7e-6):
+    '''
+    Update imputation
+    
+    Parameters
+    ----------
+    data_rec : numpy rec-array 
+        time-domain data array of reconstructed data whose fields are 't' for time-base 
+        and 'A', 'E', 'T' for the case of orthogonal TDI combinations.
+    imp_cls : imp cls object
+            imputation bayesdawn class previously initialized    
+    channel : string
+        TDI channel name
+    fit_type : string
+        type of PSD modeling fit to be applied to the reconstructed data
+        options are None, 'fit_poly', 'fit_spline', 'fit_logpoly', 'fit_logspline'
+    
+    Returns
+    -------
+        psdmod : psd class object
+            PSD class obtained as output for the fit
+        imp_cls : imp cls object
+            imputation bayesdawn class
+        y_res : numpy array
+            residual data after subtraciton of signal from reconstructed data
+    '''
+    # Do update PSD
+    # FT data residuals
+    fd = makeFDdata(data_rec)
+    y_res = data_rec[channel]
+    s = np.zeros(len(y_res))  # for residual 'signal' is zero
+    # Instantiate PSD estimator
+    save_stdout = sys.stdout
+    sys.stdout = open('trash', 'w')
+    psdmod = psdmodel.ModelFDDataPSD(data=fd, 
+                      channel=channel, 
+                      fit_type=fit_type,
+                      fit_dof=fit_dof,
+                      smooth_df=4e-4,
+                      fmin=fmin,
+                      offset_log_fit=True)
+    sys.stdout = save_stdout
+    # Update PSD
+    imp_cls.update_psd(psdmod)
+    # Re-compute of PSD-dependent terms
+    imp_cls.compute_offline()
+    # Imputation of missing data by randomly drawing from their conditional distribution
+    y_rec = imp_cls.impute(y_res, draw=True)
+    # Update the data residuals
+    y_res = y_rec - s
+    
+    return psdmod, imp_cls, y_res
