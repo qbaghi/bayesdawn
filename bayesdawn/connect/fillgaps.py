@@ -23,9 +23,9 @@ def print_attrs(name, obj):
         
 # Function to import LDC 2 data and convert them in more convenient format 
 def load_tdi_timeseries(fname, 
-                        import_datasets = ['obs','clean','sky','noisefree'], 
+                        import_datasets = ['obs','clean','sky','noisefree', 'gal'], 
                         generate_additional_datasets = True,
-                        additional_datasets = ['clean_gapped', 'noise_gapped', 'sky_gapped']):
+                        additional_datasets = ['clean_gapped', 'noise_gapped', 'sky_gapped', 'noiseglitch_gapped']):
     """
     Loads LDC-2 TDI time-series from HDF5 file and packs them in a dictionary.
     Dictionary keys are the HDF5 dataset groups.
@@ -55,8 +55,18 @@ def load_tdi_timeseries(fname,
         tdi[ds] = fid[ds+'/tdi'][()].squeeze()
     # generate noise-only dataset
     tdi['noise'] = np.copy(tdi['clean'])
-    for comb in tdi['clean'].dtype.names[1:]:
-        tdi['noise'][comb] = tdi['clean'][comb] - tdi['sky'][comb]
+    for comb in tdi['clean'].dtype.names[1:]: # loop on the TDI combination names
+        tdi['noise'][comb] = tdi['clean'][comb] - tdi['sky'][comb] - tdi['gal'][comb]
+    # generate glitch and noiseglitch datasets
+    tdi['glitch'] = np.copy(tdi['noisefree'])
+    tdi['noiseglitch'] = np.copy(tdi['noise'])
+    for comb in tdi['noisefree'].dtype.names[1:]: # loop on the TDI combination names
+        # build glitch = noisefree - signal
+        tdi['glitch'][comb] = tdi['noisefree'][comb] - tdi['sky'][comb] - tdi['gal'][comb]
+        tdi['glitch'][comb][np.isnan(tdi['obs']['X'])] = 0
+        # build noiseglitch = noise + glitch
+        tdi['noiseglitch'][comb] = tdi['noise'][comb] + tdi['glitch'][comb]
+    # generate gapped datsets by zeroing out the gaps    
     if generate_additional_datasets:
         dt = tdi['obs']['t'][1]-tdi['obs']['t'][0]
         gaps = tdi['obs']['t'][np.isnan(tdi['obs']['X'])]
@@ -69,7 +79,7 @@ def load_tdi_timeseries(fname,
         gaps_indices = np.vstack([gapsstart, gapsend])
         # set gaps to zero
         # generate gapped dataset
-        for ds, dsgap in zip(['clean','noise','sky'], additional_datasets):
+        for ds, dsgap in zip(['clean','noise','sky','noiseglitch'], additional_datasets):
             tdi[dsgap] = np.copy(tdi[ds])
             for comb in tdi['obs'].dtype.names[1:]:
                 tdi[dsgap][comb][np.isnan(tdi['obs']['X'])] = 0
