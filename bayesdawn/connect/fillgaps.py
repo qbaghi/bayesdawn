@@ -73,8 +73,8 @@ def load_tdi_timeseries(fname,
             tdi[dsgap] = np.copy(tdi[ds])
             for comb in tdi['obs'].dtype.names[1:]:
                 tdi[dsgap][comb][np.isnan(tdi['obs']['X'])] = 0
-        for comb in tdi['obs'].dtype.names[1:]:
-                tdi['obs'][comb][np.isnan(tdi['obs']['X'])] = 0
+    for comb in tdi['obs'].dtype.names[1:]:
+        tdi['obs'][comb][np.isnan(tdi['obs']['X'])] = 0
     return tdi
 
 # Convert LDC2 TDI data to orthogonal TDI combinations
@@ -106,7 +106,7 @@ def build_orthogonal_tdi(tdi_xyz, skip = 100):
 
             data[k] = np.rec.fromarrays([tdi_xyz[k]['t'][skip:], A, E, T], names = ['t', 'A', 'E', 'T'])
             for comb in data[k].dtype.names[1:]:
-                data[k][comb][np.isnan(data[k]['A'])] = 0
+                data[k][comb][np.isnan(data[k][comb])] = 0
     
     elif type(tdi_xyz) is np.ndarray:
         # load tdi A, E, T
@@ -116,7 +116,7 @@ def build_orthogonal_tdi(tdi_xyz, skip = 100):
 
         data = np.rec.fromarrays([tdi_xyz['t'][skip:], A, E, T], names = ['t', 'A', 'E', 'T'])
         for comb in data.dtype.names[1:]:
-            data[comb][np.isnan(data['A'])] = 0
+            data[comb][np.isnan(data[comb])] = 0
     
     return data
 
