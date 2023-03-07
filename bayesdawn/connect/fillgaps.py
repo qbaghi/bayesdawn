@@ -503,7 +503,7 @@ def generate_freq_data(data, split = False, fmin = 1e-6, win='hanning'):
                            dtype={'names':('f',)+names, 'formats':4*[np.float64]})
         for tdi in names:
 #             f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi, win=win)
-            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi[n], nperseg = fs/fmin, win = win)
+            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi, nperseg = fs/fmin, win = win)
             fdata[tdi] = fft
             psddata[tdi] = psd
         fdata['f']=f
@@ -838,7 +838,7 @@ def view_gaps(ts, ys, yg,
                     idx = 0
                     fs = 1/(ts[1]-ts[0])
                     for l, yi in enumerate(ys):
-                        f, _, fft, fft_scalefac = fft_olap_psd(yi[chan][i0:iend], fs=fs)
+                        f, _, fft, fft_scalefac = fft_olap_psd(yi[chan][i0:iend], fs=fs, nperseg = len(yi[chan][i0:iend])/3, win = 'taper')
                         # assess number of bins from noise data
                         nbins = int(np.sqrt(len(fft)))
                         # create linspace for gaussian noise
