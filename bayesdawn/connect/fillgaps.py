@@ -56,16 +56,19 @@ def load_tdi_timeseries(fname,
     # generate noise-only dataset
     tdi['noise'] = np.copy(tdi['clean'])
     for comb in tdi['clean'].dtype.names[1:]: # loop on the TDI combination names
-        tdi['noise'][comb] = tdi['clean'][comb] - tdi['sky'][comb] - tdi['gal'][comb]
+        tdi['noise'][comb] = tdi['clean'][comb] - tdi['sky'][comb]# - tdi['gal'][comb]
     # generate glitch and noiseglitch datasets
     tdi['glitch'] = np.copy(tdi['noisefree'])
     tdi['noiseglitch'] = np.copy(tdi['noise'])
+    tdi['cleanglitch'] = np.copy(tdi['clean'])
     for comb in tdi['noisefree'].dtype.names[1:]: # loop on the TDI combination names
         # build glitch = noisefree - signal
         tdi['glitch'][comb] = tdi['noisefree'][comb] - tdi['sky'][comb] - tdi['gal'][comb]
         tdi['glitch'][comb][np.isnan(tdi['obs']['X'])] = 0
         # build noiseglitch = noise + glitch
         tdi['noiseglitch'][comb] = tdi['noise'][comb] + tdi['glitch'][comb]
+        # build cleanglitch = noise + signal + glitch
+        tdi['cleanglitch'][comb] = tdi['clean'][comb] + tdi['glitch'][comb]
     # generate gapped datsets by zeroing out the gaps    
     if generate_additional_datasets:
         dt = tdi['obs']['t'][1]-tdi['obs']['t'][0]
@@ -182,8 +185,138 @@ def makeTDdata(data,t0=0,flow=None):
     #print(fdata.dtype)
     return tdata 
 
+# # FFT and PSD evaluation function
+# def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win = 'taper', scale_by_freq = True, plot = False):
+#     '''
+#     Evaluates one-sided FFT and PSD of time-domain data.
+    
+#     Parameters:
+#     -----------
+#         data_array : numpy rec-array 
+#             time-domain data whose fields are 't' for time-base 
+#             and 'A', 'E', 'T' for the case of orthogonal TDI combinations.
+#         channel : str
+#             single channel name 
+#         navs : int
+#             number of averaging segments used to evaluate fft
+#             *** TO DO: implement navs > 1
+#         detrend : bool
+#             apply detrending of data
+#         scale_by_freq : bool
+#             scale data by frequency
+#         plot : bool
+#             plot comparison between PSD and scipy.signal.welch evaluation
+        
+#     Returns:
+#     --------
+#         fft_freq : numpy array
+#             array of frequencies
+#         PSD_own : numpy array
+#             array of PSD
+#         fft_WelchEstimate_oneSided : numpy array
+#             array of fft values
+#         scalefac : float
+#             scale factor to convert fft^2 values into PSD
+#     '''
+#     # Number of segments
+#     ndata = data_array.shape[0]
+#     if fs is None:
+#         if data_array.dtype.names: 
+#             dt = data_array['t'][1]-data_array['t'][0]
+#             fs = 1/dt
+#         else: # assume dt is 5 seconds
+#             raise ValueError("Specify the sampling frequency of data using keyword fs, e.g. fs = 0.01 ")
+#     if chan is None:
+#         if not data_array.dtype.names: 
+#             data = data_array
+#         else:
+#             raise ValueError("Specify a channel name using keyword chan, e.g. chan = 'A' ")
+#     elif type(chan) is str:
+#         data = data_array[chan]
+            
+#     overlap_fac = 0.5
+#     navs = navs
+#     segment_size = np.int32(ndata/navs) # Segment size = 50 % of data length
+#     if win == 'hanning':
+#         window = scipy.signal.hann(segment_size) # Hann window
+#     elif win == 'blackmanharris':
+#         window = scipy.signal.blackmanharris(segment_size)
+#     elif win == 'taper':
+#         window = scipy.signal.windows.tukey(segment_size, alpha=0.3)
+#     # signal.welch
+#     f, Pxx_spec = scipy.signal.welch(data, fs=fs, window=window, 
+#                         detrend='constant',average='mean',nperseg=segment_size)
+
+#     ## Own implementation
+#     # Number of segments
+#     overlap_fac = 0.5
+#     baseSegment_number = np.int32(ndata/segment_size) # Number of initial segments
+#     total_segments =  np.int32(baseSegment_number + ((1-overlap_fac)**(-1) - 1 ) * (baseSegment_number - 1)) # No. segments including overlap
+#     overlap_size = overlap_fac*segment_size
+#     fft_size = segment_size
+#     detrend = True # If true, removes signal mean
+#     scale_by_freq = True
+#     # PSD size = N/2 + 1 
+#     PSD_size = np.int32(fft_size/2)+1
+
+#     if scale_by_freq:
+#         # Scale the spectrum by the norm of the window to compensate for
+#         # windowing loss; see Bendat & Piersol Sec 11.5.2.
+#         S2 = np.sum((window)**2) 
+#     else:
+#         # In this case, preserve power in the segment, not amplitude
+#         S2 = (np.sum(window))**2
+
+#     fft_segment = np.empty((total_segments,fft_size),dtype=np.complex64)
+#     for i in range(total_segments):
+#         offset_segment = np.int32(i* (1-overlap_fac)*segment_size)
+#         current_segment = data[offset_segment:offset_segment+segment_size]
+#         # Detrend (Remove mean value)   
+#         if detrend :
+#             current_segment = current_segment - np.mean(current_segment)
+#         windowed_segment = np.multiply(current_segment,window)
+#         fft_segment[i] = np.fft.fft(windowed_segment,fft_size) # fft automatically pads if n<nfft
+        
+#     # Add FFTs of different segments
+#     fft_sum = np.zeros(fft_size,dtype=np.complex128)
+#     for segment in fft_segment:
+#          fft_sum += segment
+
+#     # Signal manipulation factors      
+
+#     # Normalization including window effect on power
+#     powerDensity_normalization = 1/S2
+#     # Averaging decreases FFT variance
+#     powerDensity_averaging = 1/total_segments
+#     # Transformation from Hz.s to Hz spectrum
+#     if scale_by_freq:
+#         powerDensity_transformation = 1/fs
+#     else:
+#         powerDensity_transformation = 1
+#     # assess scale factor    
+#     scalefac = 2 * powerDensity_averaging * powerDensity_normalization * powerDensity_transformation
+#     # Make oneSided estimate 1st -> N+1st element
+#     fft_WelchEstimate_oneSided = fft_sum[0:PSD_size]
+#     # Convert FFT values to power density in U**2/Hz
+#     PSD_own = np.square(np.abs(fft_WelchEstimate_oneSided)) * scalefac
+#     # Generate frequencies
+#     fft_freq = np.fft.rfftfreq(fft_size, 1/fs)
+
+#     if plot:
+#         fig, ax = plt.subplots(1,1, dpi = 120)
+#         ax.loglog(fft_freq, (PSD_own), label = 'my own',ls='-')
+#         ax.loglog(f, (Pxx_spec), label = 'welch',ls='--')
+#         ax.set_xlabel('frequency [Hz]')
+#         ax.set_ylabel('Linear spectrum [V RMS]')
+#         ax.set_title('Power spectrum (sciy.signal.welch)')
+#         ax.legend()
+#         ax.set_xlim([f[1], dt/2])
+#         ax.grid()
+#     return fft_freq[1:], PSD_own[1:], fft_WelchEstimate_oneSided[1:], scalefac
+
 # FFT and PSD evaluation function
-def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win = 'taper', scale_by_freq = True, plot = False):
+def fft_olap_psd(data_array, chan=None, fs=None, navs = None, nperseg = None, olap = 0.5,
+                 detrend = True, win = 'taper', scale_by_freq = True, plot = False):
     '''
     Evaluates one-sided FFT and PSD of time-domain data.
     
@@ -221,7 +354,7 @@ def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win =
         if data_array.dtype.names: 
             dt = data_array['t'][1]-data_array['t'][0]
             fs = 1/dt
-        else: # assume dt is 5 seconds
+        else: 
             raise ValueError("Specify the sampling frequency of data using keyword fs, e.g. fs = 0.01 ")
     if chan is None:
         if not data_array.dtype.names: 
@@ -230,89 +363,90 @@ def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win =
             raise ValueError("Specify a channel name using keyword chan, e.g. chan = 'A' ")
     elif type(chan) is str:
         data = data_array[chan]
-            
-    overlap_fac = 0.5
-    navs = navs
-    segment_size = np.int32(ndata/navs) # Segment size = 50 % of data length
+       
+    if navs:
+        n = navs
+        if navs == 1:
+            n = 1
+        segment_size = (ndata//n)
+    elif nperseg:
+        segment_size = int(nperseg)
+        n = 0
+    elif navs is None and nperseg is None:
+        segment_size = 256*256
+    # Set WOSA parameters
+    overlap_size = int(segment_size*olap)
+    
     if win == 'hanning':
         window = scipy.signal.hann(segment_size) # Hann window
     elif win == 'blackmanharris':
         window = scipy.signal.blackmanharris(segment_size)
     elif win == 'taper':
         window = scipy.signal.windows.tukey(segment_size, alpha=0.3)
-    # signal.welch
+    elif win == 'boxcar':
+        window = scipy.signal.windows.boxcar(segment_size)
+    # window normalizing factor
+    S2 = np.sum((window)**2) 
+    # evaluate signal.welch for comparison
     f, Pxx_spec = scipy.signal.welch(data, fs=fs, window=window, 
                         detrend='constant',average='mean',nperseg=segment_size)
-
-    ## Own implementation
-    # Number of segments
-    overlap_fac = 0.5
-    baseSegment_number = np.int32(ndata/segment_size) # Number of initial segments
-    total_segments =  np.int32(baseSegment_number + ((1-overlap_fac)**(-1) - 1 ) * (baseSegment_number - 1)) # No. segments including overlap
-    overlap_size = overlap_fac*segment_size
-    fft_size = segment_size
-    detrend = True # If true, removes signal mean
-    scale_by_freq = True
-    # PSD size = N/2 + 1 
-    PSD_size = np.int32(fft_size/2)+1
-
-    if scale_by_freq:
-        # Scale the spectrum by the norm of the window to compensate for
-        # windowing loss; see Bendat & Piersol Sec 11.5.2.
-        S2 = np.sum((window)**2) 
+    ## My implementation
+    # Split data into overlapping segments
+    if n == 1 or segment_size >= ndata:
+        x_seg = [data]
     else:
-        # In this case, preserve power in the segment, not amplitude
-        S2 = (np.sum(window))**2
-
-    fft_segment = np.empty((total_segments,fft_size),dtype=np.complex64)
+        x_seg = [data[i:i+segment_size] for i in range(0, len(data)-segment_size, segment_size-overlap_size)]
+    # Calculate number of segments
+    total_segments = len(x_seg)
+    # PSD size = N/2 + 1 
+    PSD_size = np.int32(segment_size/2)+1 
+    # create empty arrays
+    fft_segment = np.empty((total_segments,segment_size),dtype=np.complex64)
+    fft_sum = np.zeros(segment_size,dtype=np.complex128)
+    PSD_sum = np.zeros(segment_size,dtype=np.complex128)
     for i in range(total_segments):
-        offset_segment = np.int32(i* (1-overlap_fac)*segment_size)
-        current_segment = data[offset_segment:offset_segment+segment_size]
+        current_segment = x_seg[i]
         # Detrend (Remove mean value)   
         if detrend :
             current_segment = current_segment - np.mean(current_segment)
+        # apply window to data
         windowed_segment = np.multiply(current_segment,window)
-        fft_segment[i] = np.fft.fft(windowed_segment,fft_size) # fft automatically pads if n<nfft
-        
-    # Add FFTs of different segments
-    fft_sum = np.zeros(fft_size,dtype=np.complex128)
-    for segment in fft_segment:
-         fft_sum += segment
-
-    # Signal manipulation factors      
-
+        # evaluate fft of segment
+        fft_segment[i] = np.fft.fft(windowed_segment,segment_size) # fft automatically pads if n<nfft
+        # sum over segments
+        fft_sum += fft_segment[i]
+        # sum over PSD
+        PSD_sum += np.square(np.abs(fft_segment[i]))
+    
     # Normalization including window effect on power
     powerDensity_normalization = 1/S2
     # Averaging decreases FFT variance
     powerDensity_averaging = 1/total_segments
     # Transformation from Hz.s to Hz spectrum
-    if scale_by_freq:
-        powerDensity_transformation = 1/fs
-    else:
-        powerDensity_transformation = 1
-    # assess scale factor    
+    powerDensity_transformation = 1/fs
+    # assess final scale factor    
     scalefac = 2 * powerDensity_averaging * powerDensity_normalization * powerDensity_transformation
-    # Make oneSided estimate 1st -> N+1st element
+    # Make one- sided estimate 1st -> N+1st element
     fft_WelchEstimate_oneSided = fft_sum[0:PSD_size]
     # Convert FFT values to power density in U**2/Hz
-    PSD_own = np.square(np.abs(fft_WelchEstimate_oneSided)) * scalefac
+    PSD_own = PSD_sum[0:PSD_size] * scalefac
     # Generate frequencies
-    fft_freq = np.fft.rfftfreq(fft_size, 1/fs)
+    fft_freq = np.fft.rfftfreq(segment_size, 1/fs)
 
     if plot:
         fig, ax = plt.subplots(1,1, dpi = 120)
-        ax.loglog(fft_freq, (PSD_own), label = 'my own',ls='-')
-        ax.loglog(f, (Pxx_spec), label = 'welch',ls='--')
+        ax.loglog(fft_freq[1:], (PSD_own[1:]), label = 'my own',ls='-')
+        ax.loglog(f[1:], (Pxx_spec[1:]), label = 'welch',ls='--')
         ax.set_xlabel('frequency [Hz]')
         ax.set_ylabel('Linear spectrum [V RMS]')
         ax.set_title('Power spectrum (sciy.signal.welch)')
         ax.legend()
-        ax.set_xlim([f[1], dt/2])
         ax.grid()
+        
     return fft_freq[1:], PSD_own[1:], fft_WelchEstimate_oneSided[1:], scalefac
 
 
-def generate_freq_data(data, split = False, win='blackmanharris'):
+def generate_freq_data(data, split = False, fmin = 1e-6, win='hanning'):
     '''
     Applies `fft_olap_psd` to each group inside data and groups results in a single `numpy.recarray` with the same structure of time-domain data.
     
@@ -324,6 +458,11 @@ def generate_freq_data(data, split = False, win='blackmanharris'):
             False will output another recarray with fields ['f', 'A', 'E', 'T']
             True will output an ordered ndarray to input to the MBHB search code 
             containing ['f', 'A_real', 'A_imaginary', 'E_real', 'E_imaginary', 'T_real', 'T_imaginary']
+        fmin : float
+            minimum evaluation frequency for fft and PSD evaluated 
+            (higher frequencies increase the number of welch averaging segments)
+        win : string
+            windowing to be applied for the 'boxcar', 'taper', 'hanning', 'blackmanharris'
         
     Returns:
     --------
@@ -333,13 +472,15 @@ def generate_freq_data(data, split = False, win='blackmanharris'):
             frequency domain psd data whose fields are 'f', 'A', 'E', 'T'
         fftscalefac : float
     '''
+    fs = 1/(data['t'][1]-data['t'][0])
     if split:
         # tdi label names
-        fdata = np.zeros(shape = (7,np.int32(data.shape[0]/2)))
-        psddata = np.zeros(shape = (4,np.int32(data.shape[0]/2)))
+        fdata = np.zeros(shape = (7,np.int32(fs/fmin/2)))
+        psddata = np.zeros(shape = (4,np.int32(fs/fmin/2)))
         tdi = ['A','A','A','E','E','T','T']
         for n in range(7):
-            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi[n], win=win)
+#             f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi[n], win = win)
+            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi[n], nperseg = fs/fmin, win = win)
             if n == 0:
                 fdata[n] = f
                 psddata[n] = f
@@ -356,12 +497,13 @@ def generate_freq_data(data, split = False, win='blackmanharris'):
         # tdi label names
         names = data.dtype.names[1:]
 
-        fdata = np.recarray(shape = (np.int32(data.shape[0]/2),), 
+        fdata = np.recarray(shape = (np.int32(fs/fmin/2),), 
                            dtype={'names':('f',)+names, 'formats':[np.float64]+3*[np.complex128]})
-        psddata = np.recarray(shape = (np.int32(data.shape[0]/2),), 
+        psddata = np.recarray(shape = (np.int32(fs/fmin/2),), 
                            dtype={'names':('f',)+names, 'formats':4*[np.float64]})
         for tdi in names:
-            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi, win=win)
+#             f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi, win=win)
+            f, psd, fft, fftscalefac = fft_olap_psd(data, chan = tdi[n], nperseg = fs/fmin, win = win)
             fdata[tdi] = fft
             psddata[tdi] = psd
         fdata['f']=f
@@ -408,7 +550,7 @@ def pack_FD_data(array,channels=[ 'A', 'E', 'T' ]):
     return data
     
 ###### define compare spectra function for time-series
-def plot_compare_spectra_timeseries(data, noise_model='spritz', freq_bands = None, fmax = 2e-2, 
+def plot_compare_spectra_timeseries(data, noise_model='spritz', freq_bands = None, fmin = 1e-6, fmax = 2e-2, 
                                     tdi_vars = 'orthogonal', labels = ['Signal + Noise','Noise','Signal'], 
                                     save = False, fname = None):
     '''
@@ -473,7 +615,7 @@ def plot_compare_spectra_timeseries(data, noise_model='spritz', freq_bands = Non
         ax.set_ylabel("sqrt(PSD) [1/Hz]") 
         for idx, d in enumerate(data):
             dt = d['t'][1]-d['t'][0]
-            f, psd, fft, _ = fft_olap_psd(d, chan = names[row])
+            f, psd, fft, _ = fft_olap_psd(d, chan = names[row], nperseg = 1/dt/fmin)
             ax.loglog(f[f<fmax], np.sqrt(psd[f<fmax]), label=data_labels[idx])
         if noise_model == 'spritz':
             orbits = lisaorbits.KeplerianOrbits(dt=86400.0, 
@@ -505,7 +647,7 @@ def plot_compare_spectra_timeseries(data, noise_model='spritz', freq_bands = Non
         for i, a in enumerate(ax):
             fband = np.logical_and(f>=flim[i][0],f<flim[i][1])
             for idx, d in enumerate(data):
-                _, _, fft, fft_scalefac = fft_olap_psd(d, chan = names[row])
+                _, _, fft, fft_scalefac = fft_olap_psd(d, chan = names[row], nperseg = 1/dt/fmin)
                 # set up scale factor for fft
                 scalefac = np.sqrt(2*fft_scalefac)
                 a.hist(fft[fband].real*scalefac/np.sqrt(S[fband]),
@@ -534,7 +676,7 @@ def plot_compare_spectra_timeseries(data, noise_model='spritz', freq_bands = Non
         for i, a in enumerate(ax):
             fband = np.logical_and(f>=flim[i][0],f<flim[i][1])
             for idx, d in enumerate(data):
-                _, _, fft, fft_scalefac = fft_olap_psd(d, chan = names[row])
+                _, _, fft, fft_scalefac = fft_olap_psd(d, chan = names[row], nperseg = 1/dt/fmin)
                 # set up scale factor for fft
                 scalefac = np.sqrt(2*fft_scalefac)
                 a.hist(fft[fband].imag*scalefac/np.sqrt(S[fband]),
