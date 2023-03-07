@@ -27,9 +27,8 @@ def reconstruct_time_domain(data,nchan):
     '''
     Transform data from Fourier domain (as implemented) to time domain.
     '''
-    #Assume that fs are cell-centered labels of data elements
-    #and evenly spaced in freq, over some band
     #assume data cols are freq, ch1.real, ch1.imag, ch2.real,... 
+    #evenly spaced in freq, over some band
     fs=data[:,0]
     nd=len(data)
     df=(fs[-1]-fs[0])/(nd-1)
@@ -313,3 +312,98 @@ def update_imputation(gapinfo,imp,nchan,resid_data,nfuzz=0,psd=None,verbose=Fals
         control=construct_specialized_data(y,nchan,df,fs[0])
         plot_compare_spectra([resid_data,resid,control,result],PSDset=psd,labels=['orig','fuzzed','control','result'])
     return result
+
+class PSD_model:
+    def __init__(self, data, channels, **model_args):
+        from bayesdawn.psdmodel import ModelFDDataPSD
+        self.channels=channels
+        self.args=model_args
+        self.ML_update(data)
+
+    def ML_update(self, FD_noise_data):
+        PSDmodels=[]
+        for chan in channels:
+            PSDmodels.append(ModelFDDataPSD(self, FD_noise_data, chan, **self.PSD_model_args))
+        self.PSDs=PSDmodels
+
+    def param_update(self,params):
+        raise NotImplementedError()
+    
+class FDimputation:
+    
+    def __init__(self,gap_times,PSDmodel,method='local',nab=60):
+        self.channels=PSD_model.channels
+        self.PSDmodel=PSDmodel
+        nchan=len(self.channels)
+        self.gapinfo=self.compute_gap_info(gap_times)
+        
+        s=np.zeros(len(mask))  #for residual 'signal' is zero
+        args={'method':method}
+        if method=='woodbury':
+            pass
+        elif method=='local':
+            args['na']=nab
+        else: raise ValueError('Did not recognize method="'+method+'"')
+        
+        imps = [ datamodel.GaussianStationaryProcess(s, self.mask, psd, **args) for psd in PSDmodel.PSDs]
+
+        # perform offline computations
+        for imp in imps: imp.compute_offline()
+        self.imps=imps
+
+    def compute_gap_info(self,gap_times):
+        '''
+        TBD Function to compute temporally indexed gap-info, including the gap mask, from time-valued gap info
+        '''
+
+        if not len(gap_intervals.shape)==2 or not gap_intervals.shape(1)==2:
+            raise ValueError('obs_params.gap_intervals should provide a list of pairs [[tstart,tend],[...]] indicating the temporal location of data gaps.')
+        #First sort the gaps by the start time
+        gap_intervals = gap_intervals[gap_intervals[:,0].argsort()]
+        for i in range(len(gap_intervals)-1):
+            if gap_intervals[i,1]>=gap_intervals[i,0]:
+                raise ValueError('Not ready to handlle overlapping gaps')
+
+        raise NotImplementedError()
+    
+    def apply_imputation(self, resid_data,psd=None,verbose=False):
+        '''
+        Function to apply a set of imputation models to  multi-channel Fourier-domain residual data.
+
+        To understand what we do, note the big picture logic here:
+           -There is some fixed original FD data (possibly in a transformed/restricted working format).
+           -This is then interpreted as full domain data with junk for gap infill.
+           -We subtract from that a signal model to get a residual which is passed in here
+           -(That residual represents the FD version of some time domain model with the gap data corresponding to 
+            the original junk minus the signal, making it new junk.  We don't care about the new junk though 
+            because it will be masked.)
+           -We convert the FD residual to something in the time domain in an invertible way.  This may not correspond
+            identically to the actual initial time domain data because of band selection and differences between
+            whatever initial sort of Fourier windowing or filtering may have been applied.  We don't try to match that
+            exactly.  In our case it is most important that the transform is clearly invertible on the Fourier domain
+            of interest.
+           -For this time-domain data, we apply imputation to reset the gap data.
+           -We expect that this more-or-less physically corresponds to resetting the original gap data, but that is
+            something we need to understand better.
+           -We then apply the fourier transform to revert to FD and return the result.
+        '''
+        #Expecting residual data in the format (eg for nchan=3)
+        #[[f0,Ar0,Ai0,Er0,Ei0,Tr0,Ti0],[f1,Ar1,Ai1,...],...]
+        #print('resid_data=',resid_data)
+        mask=self.gapinfo['mask']
+        imp-self.imps
+        resid=resid_data.copy()
+        fs=resid[:,0]
+        nd=len(resid)
+        df=(fs[-1]-fs[0])/(nd-1) 
+        y=reconstruct_time_domain(resid,nchanlen(self.channels))
+        y_rec=[]
+        for i in range(nchan):
+            # Impute missing data
+            y_masked=y[i]
+            y_rec += [imp[i].impute(y_masked, draw=True)]
+
+        result=construct_specialized_data(y_rec,nchan,df,fs[0])
+        return result
+
+
