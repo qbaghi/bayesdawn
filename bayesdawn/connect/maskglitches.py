@@ -87,7 +87,7 @@ def detect_glitch_outliers(data, plot = True, threshold = 10):
     return peaks
 
 
-def mask_glitches(data, peaks, glitchnum, n=1):
+def mask_glitches(data, peaks, glitchnum, n=1, longglitch=False):
     """
     Extracts gap times or indexes from LDC data. 
     Adapted from LDC Spritz analysis notebook https://gitlab.in2p3.fr/LISA/LDC/-/blob/develop/notebooks/LDC2b-Spritz.ipynb
@@ -108,18 +108,24 @@ def mask_glitches(data, peaks, glitchnum, n=1):
             vstack numpy ndarray containing start times on first row and stop times on second row
     """
     data_mask = np.copy(data)
-    glitchlen = n*int(data['t'][peaks[1]] - data['t'][peaks[0]])
+    glitchlen = int(data['t'][peaks[1]] - data['t'][peaks[0]])
 
     if type(data) is dict:
         for k in data_mask.keys():
             for tdi in data_mask[k].dtype.names[1:]:
                 for pk in peaks[:2*glitchnum]:
-                    data_mask[k][tdi][pk-glitchlen:pk+glitchlen] = 0.0
+                    if longglitch:
+                        data_mask[k][tdi][pk-n//50*glitchlen:pk+n*glitchlen] = 0.0
+                    else:
+                        data_mask[k][tdi][pk-n*glitchlen:pk+n*glitchlen] = 0.0
     else:
         print(data_mask.dtype)
         for tdi in data_mask.dtype.names[1:]:
             print(tdi)
             for pk in peaks[:2*glitchnum]:
-                data_mask[tdi][pk-glitchlen:pk+glitchlen] = 0.0
+                if longglitch:
+                    data_mask[tdi][pk-n//50*glitchlen:pk+n*glitchlen] = 0.0
+                else:
+                    data_mask[tdi][pk-n*glitchlen:pk+n*glitchlen] = 0.0
 
     return data_mask
