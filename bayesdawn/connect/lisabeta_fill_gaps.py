@@ -3,6 +3,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from bayesdawn import datamodel, psdmodel
+
 import lisabeta.lisa.pyLISAnoise as pyLISAnoise
 from scipy.stats import norm
 
@@ -315,15 +316,20 @@ def update_imputation(gapinfo,imp,nchan,resid_data,nfuzz=0,psd=None,verbose=Fals
 
 class PSD_model:
     def __init__(self, data, channels, **model_args):
-        from bayesdawn.psdmodel import ModelFDDataPSD
         self.channels=channels
         self.args=model_args
         self.ML_update(data)
 
     def ML_update(self, FD_noise_data):
         PSDmodels=[]
-        for chan in channels:
-            PSDmodels.append(ModelFDDataPSD(self, FD_noise_data, chan, **self.PSD_model_args))
+        #This is dumb, but our interface for ModelFDDataPSD expects a recarray
+        #so  we have to construct it
+        recdata=np.recarray(FD_noise_data.shape[0],dtype={'names':['f',]+self.channels, 'formats':[np.float64]+len(self.channels)*[np.complex128]})
+        recdata['f']=FD_noise_data[:,0]
+        for ich in range(len(self.channels)):recdata[self.channels[ich]]=FD_noise_data[:,ich]
+
+        for chan in self.channels:
+            PSDmodels.append(psdmodel.ModelFDDataPSD(recdata, chan, **self.args))
         self.PSDs=PSDmodels
 
     def param_update(self,params):
