@@ -1259,7 +1259,7 @@ t    options work analogously, but fit the data to a B-spline, with the number o
     
     '''
 
-    def __init__(self, data, channel, fit_type='logratio_spline', fit_dof=10, fit_logx=True, noise_model='spritz', smooth_df=None, fmin=1e-5, fmax=None, offset_log_fit=True,fit_weight_corner=1e-4):
+    def __init__(self, data, channel, fit_type='logratio_spline', fit_dof=10, fit_logx=True, noise_model='spritz', smooth_df=None, fmin=1e-5, fmax=None, offset_log_fit=True,fit_weight_corner=1e-4,fs=None):
     
         self.channel = channel
         self.fit_type = fit_type
@@ -1268,7 +1268,8 @@ t    options work analogously, but fit the data to a B-spline, with the number o
         df=(f[-1]-f[0])/(len(f)-1) 
         self.df=df
 
-        fs=f[-1]*2
+        if fs is None:
+            fs=f[-1]*2
         ndata=(len(f)-1)*2
         self.ndata=ndata
 
