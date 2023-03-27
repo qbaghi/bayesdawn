@@ -315,21 +315,34 @@ def update_imputation(gapinfo,imp,nchan,resid_data,nfuzz=0,psd=None,verbose=Fals
     return result
 
 class PSD_model:
+    '''
+    Construct a PSD model using the psdmodel.ModelFDDataPSD class
+    The value added here is just that we make models for each of the data channels, not just one.
+    Currently the model is constructed from data by ML methods, but we plan to generalize that to allow updating by spline param MCMC.
+    '''
     def __init__(self, data, channels, **model_args):
         self.channels=channels
+        if 'savefilebase' in model_args:
+            savefilebase=model_args.pop('savefilebase')
+        else: savefilebase=None
         self.args=model_args
-        self.ML_update(data)
+        self.ML_update(data,savefilebase=savefilebase)
 
-    def ML_update(self, FD_noise_data):
+    def ML_update(self, FD_noise_data,savefilebase=None):
         PSDmodels=[]
-        #This is dumb, but our interface for ModelFDDataPSD expects a recarray
-        #so  we have to construct it
-        recdata=np.recarray(FD_noise_data.shape[0],dtype={'names':['f',]+self.channels, 'formats':[np.float64]+len(self.channels)*[np.complex128]})
-        recdata['f']=FD_noise_data[:,0]
-        for ich in range(len(self.channels)):recdata[self.channels[ich]]=FD_noise_data[:,ich]
+        #Our interface for ModelFDDataPSD expects a recarray
+        #or a dict so  we have to construct it
+        datadict={'f':np.real(FD_noise_data[:,0])}            
+        for ich in range(len(self.channels)):
+            datadict[self.channels[ich]]=FD_noise_data[:,ich+1]
 
         for chan in self.channels:
-            PSDmodels.append(psdmodel.ModelFDDataPSD(recdata, chan, **self.args))
+            chanmodel=psdmodel.ModelFDDataPSD(datadict, chan, **self.args)
+            PSDmodels.append(chanmodel)
+            if savefilebase is not None:
+                chanmodel.plot()
+                plt.savefig(savefilebase+"_"+chan+".png")
+                plt.clf()
         self.PSDs=PSDmodels
 
     def param_update(self,params):
