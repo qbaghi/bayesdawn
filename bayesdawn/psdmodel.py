@@ -278,7 +278,7 @@ class PSD(object):
         # Size of the sample
         self.n_data = n_data
         self.f = np.fft.fftfreq(n_data) * fs
-        self.n = np.int((n_data - 1) / 2.)
+        self.n = int((n_data - 1) / 2.)
 
         if fmin is None:
             self.fmin = fs / n_data
@@ -361,7 +361,7 @@ class PSD(object):
 
         """
 
-        if (type(arg) == np.int) | (type(arg) == np.int64):
+        if (type(arg) == int) | (type(arg) == np.int64):
             n_data = arg
             # Symmetrize the estimates
             if n_data % 2 == 0:  # if n_data is even
@@ -372,7 +372,7 @@ class PSD(object):
                                                    self.f[1:n + 2])))
                 else:
                     f = np.fft.fftfreq(n_data) * self.fs
-                    n = np.int((n_data - 1) / 2.)
+                    n = int((n_data - 1) / 2.)
                     f_tot = np.abs(np.concatenate(([f[1]], f[1:n + 2])))
 
                 spectr = self.psd_fn(f_tot)
@@ -386,7 +386,7 @@ class PSD(object):
                                                    self.f[1:n + 1])))
                 else:
                     f = np.fft.fftfreq(n_data) * self.fs
-                    n = np.int((n_data - 1) / 2.)
+                    n = int((n_data - 1) / 2.)
                     f_tot = np.abs(np.concatenate(([f[1]], f[1:n + 1])))
 
                 spectr = self.psd_fn(f_tot)
@@ -640,7 +640,7 @@ class PSDSpline(PSD):
             else:
                 f = np.concatenate(([0], np.exp(self.logf[NI])))
 
-            n = np.int((NI - 1) / 2.)
+            n = int((NI - 1) / 2.)
             z = per[1:n + 1]
             v = np.log(z) - self.C0
 
@@ -1208,6 +1208,8 @@ class ModelFDDataPSD(PSD):
         Number of degrees of freedom in the fit.
     fit_logx : bool [default True]
         If True use log(f) as the coordinate for fitting functions.
+    fit_weight_corner : float [default 1e-4]
+        Corner frequency below-which sample weighting is uniform
     noise_model : str [default 'spritz']
         Tag for the LDC base model to use for ratio, or None for no ratio.
     smooth_df: float [default None]
@@ -1233,8 +1235,13 @@ class ModelFDDataPSD(PSD):
     polynomial degree fit_dof-1. A variation on this is 'log_poly' which fits the ratio of the log 
     of the two quantities, scaled by the sum of their max values. The 'logratio_poly' option fits
     the log of the ratio vs the model function.  The 'spline', 'log_spline' and 'logratio_spline' 
-    options work analogously, but fit the data to a B-spline, with the number of knots guided by the
+t    options work analogously, but fit the data to a B-spline, with the number of knots guided by the
     fit_dof.  
+
+    The fit data points are weighted by 1/f above f=fit_weight_corner and uniformly weighted for
+    lower freqs. This because the our interest in the data areas are generally log-f uniform and
+    concentrated in the central band.  If we use 1/f weighting throughout, then the random features
+    of the data are over-weighted at low-f.
     
     If fit_type is None, then the analytic model (possibly smoothed) is applied directly and only 'f' 
     will be used from the data.
@@ -1252,27 +1259,32 @@ class ModelFDDataPSD(PSD):
     
     '''
 
-    def __init__(self, data, channel, fit_type='logratio_spline',fit_dof=10, fit_logx=True, noise_model='spritz', smooth_df=None, fmin=1e-5, fmax=None, offset_log_fit=True):
+    def __init__(self, data, channel, fit_type='logratio_spline', fit_dof=10, fit_logx=True, noise_model='spritz', smooth_df=None, fmin=1e-5, fmax=None, offset_log_fit=True,fit_weight_corner=1e-4,fs=None):
     
         self.channel = channel
         self.fit_type = fit_type
-        self.chdata=data[channel]
 
         f=data['f']
         df=(f[-1]-f[0])/(len(f)-1) 
         self.df=df
-        
-        fs=f[-1]*2
+
+        if fs is None:
+            fs=f[-1]*2
         ndata=(len(f)-1)*2
         self.ndata=ndata
+
+        self.chdata=None
+        try:
+            self.chdata=data[channel]
+        except: pass            
         
         if fmax is not None:
-            self.chdata=self.chdata[f<=fmax]
+            if self.chdata is not None: self.chdata=self.chdata[f<=fmax]
             f = f[f<=fmax]
         if fmin is not None:
-            self.chdata=self.chdata[f>=fmin]
-            f = f[f>=fmin]
-            
+            if self.chdata is not None: self.chdata=self.chdata[f>=fmin]
+            f = f[f>=fmin]            
+
         self.fin=f.copy()
         
         PSD.__init__(self, ndata, fs, fmin=fmin, fmax=fmax)
@@ -1297,7 +1309,11 @@ class ModelFDDataPSD(PSD):
             self.Sinit=lambda x:np.exp(self.logSinit(np.log(x)))
         
         self.fit=None
-        if fit_type is None: return
+        if fit_type is None:
+            return
+
+        #If we made it this far, we do a fit
+
         self.fit_dof=fit_dof
         
         self.fit_logx=fit_logx
@@ -1354,27 +1370,29 @@ class ModelFDDataPSD(PSD):
         self.offset_log_fit = offset_log_fit and fit_scale in ['log','logratio']
         
         #perform the fit
+        w=1/f
+        if fit_weight_corner>0:w[f<fit_weight_corner]=1/fit_weight_corner
         if fit_func=='poly':
-            pf = np.polyfit(x,y,fit_dof+1,w=1/f)
+            pf = np.polyfit(x,y,fit_dof+1,w=w)
             #print('poly fit:',pf)
             fitpoly=np.poly1d(pf)
             self.fit = lambda x: fitpoly(x)
         elif fit_func=='spline':
             # I tried using the functionality in psdmodel.py but couldn't get it working.
             # to stay close to the existing implementation in psdmodel.py                    
-            print(f[0],'< f < ',f[-1],'fmin/fmax=',fmin,fmax)
+            #print(f[0],'< f < ',f[-1],'fmin/fmax=',fmin,fmax)
             n_knots=fit_dof-2 #dof=n_knots+2 (maybe, sort of guessing)                    
             knots=self.choose_knots(f) #This function needs f, not x
             xknots=knots
-            print('lowest f knots:',knots[:5])
+            #print('lowest f knots:',knots[:5])
             if fit_logx: xknots=np.log(knots) #transform to x-space if needed
             try:
-                fitspline=interpolate.LSQUnivariateSpline(x, y, xknots[1:-1], w=1/f, k=3, ext=3, check_finite=False)
+                fitspline=interpolate.LSQUnivariateSpline(x, y, xknots[1:-1], w=w, k=3, ext=3, check_finite=False)
             except ValueError:
                 
                 print('Problem creating spline:')
                 t= xknots[1:-1]
-                print('inputs:\n  x=',x,'\n  y=',y,'\n  t=', t,'\n  w=',1/f)
+                print('inputs:\n  x=',x,'\n  y=',y,'\n  t=', t,'\n  w=',w)
                 # _data == x,y,w,xb,xe,k,s,n,t,c,fp,fpint,nrdata,ier
                 xb = x[0]
                 xe = x[-1]
@@ -1414,10 +1432,11 @@ class ModelFDDataPSD(PSD):
                     
             self.knots=knots
             self.fit=lambda x:fitspline(x)
+            self.interior_knots=fitspline.get_knots()
+            self.spline_coeffs=fitspline.get_coeffs()
                 
         else:    
-            raise ValueError('fit_func '+str(fit_func)+' not recognized.')
-            
+            raise ValueError('fit_func '+str(fit_func)+' not recognized.')            
 
             
     def choose_knots(self,x,verbose=False):
@@ -1445,7 +1464,7 @@ class ModelFDDataPSD(PSD):
         minf=x[0]
         maxf=x[-1]
         base=(maxf/minf)**(1/nknots)
-        print('base=',base)
+        #print('base=',base)
         # We use this choose_frequency_knots function, decreasing the 'base' value when
         # there are more knots desired to ensure that the benefit of more knots also
         # shows at lower frequencies. It is not clear whether this treatment is any
@@ -1503,7 +1522,8 @@ class ModelFDDataPSD(PSD):
             tag='no fit'
 
         import matplotlib.pyplot as plt
-        plt.loglog(self.fin,np.abs(self.chdata*np.sqrt(self.scalefac)),label='data ',alpha=0.3)
+        if self.chdata is not None:
+            plt.loglog(self.fin,np.abs(self.chdata*np.sqrt(self.scalefac)),label='data ',alpha=0.3)
         if ref is not None:
             plt.loglog(self.fin,np.sqrt(ref.psd_fn(self.fin)),label='ref')
         plt.loglog(self.fin,np.sqrt(self.psd_fn(self.fin)),label='model ('+tag+')')
@@ -1556,7 +1576,7 @@ class ModelFDDataPSD(PSD):
 
             pltfunc=plt.plot
             pltfunc(self.fin,(y),label='data ratio ')
-            pltfunc(self.fin,(y0),label='ref ratio ')
+            if ref is not None: pltfunc(self.fin,(y0),label='ref ratio ')
             pltfunc(self.fin,self.fit(x),label='fit ('+tag+')')
             if spline:
                 xknots=self.knots
@@ -1571,6 +1591,24 @@ class ModelFDDataPSD(PSD):
                 plt.legend()
                 plt.show() 
 
+    def get_spline_data(self):
+        if not self.fit_func=='spline': return None
+        knots=self.interior_knots
+        coeffs=self.spline_coeffs
+        return {'knots':knots,'coeffs':coeffs}
+
+    def set_spline_data(self,splinedict):
+        t=splinedict['knots']
+        self.interior_knots=t
+        knots=np.array(3*[t[0]]+t.tolist()+3*[t[-1]])
+        #print('knots was:',self.knots)
+        self.knots=self.interior_knots.copy()
+        if self.fit_logx: self.knots=np.exp(self.knots)
+        #print('knots changed to:',self.knots)
+        self.coeffs=splinedict['coeffs']
+        self.spline=interpolate.BSpline(knots,self.coeffs,3)
+        self.fit=lambda x:self.spline(x)
+    
     def psd_fn(self, x):
         # returns the psd function defined earlier           
 
