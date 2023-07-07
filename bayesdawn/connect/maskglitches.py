@@ -71,7 +71,9 @@ def detect_glitch_outliers(data, plot = True, threshold = 10):
     gaps = fillgaps.get_ldc_gap_mask(data, mode='index')
     
     mad = scipy.stats.median_abs_deviation(data[n])
-    median = np.median(data[n][0:gaps[0][0]])
+    to=len(data)
+    if len(gaps>0):to=gaps[0][0]
+    median = np.median(data[n][0:to])
     maxval = np.max(np.abs(data[n]))
     peaks, properties = scipy.signal.find_peaks(np.abs(data[n]), height=threshold*mad, threshold=None, distance=1)
 

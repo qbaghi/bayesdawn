@@ -71,15 +71,6 @@ def load_tdi_timeseries(fname,
         tdi['cleanglitch'][comb] = tdi['clean'][comb] + tdi['glitch'][comb]
     # generate gapped datsets by zeroing out the gaps    
     if generate_additional_datasets:
-        dt = tdi['obs']['t'][1]-tdi['obs']['t'][0]
-        gaps = tdi['obs']['t'][np.isnan(tdi['obs']['X'])]
-        # find start times of gaps by taking first point and the point for which 
-        # the difference between two subsequent samples is more than dt
-        gapsstart = np.hstack([np.array([gaps[0]]), (gaps[1:])[gaps[1:]-gaps[:-1]>dt]])
-        # same thing with endpoints, but reversed
-        gapsend = np.hstack([(gaps[:-1])[gaps[1:]-gaps[:-1]>dt], np.array([gaps[-1]])])
-        # get the indexes for the gaps
-        gaps_indices = np.vstack([gapsstart, gapsend])
         # set gaps to zero
         # generate gapped dataset
         for ds, dsgap in zip(['clean','noise','sky','noiseglitch'], additional_datasets):
@@ -90,6 +81,28 @@ def load_tdi_timeseries(fname,
         tdi['obs'][comb][np.isnan(tdi['obs']['X'])] = 0
     return tdi
 
+
+#Find gaps in a data set
+def find_gaps(times,values,identifier=np.isnan):
+    '''
+    Find the times corresponding to the sections of values found True by the identifier function.
+    
+    Default for the identifier is np.isnan, but use e.g. lambda x:x==0 to find zeros.
+    '''
+    dt = times[1]-times[0]
+    gaps = times[identifier(values)]
+    if len(gaps)==0: return np.array([])
+    # find start times of gaps by taking first point and the point for which 
+    # the difference between two subsequent samples is more than dt
+    # We offset these by dt/2 to get the midpoint between the in-gap and out-of-gap edge points
+    gapsstart = np.hstack([np.array([gaps[0]]), (gaps[1:])[gaps[1:]-gaps[:-1]>dt]  ] ) -dt/2
+    # same thing with endpoints, but reversed
+    gapsend = np.hstack([(gaps[:-1])[gaps[1:]-gaps[:-1]>dt], np.array([gaps[-1]])]) +dt/2
+    # get the indexes for the gaps
+    gaps_intervals = np.vstack([gapsstart, gapsend]).T
+    return gaps_intervals
+
+    
 # Convert LDC2 TDI data to orthogonal TDI combinations
 def build_orthogonal_tdi(tdi_xyz, skip = 100):
     """
@@ -177,13 +190,23 @@ def makeTDdata(data,t0=0,flow=None):
         window[f<flow]=(np.cos((f[f<flow]/flow-1)*np.pi)+1)/2
     else: window = 1
     chandata = [ data[ch]*window for ch in chans ]
+    if len(chandata)==2:chandata+=[chandata[-1]*0]
     newchans = ['t'] + chans
     #print('newchans',newchans)
-    tdata = np.rec.fromarrays(ldctools.ComputeTDfromFD(*chandata, del_t), names = newchans)
+    tdata = np.rec.fromarrays(ComputeTDfromFD(*chandata, del_t), names = newchans)
     tdata['t']+=t0
     #print(fdata.shape)
     #print(fdata.dtype)
-    return tdata 
+    return tdata
+
+def ComputeTDfromFD(Xf, Yf, Zf, del_t):
+    #Essentially copied from GenerateFD_SignalTDIs.py
+    #Except that we use opposite sign convention, so take CC
+    Xta = np.fft.irfft(Xf.conj())*(1.0/del_t)
+    Yta = np.fft.irfft(Yf.conj())*(1.0/del_t)
+    Zta = np.fft.irfft(Zf.conj())*(1.0/del_t)
+    tma = np.arange(len(Xta))*del_t
+    return (tma, Xta, Yta, Zta)
 
 # # FFT and PSD evaluation function
 # def fft_olap_psd(data_array, chan=None, fs=None, navs = 1, detrend = True, win = 'taper', scale_by_freq = True, plot = False):
@@ -721,6 +744,7 @@ def get_ldc_gap_mask(data, mode):
     fs = 1/dt
     # find all data points included in the gaps
     gaps_data = data['t'][(data[data.dtype.names[1]])==0]
+    if len(gaps_data)==0:return np.array([])
     # find start times of gaps by taking first point and the point for which 
     # the difference between two subsequent samples is more than dt
     gapstarts = np.hstack([np.array([gaps_data[0]]), (gaps_data[1:])[gaps_data[1:]-gaps_data[:-1]>dt]])

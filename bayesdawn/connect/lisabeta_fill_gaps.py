@@ -30,10 +30,10 @@ def reconstruct_time_domain(data,nchan):
     '''
     #assume data cols are freq, ch1.real, ch1.imag, ch2.real,... 
     #evenly spaced in freq, over some band
-    fs=data[:,0]
+    fs=np.real(data[:,0])
     nd=len(data)
     df=(fs[-1]-fs[0])/(nd-1)
-    nf=nd+int(fs[0]/df-.5)
+    nf=nd+int(fs[0]/df+.5)
     #print(fs[0],'< f <',fs[-1],' nd=',nd,' nf=',nf,'df=',df)
     #print('nd,nf,nf-nd',nd,nf,nf-nd)
     #print('f0,df,f0/df',fs[0],df,fs[0]/df)
@@ -68,7 +68,7 @@ def construct_specialized_data(yt,nchan,df,f0):
     #assume data cols are freq, ch1.real, ch1.imag, ch2.real,... 
     nt=len(yt[0])
     nf=nt//2+1
-    ioff=int(f0/df-.5)
+    ioff=int(f0/df+.5)
     nd=nf-ioff
     fs=np.arange(nd)*df+f0
     #tscalefac=np.sqrt(.5)/nt/df
@@ -205,6 +205,7 @@ class bdPSDmodel(psdmodel.PSD):
             psd[xx<cut]*=(xx[xx<cut]/cut)**self.dered_pow #hack the low-f fall-off test
         return psd
 
+
 def splinePSDs_from_time_data(tdataset,fsamp):
     n_chan=len(tdataset)
     n_data=len(tdataset[0])
@@ -325,6 +326,9 @@ class PSD_model:
         if 'savefilebase' in model_args:
             savefilebase=model_args.pop('savefilebase')
         else: savefilebase=None
+        if 'real_data' in model_args:
+            self.have_real_data=model_args.pop('real_data')
+        else: self.have_real_data=False
         self.args=model_args
         self.ML_update(data,savefilebase=savefilebase)
 
@@ -334,7 +338,10 @@ class PSD_model:
         #or a dict so  we have to construct it
         datadict={'f':np.real(FD_noise_data[:,0])}            
         for ich in range(len(self.channels)):
-            datadict[self.channels[ich]]=FD_noise_data[:,ich+1]
+            if self.have_real_data:
+                datadict[self.channels[ich]]=FD_noise_data[:,2*ich+1]+1j*FD_noise_data[:,2*ich+2]
+            else:
+                datadict[self.channels[ich]]=FD_noise_data[:,ich+1]
 
         for chan in self.channels:
             chanmodel=psdmodel.ModelFDDataPSD(datadict, chan, **self.args)
@@ -345,47 +352,169 @@ class PSD_model:
                 plt.clf()
         self.PSDs=PSDmodels
 
-    def param_update(self,params):
-        raise NotImplementedError()
+    def get_params(self):
+        #Get the underlying PSD model spline data in dict form
+        pardict={}
+        for ich in range(len(self.channels)):
+            chan=self.channels[ich]
+            pardict[chan]=self.PSDs[ich].get_spline_data()
+        return pardict
     
+    def update_params(self,pardict):
+        #Reset the underlying PSD model spline data
+        for ich in range(len(self.channels)):
+            chan=self.channels[ich]
+            self.PSDs[ich].set_spline_data(pardict[chan])
+                                           
 class FDimputation:
     
-    def __init__(self,gap_times,PSDmodel,method='local',nab=60):
-        self.channels=PSD_model.channels
+    def __init__(self,gap_intervals,PSDmodel,t0=0,method='nearest',nab=60,intergap_min=None,verbose=False):
+        self.verbose=verbose
+        self.channels=PSDmodel.channels
         self.PSDmodel=PSDmodel
         nchan=len(self.channels)
-        self.gapinfo=self.compute_gap_info(gap_times)
+        self.t0=t0
+        if self.verbose: print('constructing FD imputation with',len(gap_intervals),'gaps\n gap_intervals=',gap_intervals)
+        self.gap_intervals=gap_intervals
+        self.have_gap_info=False
+        self.have_imps=False
         
-        s=np.zeros(len(mask))  #for residual 'signal' is zero
         args={'method':method}
         if method=='woodbury':
             pass
-        elif method=='local':
+        elif method=='nearest':
             args['na']=nab
+            args['nb']=nab
         else: raise ValueError('Did not recognize method="'+method+'"')
-        
-        imps = [ datamodel.GaussianStationaryProcess(s, self.mask, psd, **args) for psd in PSDmodel.PSDs]
+        self.impargs=args
+        if intergap_min is None: intergap_min=nab
+        self.intergap_min=intergap_min
+
+    def compute_imps(self):
+        assert(self.have_gap_info)
+        if self.have_imps: return self.imps
+        gapinfo=self.gap_info
+        mask=gapinfo['mask']
+        s=np.zeros(len(mask))  #for residual 'signal' is zero
+        imps = [ datamodel.GaussianStationaryProcess(s, mask, psd, **self.impargs) for psd in self.PSDmodel.PSDs]
 
         # perform offline computations
         for imp in imps: imp.compute_offline()
         self.imps=imps
+        self.have_imps=True
+        return imps
 
-    def compute_gap_info(self,gap_times):
+    def compute_gap_info(self,fs):
         '''
-        TBD Function to compute temporally indexed gap-info, including the gap mask, from time-valued gap info
+        Function to compute temporally indexed gap-info, including the gap mask, from time-valued gap info. If this has already been computed then it is reused.  We use fs (and stored t0) to define the temporal grid.
         '''
+        # Saved args
+        gap_intervals=self.gap_intervals
+        t0=self.t0
+        
+        if self.have_gap_info: return self.gap_info
+        if self.verbose: print('constructing FD imputation with',len(gap_intervals),'gaps\n gap_intervals=',gap_intervals)
+        self.gap_intervals=gap_intervals
+        self.have_gap_info=False
+        self.have_imps=False
+        
+        args={'method':method}
+        if method=='woodbury':
+            pass
+        elif method=='nearest':
+            args['na']=nab
+            args['nb']=nab
+        else: raise ValueError('Did not recognize method="'+method+'"')
+        self.impargs=args
+        if intergap_min is None: intergap_min=nab
+        self.intergap_min=intergap_min
 
-        if not len(gap_intervals.shape)==2 or not gap_intervals.shape(1)==2:
+    def compute_imps(self):
+        assert(self.have_gap_info)
+        if self.have_imps: return self.imps
+        gapinfo=self.gap_info
+        mask=gapinfo['mask']
+        s=np.zeros(len(mask))  #for residual 'signal' is zero
+        imps = [ datamodel.GaussianStationaryProcess(s, mask, psd, **self.impargs) for psd in self.PSDmodel.PSDs]
+
+        # perform offline computations
+        for imp in imps: imp.compute_offline()
+        self.imps=imps
+        self.have_imps=True
+        return imps
+
+    def compute_gap_info(self,fs):
+        '''
+        Function to compute temporally indexed gap-info, including the gap mask, from time-valued gap info. If this has already been computed then it is reused.  We use fs (and stored t0) to define the temporal grid.
+        '''
+        # Saved args
+        gap_intervals=self.gap_intervals
+        t0=self.t0
+        
+        if self.have_gap_info: return self.gap_info
+        if self.verbose:
+            print('computing gap info for',len(gap_intervals),'gaps\n initial gap_intervals =',gap_intervals)
+        
+        if not len(gap_intervals.shape)==2 or not gap_intervals.shape[1]==2:
             raise ValueError('obs_params.gap_intervals should provide a list of pairs [[tstart,tend],[...]] indicating the temporal location of data gaps.')
-        #First sort the gaps by the start time
+        
+        # First sort the gaps by the start time
         gap_intervals = gap_intervals[gap_intervals[:,0].argsort()]
-        for i in range(len(gap_intervals)-1):
-            if gap_intervals[i,1]>=gap_intervals[i,0]:
-                raise ValueError('Not ready to handlle overlapping gaps')
+        #for i in range(len(gap_intervals)-1):
+        #    if gap_intervals[i,1]>=gap_intervals[i+1,0]:
+        #        raise ValueError('Not ready to handlle overlapping gaps')
 
-        raise NotImplementedError()
+        # Quantize the gaps on the temporal grid
+        df=(fs[-1]-fs[0])/(len(fs)-1)
+        nf=len(fs)+int(fs[0]/df+.5)
+        nt=2*(nf-1)
+        dt=0.5/fs[-1]
+        #ts=t0+np.arange(nt)*dt
+        igap_starts=((gap_intervals[:,0]-t0)/dt+0.5).astype(int)        
+        igap_ends=((gap_intervals[:,1]-t0)/dt+0.5).astype(int)+1
+        #print('gaps 1',list(zip(igap_starts,igap_ends)))
+        # Ensure gaps are in domain
+        igap_starts=igap_starts[igap_ends>0]
+        igap_ends=igap_ends[igap_ends>0]
+        #print('gaps 2',list(zip(igap_starts,igap_ends)))
+        igap_ends=igap_ends[igap_starts<nt]
+        igap_starts=igap_starts[igap_starts<nt]
+        #print('gaps 3',list(zip(igap_starts,igap_ends)))
+        igap_starts[igap_starts<0]=0
+        igap_ends[igap_ends>nt]=nt
+        #print('gaps 4',list(zip(igap_starts,igap_ends)))
+
+
+        # Ensure that gaps are not too close, merging if needed
+        i=0
+        while i<len(igap_starts)-1:            
+            if igap_ends[i]-igap_starts[i+1]>=-self.intergap_min:
+                #print('was:',gap_starts[i:i+2],gap_ends[i:i+2])
+                igap_starts=np.delete(igap_starts,i+1)
+                igap_ends=np.delete(igap_ends,i)
+                #print('now:',gap_starts[i:i+2],gap_ends[i:i+2])
+            else: i+=1
+        #print('gaps 5',list(zip(igap_starts,igap_ends)))
+            
+        # Define gap mask
+        mask=np.ones(nt,dtype=int)
+        for i in range(len(igap_starts)):
+            mask[igap_starts[i]:igap_ends[i]]=0
+            
+        if self.verbose:
+            print('Applying',len(igap_starts),'gaps. Gap fraction is', 1-sum(mask)/len(mask))
+
+        # Store
+        gapinfo={}
+        gapinfo['gap_starts']=igap_starts
+        gapinfo['gap_ends']=igap_ends
+        gapinfo['mask']=mask
+        self.gap_info=gapinfo
+        self.have_gap_info=True
+        
+        return gapinfo
     
-    def apply_imputation(self, resid_data,psd=None,verbose=False):
+    def apply_imputation(self, resid_data,psd=None,complex_data=False,report_mean_squares=False):
         '''
         Function to apply a set of imputation models to  multi-channel Fourier-domain residual data.
 
@@ -399,8 +528,8 @@ class FDimputation:
            -We convert the FD residual to something in the time domain in an invertible way.  This may not correspond
             identically to the actual initial time domain data because of band selection and differences between
             whatever initial sort of Fourier windowing or filtering may have been applied.  We don't try to match that
-            exactly.  In our case it is most important that the transform is clearly invertible on the Fourier domain
-            of interest.
+            exactly, but differences like that will impact the transform space adjusted by the gap filling.  In our case 
+            it is most important that the transform is clearly invertible on the Fourier domain of interest.  
            -For this time-domain data, we apply imputation to reset the gap data.
            -We expect that this more-or-less physically corresponds to resetting the original gap data, but that is
             something we need to understand better.
@@ -408,21 +537,63 @@ class FDimputation:
         '''
         #Expecting residual data in the format (eg for nchan=3)
         #[[f0,Ar0,Ai0,Er0,Ei0,Tr0,Ti0],[f1,Ar1,Ai1,...],...]
-        #print('resid_data=',resid_data)
-        mask=self.gapinfo['mask']
-        imp-self.imps
+        #print('applying imputation')
         resid=resid_data.copy()
+
+        #This routine is expecting data in real,imag split form
+        #so have to convert complex data
+        if complex_data:
+            nchan=len(resid.T)-1
+            resid=np.zeros((len(resid),nchan*2+1))
+            if self.verbose:
+                print('Converting resid to real. New shape=',resid.shape)
+            resid[:,0]=np.real(resid_data[:,0])
+            for ich in range(nchan):
+                resid[:,1+2*ich]=np.real(resid_data[:,1+ich])
+                resid[:,2+2*ich]=np.real(resid_data[:,1+ich])
+
         fs=resid[:,0]
+
+        gapinfo=self.compute_gap_info(fs)
+        mask=gapinfo['mask']
+
+        imps=self.compute_imps()
+
         nd=len(resid)
-        df=(fs[-1]-fs[0])/(nd-1) 
-        y=reconstruct_time_domain(resid,nchanlen(self.channels))
+        df=(fs[-1]-fs[0])/(nd-1)
+        nchan=len(self.channels)
+        if self.verbose:
+            print('constructing TD, nchan=',nchan)
+            print('resid.shape',resid.shape)
+        y=reconstruct_time_domain(resid,nchan=nchan)
         y_rec=[]
+        
         for i in range(nchan):
             # Impute missing data
-            y_masked=y[i]
-            y_rec += [imp[i].impute(y_masked, draw=True)]
-
+            #print('len check',len(mask),len(y[i]))
+            #print('imputing channel',i)
+            y_rec += [imps[i].impute(y[i], draw=True)]
+        #y_rec=np.array(y_rec).T
+        if report_mean_squares:
+            #For diagnostic, compute the ratio of masked to unmasked data meansq
+            maskedmeansq=np.mean(np.array([x[mask==1] for x in y_rec])**2)
+            unmaskedmeansq=np.mean(np.array([x[mask==0] for x in y_rec])**2)
+            print('masked,unmasked mean-sq and ratio:',maskedmeansq,unmaskedmeansq,maskedmeansq/unmaskedmeansq)            
+            #print('y_rec.shape',y_rec.shape)
+        if self.verbose:
+            print('reconstructing FD')
         result=construct_specialized_data(y_rec,nchan,df,fs[0])
+
+        #Put the data back how we got it if needed
+        if complex_data:
+            res=np.zeros((len(result),nchan+1),dtype=complex)
+            if self.verbose:
+                print('Converting result to complex. New shape=',res.shape)
+            res[:,0]=result[:,0]
+            for ich in range(nchan):
+                res[:,1+ich]=result[:,1+2*ich]+1j*result[:,2+2*ich]
+            result=res
+
         return result
 
 
