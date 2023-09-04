@@ -63,7 +63,7 @@ def generate_freq_noise_from_psd(psd, fs, myseed=None):
     # Initialize seed for generating random numbers
     np.random.seed(myseed)
 
-    n_fft = np.int((n_psd-1)/2)
+    n_fft = int((n_psd-1)/2)
     # Real part of the Noise fft : it is a gaussian random variable
     noise_ft_real = np.sqrt(0.5 * psd[0:n_fft+1])*np.random.normal(loc=0.0, 
                                                                  scale=1.0, 
@@ -317,7 +317,7 @@ class GaussianStationaryProcess(object):
             # Starting and ending points of gaps
             self.n_starts, self.n_ends = gapgenerator.find_ends(mask)
             gap_lengths = self.n_ends - self.n_starts
-            self.n_max = np.int(na + nb + np.max(gap_lengths))
+            self.n_max = int(na + nb + np.max(gap_lengths))
             self.na = na
             self.nb = nb
             # Number of gaps
@@ -331,7 +331,7 @@ class GaussianStationaryProcess(object):
             self.n_max = 0
             self.n_gaps = 0
             self.ind_mis = []
-            self.ind_obs = np.arange(0, self.n).astype(np.int)
+            self.ind_obs = np.arange(0, self.n).astype(int)
         # If the method is exact (not nearest neighboors) you need the full autocovariance
         if self.method != 'nearest':
             self.n_max = len(mask)
@@ -349,26 +349,26 @@ class GaussianStationaryProcess(object):
 
         elif self.n_gaps == 1:
             # 2 segments
-            self.indices = [np.arange(np.int(np.max([self.n_starts[0] - na, 0])),
-                                      np.int(np.min([self.n_ends[0] + nb, self.n])))]
+            self.indices = [np.arange(int(np.max([self.n_starts[0] - na, 0])),
+                                      int(np.min([self.n_ends[0] + nb, self.n])))]
 
         elif self.n_gaps > 1:
             # first segment
-            self.indices = [np.arange(np.int(np.max([self.n_starts[0] - na, 0])),
-                                       np.int(np.min([self.n_ends[0] + nb,
+            self.indices = [np.arange(int(np.max([self.n_starts[0] - na, 0])),
+                                       int(np.min([self.n_ends[0] + nb,
                                                       self.n_starts[1]])))]
             # most of the segments
             self.indices = self.indices + [
                 np.arange(
-                    np.int(np.max([self.n_starts[j] - na, self.n_ends[j - 1]])),
-                    np.int(np.min([self.n_ends[j] + nb, self.n_starts[j + 1]])))
+                    int(np.max([self.n_starts[j] - na, self.n_ends[j - 1]])),
+                    int(np.min([self.n_ends[j] + nb, self.n_starts[j + 1]])))
                 for j in range(1, self.n_gaps-1)]
             # last segment
             self.indices = self.indices + [
                 np.arange(
-                    np.int(np.max([self.n_starts[self.n_gaps - 1] - na,
+                    int(np.max([self.n_starts[self.n_gaps - 1] - na,
                                    self.n_ends[self.n_gaps - 2]])),
-                    np.int(np.min([self.n_ends[self.n_gaps - 1] + nb, self.n])))]
+                    int(np.min([self.n_ends[self.n_gaps - 1] + nb, self.n])))]
 
         # ==
         # Store quantities that can be computed offline
@@ -805,7 +805,7 @@ class GaussianStationaryProcess(object):
         ind_misj = np.where(maskj == 0)[0]
 
         # Compute the size of the neighbooring observed points + gap size
-        segment_size = np.int(self.na + self.nb + len(ind_misj))
+        segment_size = int(self.na + self.nb + len(ind_misj))
         
         # If the size is below some threshold, apply full-matrix method:
         if segment_size <= threshold:
@@ -880,7 +880,7 @@ class GaussianStationaryProcess(object):
         ind_misj = np.where(maskj == 0)[0]
 
         # Compute the size of the neighbooring observed points + gap size
-        segment_size = np.int(self.na + self.nb + len(ind_misj))
+        segment_size = int(self.na + self.nb + len(ind_misj))
         
         # If the size is below some threshold, apply full-matrix method:
         if segment_size <= threshold:
