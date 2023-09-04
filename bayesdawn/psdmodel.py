@@ -361,7 +361,7 @@ class PSD(object):
 
         """
 
-        if (type(arg) == np.int) | (type(arg) == np.int64):
+        if isinstance(arg, int):
             n_data = arg
             # Symmetrize the estimates
             if n_data % 2 == 0:  # if n_data is even
@@ -372,7 +372,7 @@ class PSD(object):
                                                    self.f[1:n + 2])))
                 else:
                     f = np.fft.fftfreq(n_data) * self.fs
-                    n = np.int((n_data - 1) / 2.)
+                    n = int((n_data - 1) / 2.)
                     f_tot = np.abs(np.concatenate(([f[1]], f[1:n + 2])))
 
                 spectr = self.psd_fn(f_tot)
@@ -386,14 +386,14 @@ class PSD(object):
                                                    self.f[1:n + 1])))
                 else:
                     f = np.fft.fftfreq(n_data) * self.fs
-                    n = np.int((n_data - 1) / 2.)
+                    n = int((n_data - 1) / 2.)
                     f_tot = np.abs(np.concatenate(([f[1]], f[1:n + 1])))
 
                 spectr = self.psd_fn(f_tot)
                 spectr_sym = np.concatenate((spectr[0:n + 1],
                                              spectr[1:n + 1][::-1]))
 
-        elif type(arg) == np.ndarray:
+        elif isinstance(arg, np.ndarray):
 
             f = arg[:]
             spectr_sym = self.psd_fn(f)
@@ -640,7 +640,7 @@ class PSDSpline(PSD):
             else:
                 f = np.concatenate(([0], np.exp(self.logf[NI])))
 
-            n = np.int((NI - 1) / 2.)
+            n = int((NI - 1) / 2.)
             z = per[1:n + 1]
             v = np.log(z) - self.C0
 
@@ -932,7 +932,7 @@ class PSDPowerLaw(PSD):
         else:
             self.f_knots = f_knots
         # Find the corresponding Fourier indices
-        # self.ind_knots = np.unique(np.array(self.f_knots / (self.fs / self.n)).round().astype(np.int))
+        # self.ind_knots = np.unique(np.array(self.f_knots / (self.fs / self.n)).round().astype(int))
         self.ind_knots = [np.where(f0 <= self.f < f0)[0] for f0 in
                           self.f_knots]
         # Redefine exact knots
@@ -1042,7 +1042,7 @@ class PSDPowerLaw(PSD):
             f = np.fft.fftfreq(NI) * self.fs
             self.logf[NI] = np.log(f[f > 0])
 
-        # n = np.int((NI-1)/2.)
+        # n = int((NI-1)/2.)
         # z = per[1:n + 1]
         z_list = [per[inds] for inds in self.ind_knots]
         v_list = [np.log(z) - self.C0 for z in z_list]
