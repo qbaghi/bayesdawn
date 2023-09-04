@@ -278,7 +278,7 @@ class PSD(object):
         # Size of the sample
         self.n_data = n_data
         self.f = np.fft.fftfreq(n_data) * fs
-        self.n = np.int((n_data - 1) / 2.)
+        self.n = int((n_data - 1) / 2.)
 
         if fmin is None:
             self.fmin = fs / n_data
