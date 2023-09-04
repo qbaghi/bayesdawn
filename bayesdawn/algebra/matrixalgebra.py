@@ -204,11 +204,11 @@ def precond_bicgstab(x0, b, a_func, n_it, stp, P, z0_hat=None, verbose=True):
     print(str(k) + "iterations." )
     info = 0
 
-    if sr[k-1] > stp * b_norm:
+    if sr[k] > stp * b_norm:
         print("Attention: Preconditioned BiCGSTAB algorithm ended \
         without reaching the specified convergence criterium. Check quality of \
         reconstruction.")
-        print("Current criterium: " +str(sr[k-1] / b_norm) + " > " + str(stp))
+        print("Current criterium: " +str(sr[k] / b_norm) + " > " + str(stp))
         info = 1
 
     # pcg_cls = PCG(a_func, n_it, stp, P)
