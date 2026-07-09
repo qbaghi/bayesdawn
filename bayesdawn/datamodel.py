@@ -431,7 +431,7 @@ class GaussianStationaryProcess(object):
                              for psd in self.psd_cls]
             t2 = time.time()
             self.s2 = [psd.calculate(2 * self.n_max) for psd in self.psd_cls]
-        print("Computation of autocovariance + PSD took " + str(t2-t1))
+        #print("Computation of autocovariance + PSD took " + str(t2-t1))        
         
         if self.method == 'woodbury':
             if len(self.ind_mis) <= self.n_wood_max:
@@ -545,12 +545,14 @@ class GaussianStationaryProcess(object):
         """
 
         if self.autocorr is None:
+            #print('recomputing offline elements')
             self.compute_offline()
         if ((self.method == 'PCG') | (self.method == 'tapered')) & (self.solve is None):
             self.compute_preconditioner()
+            #print('recomputing preconditioner')
         # If there is only one array
         if type(y) == np.ndarray:
-            # t1 = time.time()
+            #t1 = time.time()
             # Impute the missing data: estimation of missing residuals
             y_mis_res = self.imputation(y - self.y_mean, 
                                         self.autocorr, 
@@ -561,8 +563,8 @@ class GaussianStationaryProcess(object):
             # at observed value this is the same
             y_rec = copy.deepcopy(y)
             y_rec[self.ind_mis] = y_mis_res + self.y_mean[self.ind_mis]
-            # t2 = time.time()
-            # print("Missing data imputation took " + str(t2-t1))
+            #t2 = time.time()
+            #print("Missing data imputation took " + str(t2-t1))
             
         elif type(y) == list:
             
@@ -706,7 +708,7 @@ class GaussianStationaryProcess(object):
             
         else:
 
-            if draw:
+            if draw:                
                 # For missing data draw:
                 e = np.real(generate_noise_from_psd(s2, self.psd_cls.fs)[0:self.n])
                 u = self.apply_coo_inv(y[self.ind_obs] - e[self.ind_obs], s2, 
