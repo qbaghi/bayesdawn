@@ -9,13 +9,21 @@ method to handle data gaps in gravitational-wave data analysis, as described in 
 Installation
 ------------
 
-BayesDawn can be installed by unzipping the source code in one directory and using this command:
+BayesDawn now uses a modern pyproject-based build and supports Python >= 3.12.
 
-    sudo python setup.py install
-    
-Or using pip:
+Using uv (recommended):
 
-    pip install bayesdawn
+  uv venv --python 3.12
+  source .venv/bin/activate
+  uv pip install -e .
+
+Install docs dependencies:
+
+  uv pip install -e .[docs]
+
+Using pip:
+
+  python -m pip install -e .
     
 Quick start
 -----------

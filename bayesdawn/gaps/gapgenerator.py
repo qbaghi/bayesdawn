@@ -16,7 +16,7 @@ def modified_hann(n_data, n_wind=60):
     if 2 * n_wind <= n_data:
         n_w = copy.copy(n_wind)
     else:
-        n_w = np.int(n_wind / 2.)
+        n_w = int(n_wind / 2.)
         warnings.warn("Size of window decay is larger than half the window size",
                       UserWarning)
 
@@ -155,11 +155,11 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
     if 'random' in gap_type:  # N_gaps of T_gaps seconds
 
         # Taille du trou en nombre de points
-        if isinstance(t_gaps, (int, float, np.int, np.float64)):
-            d_n = np.int(t_gaps * fs) * np.ones(n_gaps)
-            d_n = d_n.astype(np.int)
+        if isinstance(t_gaps, (int, float, int, np.float64)):
+            d_n = int(t_gaps * fs) * np.ones(n_gaps)
+            d_n = d_n.astype(int)
         elif isinstance(t_gaps, (list, tuple, np.ndarray)):
-            d_n = np.array(fs * t_gaps).astype(np.int)
+            d_n = np.array(fs * t_gaps).astype(int)
         # Small deviations in the gap duration
         d_n = d_n + std_dur * fs * \
             np.random.normal(loc=0.0, scale=1.0, size=len(d_n))
@@ -171,16 +171,16 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
             inter_gap = np.random.exponential(
                 scale=inter_gap_mean, size=n_gaps)
             # Set the gaps locations
-            nd = np.empty(n_gaps, dtype=np.int)
+            nd = np.empty(n_gaps, dtype=int)
             ref_point = 0
             for g in range(n_gaps):
                 nd[g] = ref_point + inter_gap[g]
                 ref_point = nd[g] + d_n[g]
 
         else:
-            nd = np.sort((np.random.rand(n_gaps) * n_data).astype(np.int))
+            nd = np.sort((np.random.rand(n_gaps) * n_data).astype(int))
         # End of gaps
-        nf = (nd + d_n).astype(np.int)
+        nf = (nd + d_n).astype(int)
         # Remove overlapping
         for k in range(n_gaps - 1):
             if nd[k + 1] - nd[k] <= d_n[k]:
@@ -195,20 +195,20 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
     elif gap_type == 'periodic':
 
         # Number of holes :
-        n_gaps = np.int(f_gaps * n_data / fs)
+        n_gaps = int(f_gaps * n_data / fs)
         print("Warning: number of gaps derived from f_gaps: " + str(n_gaps))
         # Random location of holes
         nd = np.zeros(n_gaps)
         # Calculate CDF for all n
-        nd = np.arange(fs / f_gaps, n_data, fs / f_gaps).astype(np.int)
+        nd = np.arange(fs / f_gaps, n_data, fs / f_gaps).astype(int)
         # Introduce some randomness on the gap locations
         nd = (nd + std_loc * fs * np.random.normal(loc=0.0,
-                                                   scale=1.0, size=len(nd))).astype(np.int)
+                                                   scale=1.0, size=len(nd))).astype(int)
         # Length of gaps in term of data points, including possible deviations
         d_n = t_gaps * fs + std_dur * fs * \
             np.random.normal(loc=0.0, scale=1.0, size=len(nd))
-        d_n = d_n.astype(np.int)
-        # d_n = (T_gaps*fs*np.ones(len(nd))).astype(np.int)
+        d_n = d_n.astype(int)
+        # d_n = (T_gaps*fs*np.ones(len(nd))).astype(int)
 
         # Fin des trous
         nf = nd + d_n
@@ -263,7 +263,7 @@ def find_ends(m):
     # Last missing data
     nf_eff = np.append(nf_eff, i_mis[n_mis - 1] + 1)
 
-    return nd_eff.astype(np.int), nf_eff.astype(np.int)
+    return nd_eff.astype(int), nf_eff.astype(int)
 
 
 def segmentedges(M):
@@ -283,7 +283,7 @@ def segmentlengths(M):
     """
     seg_starts, seg_ends = segmentedges(M)
 
-    return (seg_ends - seg_starts).astype(np.int)
+    return (seg_ends - seg_starts).astype(int)
 
 
 def segmentwise(y, M):
@@ -320,7 +320,7 @@ def compute_freq_times(M, ts):
     # Edges of segments
     Nstarts, Nends = segmentedges(M)
     # Lengths of segments
-    slen = (Nends - Nstarts).astype(np.int)
+    slen = (Nends - Nstarts).astype(int)
     # y_segs_fft = [fft(seg) for seg in y_segs]
     f_segs = [np.fft.fftfreq(Ns) / ts for Ns in slen]
 
@@ -393,7 +393,7 @@ if __name__ == '__main__':
         # Gap duration deviation
         std_dur = 10 * 60
 
-        M = generategaps(N, fs, np.int(N * ts * f_gaps), L_gaps,
+        M = generategaps(N, fs, int(N * ts * f_gaps), L_gaps,
                          gap_type='periodic', f_gaps=f_gaps, wind_type=wind_type,
                          std_loc=std_loc, std_dur=std_dur)
 
@@ -408,7 +408,7 @@ if __name__ == '__main__':
         # Gap duration deviation
         std_dur = 60.
 
-        M = generategaps(N, fs, np.int(N * ts * f_gaps), L_gaps,
+        M = generategaps(N, fs, int(N * ts * f_gaps), L_gaps,
                          gap_type='random_poisson', f_gaps=f_gaps, wind_type=wind_type,
                          std_loc=std_loc, std_dur=std_dur)
 
@@ -423,7 +423,7 @@ if __name__ == '__main__':
         # Gap duration deviation
         std_dur = 60.
 
-        M = generategaps(N, fs, np.int(N * ts * f_gaps), L_gaps,
+        M = generategaps(N, fs, int(N * ts * f_gaps), L_gaps,
                          gap_type='random', f_gaps=f_gaps, wind_type=wind_type,
                          std_loc=std_loc, std_dur=std_dur)
 
@@ -432,7 +432,7 @@ if __name__ == '__main__':
         f_gaps = 1 / (14 * 3600 * 24)
         # f_gaps = 1/86400.
         L_gaps = 7 * 3600.
-        M = generategaps(N, fs, np.int(N * ts * f_gaps), L_gaps,
+        M = generategaps(N, fs, int(N * ts * f_gaps), L_gaps,
                          gap_type='periodic', f_gaps=f_gaps, wind_type=wind_type)
 
     # file_path = "/Users/qbaghi/Codes/data/masks/"
