@@ -95,7 +95,7 @@ def matmat_prod(a_in, ind_in, ind_out, mask, s_2n):
     if N_in_A != N_in :
         raise TypeError("Matrix dimensions do not match")
 
-    A_out = np.empty((N_out,K),dtype = np.float64)
+    A_out = np.empty((N_out,K), dtype=float)
 
     for j in range(K):
         A_out[:,j] = mat_vect_prod(a_in[:,j],ind_in,ind_out,mask,s_2n)
@@ -204,11 +204,11 @@ def precond_bicgstab(x0, b, a_func, n_it, stp, P, z0_hat=None, verbose=True):
     print(str(k) + "iterations." )
     info = 0
 
-    if sr[k-1] > stp * b_norm:
+    if sr[k] > stp * b_norm:
         print("Attention: Preconditioned BiCGSTAB algorithm ended \
         without reaching the specified convergence criterium. Check quality of \
         reconstruction.")
-        print("Current criterium: " +str(sr[k-1] / b_norm) + " > " + str(stp))
+        print("Current criterium: " +str(sr[k] / b_norm) + " > " + str(stp))
         info = 1
 
     # pcg_cls = PCG(a_func, n_it, stp, P)
@@ -246,14 +246,14 @@ def precond_linear_op(solver, N_out, N_in):
     PH_func = lambda x: solver(x)
 
     def Pmat_func(X):
-        # Z = np.empty((N_out,X.shape[1]),dtype = np.float64)
+        # Z = np.empty((N_out,X.shape[1]),dtype = float)
         # for j in range(X.shape[1]):
         #     Z[:,j] = solver(X[:,j])
         return np.array([solver(X[:, j]) for j in range(X.shape[1])]).T
 
     p_op = sparse.linalg.LinearOperator(shape=(N_out, N_in), matvec=P_func,
                                         rmatvec=PH_func, matmat=Pmat_func,
-                                        dtype=np.float64)
+                                        dtype=float)
 
     return p_op
 
@@ -301,7 +301,7 @@ def cov_linear_op(ind_in, ind_out, mask, s_2n):
     N_out = len(ind_out)
     Coi_op = sparse.linalg.LinearOperator(shape=(N_out, N_in), matvec=C_func,
                                           rmatvec=CH_func, matmat=Cmat_func,
-                                          dtype=np.float64)
+                                          dtype=float)
 
     return Coi_op
 

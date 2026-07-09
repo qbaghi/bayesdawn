@@ -349,7 +349,7 @@ def toepltiz_linear_op(ndim, s_2n):
                                         matvec=t_func,
                                         rmatvec=th_func,
                                         matmat=tmat_func,
-                                        dtype=np.float64)
+                                        dtype=float)
 
     return t_op
 
@@ -387,20 +387,20 @@ def taper_covariance(h, theta, taper='Wendland1', tau=10):
 
         c = np.zeros(len(h))
 
-        c[ii] = (1.-h[ii]/np.float(theta))**4 * (1 + 4.*h[ii]/np.float(theta))
+        c[ii] = (1.-h[ii]/float(theta))**4 * (1 + 4.*h[ii]/float(theta))
 
     elif taper == 'Wendland2':
 
         c = np.zeros(len(h))
 
-        c[ii] = (1-h[ii]/np.float(theta))**6 * (1 + 6.*h[ii]/theta + \
+        c[ii] = (1-h[ii]/float(theta))**6 * (1 + 6.*h[ii]/theta + \
         35*h[ii]**2/(3.*theta**2))
 
     elif taper == 'Spherical':
 
         c = np.zeros(len(h))
 
-        c[ii] = (1-h[ii]/np.float(theta))**2 * (1 + h[ii]/(2*np.float(theta)) )
+        c[ii] = (1-h[ii]/float(theta))**2 * (1 + h[ii]/(2*float(theta)) )
 
     elif taper == 'Hanning':
         c = np.zeros(len(h))
@@ -417,7 +417,7 @@ def taper_covariance(h, theta, taper='Wendland1', tau=10):
         c = np.zeros(len(h))
         c[h <= theta-tau] = 1.
         jj = np.where( (h >= theta-tau) & (h <= theta) )[0]
-        c[jj] = 0.5*(1 + np.cos( np.pi*(h[jj]-theta+tau)/np.float(tau) ) )
+        c[jj] = 0.5*(1 + np.cos( np.pi*(h[jj]-theta+tau)/float(tau) ) )
 
     elif taper == 'modifiedWendland2':
 
@@ -425,7 +425,7 @@ def taper_covariance(h, theta, taper='Wendland1', tau=10):
         c[h<=theta-tau] = 1.
         jj = np.where( (h>=theta-tau) & (h<=theta) )[0]
 
-        c[jj] = (1-(h[jj]-theta+tau)/np.float(tau))**6 * (1 + \
+        c[jj] = (1-(h[jj]-theta+tau)/float(tau))**6 * (1 + \
         6.*(h[jj]-theta+tau)/tau + 35*(h[jj]-theta+tau)**2/(3.*tau**2))
 
     elif taper == 'rect':
