@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bayesdawn"
+version = "0.1.0"
+description = "A Bayesian data augmentation algorithm"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "GNU General Public License v3 (GPLv3)" }
+authors = [
+  { name = "Quentin Baghi", email = "quentin.baghi@protonmail.com" }
+]
+keywords = ["bayesian", "data", "analysis", "gravitational-waves"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Topic :: Scientific/Engineering",
+  "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13"
+]
+dependencies = [
+  "cython",
+  "h5py",
+  "scipy",
+  "numpy",
+  "corner",
+  "pyfftw",
+  "numba"
+]
+
+[project.urls]
+Homepage = "https://github.com/qbaghi/bayesdawn"
+Documentation = "https://bayesdawn.readthedocs.io/en/latest/"
+Repository = "https://github.com/qbaghi/bayesdawn"
+
+[project.optional-dependencies]
+docs = [
+  "ipykernel",
+  "pygments",
+  "sphinx",
+  "sphinx_rtd_theme",
+  "nbsphinx",
+  "nbsphinx-link"
+]
+dev = [
+  "pytest"
+]
+
+[tool.setuptools.packages.find]
+include = ["bayesdawn*"]

@@ -370,6 +370,24 @@ class GaussianStationaryProcess(object):
                                    self.n_ends[self.n_gaps - 2]])),
                     int(np.min([self.n_ends[self.n_gaps - 1] + nb, self.n])))]
 
+        # Cache local gap-segment metadata to avoid repeated index extraction.
+        if self.indices is None:
+            self.segment_meta = None
+        else:
+            self.segment_meta = []
+            for indj in self.indices:
+                maskj = self.mask[indj]
+                ind_obsj = np.where(maskj == 1)[0]
+                ind_misj = np.where(maskj == 0)[0]
+                self.segment_meta.append({
+                    'indices': indj,
+                    'mask': maskj,
+                    'ind_obs': ind_obsj,
+                    'ind_mis': ind_misj,
+                    'segment_size': int(self.na + self.nb + len(ind_misj)),
+                    'n_mis': len(ind_misj),
+                })
+
         # ==
         # Store quantities that can be computed offline
         # ==
@@ -681,20 +699,34 @@ class GaussianStationaryProcess(object):
             else:
                 c = None
 
-            if draw:
-                results = [self.single_imputation(y[indj], 
-                                                self.mask[indj], 
-                                                c,
-                                                r,
-                                                s2) 
-                            for indj in self.indices]
-            else:
-                results = [self.single_conditional_mean(y[indj], 
-                                                        self.mask[indj], 
-                                                        c, r, s2) 
-                           for indj in self.indices]
+            y_mis = np.empty(len(self.ind_mis), dtype=y.dtype)
+            offset = 0
+            for seg in self.segment_meta:
+                yj = y[seg['indices']]
+                if draw:
+                    out = self.single_imputation(
+                        yj,
+                        seg['mask'],
+                        c,
+                        r,
+                        s2,
+                        ind_obsj=seg['ind_obs'],
+                        ind_misj=seg['ind_mis'],
+                        segment_size=seg['segment_size'])
+                else:
+                    out = self.single_conditional_mean(
+                        yj,
+                        seg['mask'],
+                        c,
+                        r,
+                        s2,
+                        ind_obsj=seg['ind_obs'],
+                        ind_misj=seg['ind_mis'],
+                        segment_size=seg['segment_size'])
 
-            y_mis = np.concatenate(results)
+                n_mis = seg['n_mis']
+                y_mis[offset:offset + n_mis] = out
+                offset += n_mis
             
         else:
 
@@ -721,7 +753,8 @@ class GaussianStationaryProcess(object):
         return y_mis
             
 
-    def single_imputation(self, yj, maskj, c, r, psd_2n, threshold=2000):
+    def single_imputation(self, yj, maskj, c, r, psd_2n, threshold=2000,
+                          ind_obsj=None, ind_misj=None, segment_size=None):
         """
         Sample the missing data distribution conditionally on the observed
         data, using direct brute-force computation.
@@ -729,7 +762,7 @@ class GaussianStationaryProcess(object):
         Parameters
         ----------
         yj : ndarray
-            segment of masked data
+            segment of masked data residuals
         maskj : ndarray
             local mask
         c : ndarray
@@ -754,18 +787,20 @@ class GaussianStationaryProcess(object):
         cov_2n = psd_2n * self.psd_cls.fs / 2.0
 
         # Local indices of missing and observed data
-        ind_obsj = np.where(maskj == 1)[0]
-        ind_misj = np.where(maskj == 0)[0]
+        if ind_obsj is None:
+            ind_obsj = np.where(maskj == 1)[0]
+        if ind_misj is None:
+            ind_misj = np.where(maskj == 0)[0]
 
         # Compute the size of the neighbooring observed points + gap size
-        segment_size = int(self.na + self.nb + len(ind_misj))
+        if segment_size is None:
+            segment_size = int(self.na + self.nb + len(ind_misj))
         
         # If the size is below some threshold, apply full-matrix method:
         if segment_size <= threshold:
         
             c_mo = c[np.ix_(ind_misj, ind_obsj)]
-            #C_mm = C[np.ix_(ind_misj,ind_misj)]
-            c_oo_inv = linalg.inv(c[np.ix_(ind_obsj, ind_obsj)])
+            c_oo = c[np.ix_(ind_obsj, ind_obsj)]
             # out = self.conditional_draw(yj[ind_obsj], psd_2n, c_oo_inv, c_mo,
             #                             ind_obsj, ind_misj, maskj, c)
             e = np.random.multivariate_normal(
@@ -773,13 +808,13 @@ class GaussianStationaryProcess(object):
                 c[0:maskj.shape[0], 0:maskj.shape[0]])
 
             # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
-            eps = e[ind_misj] + c_mo.dot(c_oo_inv.dot(yj[ind_obsj] - e[ind_obsj]))
+            rhs = yj[ind_obsj] - e[ind_obsj]
+            eps = e[ind_misj] + c_mo.dot(linalg.solve(c_oo, rhs, assume_a='pos'))
         
         # Otherwise, use FFT-based method:
         else:
             # Covariance of observed data and its inverse
             c_oo = toeplitz(r, ind_obsj)
-            c_oo_inv = linalg.inv(c_oo)
             # Covariance missing / observed data : matrix operator
             c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
                                                          maskj, cov_2n)
@@ -789,11 +824,14 @@ class GaussianStationaryProcess(object):
             e = np.real(generate_noise_from_psd(psd_2n, self.psd_cls.fs)[0:maskj.shape[0]])
 
             # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
-            eps = e[ind_misj] + c_mo(c_oo_inv.dot(yj[ind_obsj] - e[ind_obsj]))
+            rhs = yj[ind_obsj] - e[ind_obsj]
+            eps = e[ind_misj] + c_mo(linalg.solve(c_oo, rhs, assume_a='pos'))
             
         return eps
     
-    def single_conditional_mean(self, yj, maskj, c, r, psd_2n, threshold=2000):
+    def single_conditional_mean(self, yj, maskj, c, r, psd_2n, threshold=2000,
+                                ind_obsj=None, ind_misj=None,
+                                segment_size=None):
         """
         Compute the conditional expectation of missing data given the observed
         data, using direct brute-force computation 
@@ -829,29 +867,32 @@ class GaussianStationaryProcess(object):
         cov_2n = psd_2n * self.psd_cls.fs / 2.0
 
         # Local indices of missing and observed data
-        ind_obsj = np.where(maskj == 1)[0]
-        ind_misj = np.where(maskj == 0)[0]
+        if ind_obsj is None:
+            ind_obsj = np.where(maskj == 1)[0]
+        if ind_misj is None:
+            ind_misj = np.where(maskj == 0)[0]
 
         # Compute the size of the neighbooring observed points + gap size
-        segment_size = int(self.na + self.nb + len(ind_misj))
+        if segment_size is None:
+            segment_size = int(self.na + self.nb + len(ind_misj))
         
         # If the size is below some threshold, apply full-matrix method:
         if segment_size <= threshold:
         
             c_mo = c[np.ix_(ind_misj, ind_obsj)]
-            c_oo_inv = linalg.inv(c[np.ix_(ind_obsj, ind_obsj)])
-            mu_mis_j = c_mo.dot(c_oo_inv.dot(yj[ind_obsj]))
+            c_oo = c[np.ix_(ind_obsj, ind_obsj)]
+            mu_mis_j = c_mo.dot(linalg.solve(c_oo, yj[ind_obsj],
+                                             assume_a='pos'))
         
         # Otherwise, use FFT-based method:
         else:
             # Covariance of observed data and its inverse
             c_oo = toeplitz(r, ind_obsj)
-            c_oo_inv = linalg.inv(c_oo)
             # Covariance missing / observed data : matrix operator
             c_mo = lambda v: matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj,
                                                          maskj, cov_2n)
 
-            mu_mis_j = c_mo(c_oo_inv.dot(yj[ind_obsj]))
+            mu_mis_j = c_mo(linalg.solve(c_oo, yj[ind_obsj], assume_a='pos'))
             
         return mu_mis_j
 
