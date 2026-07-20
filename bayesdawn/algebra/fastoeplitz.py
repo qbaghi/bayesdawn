@@ -5,13 +5,16 @@
 
 This module provide routines to perform fast toeplitz matrix computations
 """
+
 from . import matrixalgebra
 import numpy as np
 from scipy import sparse, linalg
+
 # FTT modules
 import pyfftw
-pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
+
+pyfftw.interfaces.cache.enable()
 
 
 def toeplitz_multiplication(v, first_row, first_column):
@@ -37,9 +40,9 @@ def toeplitz_multiplication(v, first_row, first_column):
     """
 
     n = first_row.shape[0]
-    a_2n_fft = fft(np.concatenate((first_row,[0],first_column[1:][::-1])))
+    a_2n_fft = fft(np.concatenate((first_row, [0], first_column[1:][::-1])))
 
-    return np.real(ifft(a_2n_fft*fft(v, 2*n))[0:n])
+    return np.real(ifft(a_2n_fft * fft(v, 2 * n))[0:n])
 
 
 def multiple_toepltiz_inverse(c_mat, lambda_n, a):
@@ -59,41 +62,40 @@ def multiple_toepltiz_inverse(c_mat, lambda_n, a):
     """
 
     n = c_mat.shape[0]
-    #zero_vect = np.zeros(n_data)
-
+    # zero_vect = np.zeros(n_data)
 
     # PRECOMPUTATIONS
     # Cf. Step 2 of Ref. [1]
-    #ae_2n = np.concatenate(([1],a,zero_vect))
-    #ae_2n_fft = fft(ae_2n)
-    ae_2n_fft = fft(np.concatenate(([1],a)),2*n)
+    # ae_2n = np.concatenate(([1],a,zero_vect))
+    # ae_2n_fft = fft(ae_2n)
+    ae_2n_fft = fft(np.concatenate(([1], a)), 2 * n)
     # using hermitian and real property of covariance matrices:
     # be_2n_fft = fft(be_2n)
-    be_2n_fft = ae_2n_fft.conj() #np.real(ae_2n_fft) - 1j*np.imag(ae_2n_fft)
+    be_2n_fft = ae_2n_fft.conj()  # np.real(ae_2n_fft) - 1j*np.imag(ae_2n_fft)
 
-    signs = (-1)**(np.arange(2*n)+1)
+    signs = (-1) ** (np.arange(2 * n) + 1)
 
     x_mat = np.empty(np.shape(c_mat))
 
     print("shape of c_mat is " + str(c_mat.shape))
 
     for j in range(c_mat.shape[1]):
-        #ce_2n = np.zeros(2*n_data)
-        #ce_2n[0:n_data] = c_mat[:,j]
-        #ce_2n = np.concatenate((c_mat[:,j],zero_vect))
-        #ce_2n_fft = fft(ce_2n)
-        ce_2n_fft = fft(c_mat[:,j],2*n)
-        u_2n = ifft( ae_2n_fft*ce_2n_fft )
-        v_2n = ifft( be_2n_fft*ce_2n_fft )
+        # ce_2n = np.zeros(2*n_data)
+        # ce_2n[0:n_data] = c_mat[:,j]
+        # ce_2n = np.concatenate((c_mat[:,j],zero_vect))
+        # ce_2n_fft = fft(ce_2n)
+        ce_2n_fft = fft(c_mat[:, j], 2 * n)
+        u_2n = ifft(ae_2n_fft * ce_2n_fft)
+        v_2n = ifft(be_2n_fft * ce_2n_fft)
 
-        #pe_2n_fft = fft( np.concatenate((v_2n[0:n_data],zero_vect)) )
-        #qe_2n_fft = fft( np.concatenate((u_2n[n_data:],zero_vect))  )
-        pe_2n_fft = fft( v_2n[0:n] , 2*n )
-        qe_2n_fft = fft( u_2n[n:] , 2*n  )
+        # pe_2n_fft = fft( np.concatenate((v_2n[0:n_data],zero_vect)) )
+        # qe_2n_fft = fft( np.concatenate((u_2n[n_data:],zero_vect))  )
+        pe_2n_fft = fft(v_2n[0:n], 2 * n)
+        qe_2n_fft = fft(u_2n[n:], 2 * n)
 
-        we_2n = ifft( ae_2n_fft*pe_2n_fft + signs*be_2n_fft*qe_2n_fft )
+        we_2n = ifft(ae_2n_fft * pe_2n_fft + signs * be_2n_fft * qe_2n_fft)
 
-        x_mat[:,j] = np.real(we_2n[0:n]/lambda_n)
+        x_mat[:, j] = np.real(we_2n[0:n] / lambda_n)
 
     return x_mat
 
@@ -141,22 +143,22 @@ def toepltiz_inverse_jain(c, lambda_n, a):
 
     # Cf. Step 2 of Ref. [1]
     # 1)
-    #ae_2n = np.concatenate(([1],a,np.zeros(n_data)))
+    # ae_2n = np.concatenate(([1],a,np.zeros(n_data)))
 
     # be_2n = np.concatenate(([1],np.zeros(n_data-1),[0],a[::-1]))
     # ce_2n = np.concatenate((c,np.zeros(n_data)))
 
     # 2)
-    #ce_2n_fft = fft(ce_2n)
-    #ae_2n_fft = fft(ae_2n)
-    ce_2n_fft = fft(c,2*n)
-    ae_2n_fft = fft(np.concatenate(([1],a)),2*n)
+    # ce_2n_fft = fft(ce_2n)
+    # ae_2n_fft = fft(ae_2n)
+    ce_2n_fft = fft(c, 2 * n)
+    ae_2n_fft = fft(np.concatenate(([1], a)), 2 * n)
     # using hermitian and real property of covariance matrices:
     # be_2n_fft = fft(be_2n)
     be_2n_fft = ae_2n_fft.conj()
-    #be_2n_fft = np.real(ae_2n_fft) - 1j*np.imag(ae_2n_fft)
-    u_2n = ifft( ae_2n_fft*ce_2n_fft )
-    v_2n = ifft( be_2n_fft*ce_2n_fft )
+    # be_2n_fft = np.real(ae_2n_fft) - 1j*np.imag(ae_2n_fft)
+    u_2n = ifft(ae_2n_fft * ce_2n_fft)
+    v_2n = ifft(be_2n_fft * ce_2n_fft)
 
     # 3)
     # pe_2n = np.zeros(2*n_data)
@@ -165,21 +167,20 @@ def toepltiz_inverse_jain(c, lambda_n, a):
     # qe_2n[0:n_data] = u_2n[n_data:]
 
     # or better:
-    #pe_2n_fft = fft( np.concatenate((v_2n[0:n_data],np.zeros(n_data))) )
-    #qe_2n_fft = fft( np.concatenate((u_2n[n_data:],np.zeros(n_data)))  )
+    # pe_2n_fft = fft( np.concatenate((v_2n[0:n_data],np.zeros(n_data))) )
+    # qe_2n_fft = fft( np.concatenate((u_2n[n_data:],np.zeros(n_data)))  )
     # or even better:
-    pe_2n_fft = fft( v_2n[0:n], 2*n )
-    qe_2n_fft = fft( u_2n[n:] , 2*n )
+    pe_2n_fft = fft(v_2n[0:n], 2 * n)
+    qe_2n_fft = fft(u_2n[n:], 2 * n)
 
     # 4)
-    signs = (-1)**(np.arange(2*n)+1)
-    we_2n = ifft( ae_2n_fft*pe_2n_fft + signs*be_2n_fft*qe_2n_fft )
+    signs = (-1) ** (np.arange(2 * n) + 1)
+    we_2n = ifft(ae_2n_fft * pe_2n_fft + signs * be_2n_fft * qe_2n_fft)
 
-    return np.real(we_2n[0:n]/lambda_n)
+    return np.real(we_2n[0:n] / lambda_n)
 
 
-def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4, method='PCG',
-                        precond='taper'):
+def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4, method="PCG", precond="taper"):
     """
     Solve the system T y = e1 where T is symmetric Toepltiz.
     where e1 = [1 0 0 0 0 0].T to compute the vector a and lambda_n for
@@ -220,38 +221,35 @@ def teopltiz_precompute(r, p=10, nit=1000, tol=1e-4, method='PCG',
     """
     ndim = len(r)
     # First basis vector (of orthonormal cartesian basis)
-    e1 = np.concatenate(([1],np.zeros(ndim-1)))
-    if method == 'PCG':
+    e1 = np.concatenate(([1], np.zeros(ndim - 1)))
+    if method == "PCG":
         # Compute spectrum
-        s_2n = fft(np.concatenate((r, [0] , r[1:][::-1])))
+        s_2n = fft(np.concatenate((r, [0], r[1:][::-1])))
         # Linear operator correponding to the Toeplitz matrix
         t_op = toepltiz_linear_op(ndim, s_2n)
         # Preconditionner to approximate T^{-1}
-        if precond == 'taper':
+        if precond == "taper":
             psolver = compute_toepltiz_precond(r, p=p)
-        elif precond == 'circulant':
+        elif precond == "circulant":
             psolver = toepltiz_linear_op(ndim, fft(r))
         # Build the associated linear operator
         p_op = matrixalgebra.precond_linear_op(psolver, ndim, ndim)
         # Initial guess
-        z, info = sparse.linalg.bicgstab(t_op, e1, 
-                                        x0=np.zeros(ndim),
-                                        tol=tol,
-                                        maxiter=nit,
-                                        M=p_op,
-                                        callback=None)
+        z, info = sparse.linalg.bicgstab(
+            t_op, e1, x0=np.zeros(ndim), tol=tol, maxiter=nit, M=p_op, callback=None
+        )
         matrixalgebra.print_pcg_status(info)
-    elif method == 'levinson':
+    elif method == "levinson":
         z = linalg.solve_toeplitz(r, e1)
 
-    lambda_n = 1/z[0]
+    lambda_n = 1 / z[0]
     a = lambda_n * z[1:]
 
     return lambda_n, a
 
 
 # ==============================================================================
-def compute_toepltiz_precond(r, p=10, taper='Wendland2'):
+def compute_toepltiz_precond(r, p=10, taper="Wendland2"):
     """
     Compute a sparse preconditionner for solving T x = b where T is Toeplitz
     and symmetric, defined by autocovariance R
@@ -276,13 +274,11 @@ def compute_toepltiz_precond(r, p=10, taper='Wendland2'):
     """
 
     # Preconditionning : use sparse matrix
-    T_approx = build_sparse_cov2(r, p, len(r), form="csc", taper = taper)
+    T_approx = build_sparse_cov2(r, p, len(r), form="csc", taper=taper)
     # Preconditionner
     solve = sparse.linalg.factorized(T_approx)
 
     return solve
-
-
 
 
 # ==============================================================================
@@ -311,7 +307,7 @@ def toepltiz_mat_vect_prod(y, s_2n):
 
     """
 
-    return np.real(ifft(s_2n * fft(y, len(s_2n)))[0:len(y)])
+    return np.real(ifft(s_2n * fft(y, len(s_2n)))[0 : len(y)])
 
 
 def toepltiz_linear_op(ndim, s_2n):
@@ -340,21 +336,29 @@ def toepltiz_linear_op(ndim, s_2n):
 
     """
 
-    t_func = lambda x: toepltiz_mat_vect_prod(x, s_2n)
-    th_func = lambda x: toepltiz_mat_vect_prod(x, s_2n)
-    tmat_func = lambda X: np.array([toepltiz_mat_vect_prod(X[:,j],s_2n) 
-                                    for j in X.shape[1]]).T
+    def t_func(x):
+        return toepltiz_mat_vect_prod(x, s_2n)
 
-    t_op = sparse.linalg.LinearOperator(shape=(ndim,ndim),
-                                        matvec=t_func,
-                                        rmatvec=th_func,
-                                        matmat=tmat_func,
-                                        dtype=float)
+    def th_func(x):
+        return toepltiz_mat_vect_prod(x, s_2n)
+
+    def tmat_func(X):
+        return np.array(
+            [toepltiz_mat_vect_prod(X[:, j], s_2n) for j in range(X.shape[1])]
+        ).T
+
+    t_op = sparse.linalg.LinearOperator(
+        shape=(ndim, ndim),
+        matvec=t_func,
+        rmatvec=th_func,
+        matmat=tmat_func,
+        dtype=float,
+    )
 
     return t_op
 
 
-def taper_covariance(h, theta, taper='Wendland1', tau=10):
+def taper_covariance(h, theta, taper="Wendland1", tau=10):
     """
     Function calculating a taper covariance that smoothly goes to zero when h
     goes to theta. This taper is to be mutiplied by the estimated covariance
@@ -383,60 +387,59 @@ def taper_covariance(h, theta, taper='Wendland1', tau=10):
 
     ii = np.where(h <= theta)[0]
 
-    if taper == 'Wendland1':
-
+    if taper == "Wendland1":
         c = np.zeros(len(h))
 
-        c[ii] = (1.-h[ii]/float(theta))**4 * (1 + 4.*h[ii]/float(theta))
+        c[ii] = (1.0 - h[ii] / float(theta)) ** 4 * (1 + 4.0 * h[ii] / float(theta))
 
-    elif taper == 'Wendland2':
-
+    elif taper == "Wendland2":
         c = np.zeros(len(h))
 
-        c[ii] = (1-h[ii]/float(theta))**6 * (1 + 6.*h[ii]/theta + \
-        35*h[ii]**2/(3.*theta**2))
+        c[ii] = (1 - h[ii] / float(theta)) ** 6 * (
+            1 + 6.0 * h[ii] / theta + 35 * h[ii] ** 2 / (3.0 * theta**2)
+        )
 
-    elif taper == 'Spherical':
-
+    elif taper == "Spherical":
         c = np.zeros(len(h))
 
-        c[ii] = (1-h[ii]/float(theta))**2 * (1 + h[ii]/(2*float(theta)) )
+        c[ii] = (1 - h[ii] / float(theta)) ** 2 * (1 + h[ii] / (2 * float(theta)))
 
-    elif taper == 'Hanning':
+    elif taper == "Hanning":
         c = np.zeros(len(h))
-        c[ii] = (np.hanning(2*theta)[theta:2*theta])**2
+        c[ii] = (np.hanning(2 * theta)[theta : 2 * theta]) ** 2
 
-    elif taper == 'Gaussian':
-
+    elif taper == "Gaussian":
         c = np.zeros(len(h))
-        sigma = theta/5.
-        c[ii] = np.sqrt( 1./(2*np.pi*sigma**2) ) * np.exp( - h[ii]**2/(2*sigma**2) )
+        sigma = theta / 5.0
+        c[ii] = np.sqrt(1.0 / (2 * np.pi * sigma**2)) * np.exp(
+            -(h[ii] ** 2) / (2 * sigma**2)
+        )
 
-    elif taper == 'rectSmooth':
-
+    elif taper == "rectSmooth":
         c = np.zeros(len(h))
-        c[h <= theta-tau] = 1.
-        jj = np.where( (h >= theta-tau) & (h <= theta) )[0]
-        c[jj] = 0.5*(1 + np.cos( np.pi*(h[jj]-theta+tau)/float(tau) ) )
+        c[h <= theta - tau] = 1.0
+        jj = np.where((h >= theta - tau) & (h <= theta))[0]
+        c[jj] = 0.5 * (1 + np.cos(np.pi * (h[jj] - theta + tau) / float(tau)))
 
-    elif taper == 'modifiedWendland2':
-
+    elif taper == "modifiedWendland2":
         c = np.zeros(len(h))
-        c[h<=theta-tau] = 1.
-        jj = np.where( (h>=theta-tau) & (h<=theta) )[0]
+        c[h <= theta - tau] = 1.0
+        jj = np.where((h >= theta - tau) & (h <= theta))[0]
 
-        c[jj] = (1-(h[jj]-theta+tau)/float(tau))**6 * (1 + \
-        6.*(h[jj]-theta+tau)/tau + 35*(h[jj]-theta+tau)**2/(3.*tau**2))
+        c[jj] = (1 - (h[jj] - theta + tau) / float(tau)) ** 6 * (
+            1
+            + 6.0 * (h[jj] - theta + tau) / tau
+            + 35 * (h[jj] - theta + tau) ** 2 / (3.0 * tau**2)
+        )
 
-    elif taper == 'rect':
-
+    elif taper == "rect":
         c = np.zeros(len(h))
-        c[h <= theta] = 1.
+        c[h <= theta] = 1.0
 
     return c
 
 
-def build_sparse_cov2(autocorr, p, n_data, form=None, taper='Wendland2'):
+def build_sparse_cov2(autocorr, p, n_data, form=None, taper="Wendland2"):
     """
     This function constructs a sparse matrix which is a tappered, approximate
     version of the covariance matrix of a stationary process of autocovariance
@@ -472,7 +475,7 @@ def build_sparse_cov2(autocorr, p, n_data, form=None, taper='Wendland2'):
 
     # calculate the rows and columns indices of the non-zero values
     # Do it diagonal per diagonal
-    for i in range(p+1):
+    for i in range(p + 1):
         rf = np.ones(n_data - i) * r_tap[i]
         values.append(rf)
         k = np.hstack((k, i))
@@ -482,5 +485,4 @@ def build_sparse_cov2(autocorr, p, n_data, form=None, taper='Wendland2'):
             k = np.hstack((k, -i))
     # [build_diagonal(values, r_tap, k, i) for i in range(p + 1)]
 
-    return sparse.diags(values, k.astype(int), format=form,
-                        dtype=autocorr.dtype)
+    return sparse.diags(values, k.astype(int), format=form, dtype=autocorr.dtype)

@@ -47,7 +47,9 @@ docs = [
   "nbsphinx-link"
 ]
 dev = [
-  "pytest"
+  "pytest",
+  "pre-commit",
+  "ruff"
 ]
 
 [tool.setuptools.packages.find]

@@ -38,14 +38,14 @@ def v_func_gb_mono(f, f_0, tobs, ts):
     """
 
     df = f_0 - f
-    
+
     return np.exp(1j * np.pi * df * tobs) * np.sinc(df * tobs) * tobs / ts
-    
-    
+
+
 @nb.njit(fastmath=True)
 def v_func_gb_mono_fast(f, f_0, tobs, ts):
     """
-    Fast implentation of v_func_gb_mon in the case of a nf x nf grid of 
+    Fast implentation of v_func_gb_mon in the case of a nf x nf grid of
     frequencies
 
     Parameters
@@ -64,9 +64,9 @@ def v_func_gb_mono_fast(f, f_0, tobs, ts):
     [type]
         [description]
     """
-    
+
     v_gb = np.empty(f.shape, dtype=np.complex128)
-    
+
     for i in range(f.shape[0]):
         for j in range(f.shape[1]):
             df = f_0 - f[i, j]
@@ -106,16 +106,20 @@ def v_func_gb(f, f_0, f_dot, T, ts):
         f_shift = f + f_0
         a = np.pi * f_dot
         coeff = np.exp(3j * np.pi / 4) / np.sqrt(a)
-        common_factor = - np.exp(1j*np.pi/4)/(2*np.sqrt(a))*np.sqrt(np.pi) \
-                        * np.exp(1j*np.pi**2 * f_shift**2 / a)
+        common_factor = (
+            -np.exp(1j * np.pi / 4)
+            / (2 * np.sqrt(a))
+            * np.sqrt(np.pi)
+            * np.exp(1j * np.pi**2 * f_shift**2 / a)
+        )
 
-        erfi_0 = special.erfi(coeff * (np.pi*f_shift))
-        erfi_T = special.erfi(coeff * (a*T+np.pi*f_shift))
+        erfi_0 = special.erfi(coeff * (np.pi * f_shift))
+        erfi_T = special.erfi(coeff * (a * T + np.pi * f_shift))
 
-        return common_factor*(erfi_T - erfi_0)/ts
+        return common_factor * (erfi_T - erfi_0) / ts
 
     else:
-        return np.exp(-1j*np.pi*(f_0+f)*T)*np.sinc((f_0+f)*T)*T/ts
+        return np.exp(-1j * np.pi * (f_0 + f) * T) * np.sinc((f_0 + f) * T) * T / ts
 
 
 def v_func_gb_star(f, f_0, f_dot, T, ts):
@@ -177,20 +181,20 @@ def v_func_gb_seg(f, f_0, f_dot, ts, T1, T2):
 
     if f_dot != 0:
         f_shift = f + f_0
-        a = np.pi*f_dot
-        coeff = np.exp(3j*np.pi/4) / np.sqrt(a)
-        common_factor = - np.exp(1j*np.pi/4)/(2*np.sqrt(a))*np.sqrt(np.pi)
-        common_factor = common_factor * np.exp(1j*np.pi**2 * f_shift**2 / a)
+        a = np.pi * f_dot
+        coeff = np.exp(3j * np.pi / 4) / np.sqrt(a)
+        common_factor = -np.exp(1j * np.pi / 4) / (2 * np.sqrt(a)) * np.sqrt(np.pi)
+        common_factor = common_factor * np.exp(1j * np.pi**2 * f_shift**2 / a)
 
-        erfi_T1 = special.erfi(coeff * (a*T1+np.pi*f_shift))
-        erfi_T2 = special.erfi(coeff * (a*T2+np.pi*f_shift))
+        erfi_T1 = special.erfi(coeff * (a * T1 + np.pi * f_shift))
+        erfi_T2 = special.erfi(coeff * (a * T2 + np.pi * f_shift))
 
-        return common_factor*(erfi_T2 - erfi_T1)/ts
+        return common_factor * (erfi_T2 - erfi_T1) / ts
 
     else:
         f_shift = f + f_0
 
-        return window_tf(f_shift, T1, T2)/ts
+        return window_tf(f_shift, T1, T2) / ts
 
 
 def window_tf(f, T_start, T_end):
@@ -219,7 +223,7 @@ def window_tf(f, T_start, T_end):
 
     dT = T_end - T_start
 
-    return dT * np.exp(-np.pi*f*1j*(T_end+T_start))*np.sinc(f*dT)
+    return dT * np.exp(-np.pi * f * 1j * (T_end + T_start)) * np.sinc(f * dT)
 
 
 def v_func_gb_conj(f, f_0, f_dot, ts, t1, t2):
@@ -255,20 +259,19 @@ def v_func_gb_conj(f, f_0, f_dot, ts, t1, t2):
 
     if f_dot != 0:
         f_shift = f_0 - f
-        coeff = np.exp(1j*np.pi/4) * np.sqrt(np.pi / f_dot)
-        common_factor = np.exp(1j*np.pi/4 - 1j*np.pi * f_shift**2 / f_dot)
+        coeff = np.exp(1j * np.pi / 4) * np.sqrt(np.pi / f_dot)
+        common_factor = np.exp(1j * np.pi / 4 - 1j * np.pi * f_shift**2 / f_dot)
         common_factor = common_factor / (2 * np.sqrt(f_dot))
 
         erfi_T1 = special.erfi(coeff * (f_dot * t1 + f_shift))
         erfi_T2 = special.erfi(coeff * (f_dot * t2 + f_shift))
 
-        return common_factor * (erfi_T2 - erfi_T1)/ts
+        return common_factor * (erfi_T2 - erfi_T1) / ts
 
     else:
         dT = t2 - t1
         f_shift = f_0 - f
-        out = dT * np.exp(np.pi * f_shift * 1j
-                          * (t2 + t1)) * np.sinc(f_shift * dT) / ts
+        out = dT * np.exp(np.pi * f_shift * 1j * (t2 + t1)) * np.sinc(f_shift * dT) / ts
 
         return out
     # return np.conj(v_func_gb(-f, f_0, f_dot, ts, t1, t2))
@@ -291,7 +294,7 @@ def integral0(f, T1, T2, ts):
     """
 
     dT = T2 - T1
-    return - dT/2*np.exp(-1j*np.pi*f*(T1+T2))*np.sinc(f*dT) / ts
+    return -dT / 2 * np.exp(-1j * np.pi * f * (T1 + T2)) * np.sinc(f * dT) / ts
 
 
 def integral1(f, T, tw, ts):
@@ -302,8 +305,14 @@ def integral1(f, T, tw, ts):
 
     """
 
-    return -1j*tw/4.*np.exp(1j*np.pi*(2*T-tw)*f)*(
-        np.sinc(1/2.-f*tw) - np.sinc(1/2.+f*tw)) / ts
+    return (
+        -1j
+        * tw
+        / 4.0
+        * np.exp(1j * np.pi * (2 * T - tw) * f)
+        * (np.sinc(1 / 2.0 - f * tw) - np.sinc(1 / 2.0 + f * tw))
+        / ts
+    )
 
 
 def v_func_GB_wind(f, f_0, f_dot, ts, T1, T2, tw):
@@ -344,9 +353,10 @@ def v_func_GB_wind(f, f_0, f_dot, ts, T1, T2, tw):
     """
     f_shift = f + f_0
 
-    integr = integral0(f, T1, T1+tw, ts) - integral1(f_shift, T1, tw, ts)
-    integr += integral0(f_shift, T1+tw, T2-tw, ts) + integral0(f_shift, T2-tw,
-                                                               T2, ts)
+    integr = integral0(f, T1, T1 + tw, ts) - integral1(f_shift, T1, tw, ts)
+    integr += integral0(f_shift, T1 + tw, T2 - tw, ts) + integral0(
+        f_shift, T2 - tw, T2, ts
+    )
     integr -= integral1(f_shift, T2, tw, ts)
 
     return integr

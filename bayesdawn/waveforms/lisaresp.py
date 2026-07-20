@@ -21,6 +21,7 @@ from . import coeffs
 import pyfftw
 from ..utils import physics
 from pyfftw.interfaces.numpy_fft import fft, ifft, rfft
+
 pyfftw.interfaces.cache.enable()
 
 # Global variables
@@ -60,15 +61,15 @@ def indices_low_freq(channel):
 
     """
 
-    if channel == 'X1':
+    if channel == "X1":
         i = 2
         j = 3
 
-    elif channel == 'Y1':
+    elif channel == "Y1":
         i = 3
         j = 1
 
-    elif channel == 'Z1':
+    elif channel == "Z1":
         i = 1
         j = 2
 
@@ -162,12 +163,11 @@ def compute_full_series(v_list, c_mat):
         a_slow(f) = sum_{n=-nc}^{+nc} c[n] v(f - n / Tobs)
 
     """
-    
+
     # np.array([v_list]).T has size nf x 2nc
     # We used to multiply a 2nc x 2 matrix by a nf x 2nc matrix
     # to get a 2nc x nf x 2 array
     return np.sum(c_mat * np.array([v_list]).T, axis=1)
-
 
 
 class GWwaveform(object):
@@ -193,7 +193,7 @@ class GWwaveform(object):
         self.armlength = armlength
 
         self.R = au
-        self.f_t = 1. / year
+        self.f_t = 1.0 / year
 
 
 class UCBWaveform(GWwaveform):
@@ -226,7 +226,7 @@ class UCBWaveform(GWwaveform):
         super().__init__(phi_rot=phi_rot, armlength=armlength)
 
         # Name of intrinsic parameters
-        self.names = ['theta', 'phi', 'f_0', 'f_dot']
+        self.names = ["theta", "phi", "f_0", "f_dot"]
         # Phase function
         self.v_func = v_func
         # For Fourier series decomposition: m = 0, 1, .. 4
@@ -276,13 +276,15 @@ class UCBWaveform(GWwaveform):
         """
 
         # when v = FT(e^(-jPhi))
-        v_minus = [np.conj(v_minus_list[self.o2i(-m-n)])
-                   * e_vect[np.int(n + self.nc)] for n in n_vect]
+        v_minus = [
+            np.conj(v_minus_list[self.o2i(-m - n)]) * e_vect[np.int(n + self.nc)]
+            for n in n_vect
+        ]
         # when v = FT(e^(jPhi))
         # v_minus = [v_minus_list[self.o2i(n + m)] * e_vect[np.int(n + self.nc)]
         #            for n in n_vect]
 
-        y_c = sum([jw[k]*1/2.*v_minus[k] for k in range(len(v_minus))])
+        y_c = sum([jw[k] * 1 / 2.0 * v_minus[k] for k in range(len(v_minus))])
         # y_s = -1j*y_c
 
         # return y_c, y_s
@@ -331,24 +333,31 @@ class UCBWaveform(GWwaveform):
         f_dot = params[3]
 
         d0 = self.R * np.sin(theta) / c
-        varphi = phi + np.pi/2
+        varphi = phi + np.pi / 2
 
         # Precompute the Bessel coefficients f, f_0, f_dot, ts, T1, T2
-        v_minus_list = [self.v_func(-f + k * self.f_t, f_0, f_dot, t_end, ts)
-                        for k in range(-self.nc - self.m_max,
-                                       self.nc + self.m_max + 1)]
+        v_minus_list = [
+            self.v_func(-f + k * self.f_t, f_0, f_dot, t_end, ts)
+            for k in range(-self.nc - self.m_max, self.nc + self.m_max + 1)
+        ]
 
         n_vect = np.arange(-self.nc, self.nc + 1)
-        e_vect = np.exp(1j*n_vect*varphi)
+        e_vect = np.exp(1j * n_vect * varphi)
 
-        jw = [special.jv(n, 2*np.pi*f_0*d0) for n in n_vect]
+        jw = [special.jv(n, 2 * np.pi * f_0 * d0) for n in n_vect]
 
         # List of ucm for all m, valid only for positive frequencies:
-        u = [self.bessel_decomp_pos(v_minus_list, jw, e_vect, n_vect, m)
-             for m in - self.m_vect]
+        u = [
+            self.bessel_decomp_pos(v_minus_list, jw, e_vect, n_vect, m)
+            for m in -self.m_vect
+        ]
         u.extend([u[0]])  # Avoid computing m=0 twice+
-        u.extend([self.bessel_decomp_pos(v_minus_list, jw, e_vect, n_vect, m)
-                  for m in self.m_vect[1:]])
+        u.extend(
+            [
+                self.bessel_decomp_pos(v_minus_list, jw, e_vect, n_vect, m)
+                for m in self.m_vect[1:]
+            ]
+        )
 
         # jomega = (2*np.pi*1j*f)**derivative
         # uc = np.array([jomega * z[0] for z in u]).T
@@ -357,7 +366,7 @@ class UCBWaveform(GWwaveform):
         # uc = np.array([jomega * z for z in u]).T
         #  us = - 1j * uc
         # return uc  # , us
-        return np.transpose(u * np.array([(2*np.pi*1j*f)**derivative]))
+        return np.transpose(u * np.array([(2 * np.pi * 1j * f) ** derivative]))
 
     def single_design_matrix_freq(self, uc, k_p, k_c, full=True):
         """
@@ -405,8 +414,8 @@ class UCBWaveform(GWwaveform):
             a_tmp = np.empty((uc.shape[0], 4), dtype=np.complex128)
             a_tmp[:, 0] = np.dot(uc, k_p_tot)  # C_func*Dxi_p
             a_tmp[:, 1] = np.dot(uc, k_c_tot)  # C_func*Dxi_c
-            a_tmp[:, 2] = - 1j * a_tmp[:, 0]  # S_func*Dxi_p
-            a_tmp[:, 3] = - 1j * a_tmp[:, 1]  # S_func*Dxi_c
+            a_tmp[:, 2] = -1j * a_tmp[:, 0]  # S_func*Dxi_p
+            a_tmp[:, 3] = -1j * a_tmp[:, 1]  # S_func*Dxi_c
         else:
             a_tmp = np.empty((uc.shape[0], 2), dtype=np.complex128)
             a_tmp[:, 0] = np.dot(uc, k_p_tot)  # C_func*Dxi_p
@@ -416,8 +425,9 @@ class UCBWaveform(GWwaveform):
 
         return a_tmp
 
-    def design_matrix_freq(self, f, param_intr, del_t, tobs,
-                           channel='TDIAET', full=True):
+    def design_matrix_freq(
+        self, f, param_intr, del_t, tobs, channel="TDIAET", full=True
+    ):
         """
         Compute LISA's response to the incoming galactic binary GW in the
         frequency domain
@@ -455,24 +465,25 @@ class UCBWaveform(GWwaveform):
 
         # Compute response coefficients for channels s1, s2, s3
         k_p_list, k_c_list, pre, derivative = self.compute_response_coeffs(
-            param_intr, channel)
+            param_intr, channel
+        )
         # Compute model matrix in frequency domain (in fractional frequency)
-        uc = self.u_matrices(f, param_intr, del_t, 0, tobs,
-                             derivative=derivative)
+        uc = self.u_matrices(f, param_intr, del_t, 0, tobs, derivative=derivative)
         # Compute the matrices corresponding to each channel h1, h2, h3
-        mat_list = [pre * self.single_design_matrix_freq(uc, k_p_list[i],
-                                                         k_c_list[i],
-                                                         full=full)
-                    for i in range(len(k_p_list))]
+        mat_list = [
+            pre
+            * self.single_design_matrix_freq(uc, k_p_list[i], k_c_list[i], full=full)
+            for i in range(len(k_p_list))
+        ]
         # If phasemeter model is required, there should be 6 matrices
         # (one for each link)
-        if channel == 'phasemeters':
+        if channel == "phasemeters":
             # You have to include primed channels: h3, h1, h2
             mat_list.extend([mat_list[2], mat_list[0], mat_list[1]])
 
         return mat_list
 
-    def compute_response_coeffs(self, param_intr, channel='TDIAET'):
+    def compute_response_coeffs(self, param_intr, channel="TDIAET"):
         """Compute the coefficients needed for calculating the response
 
         Parameters
@@ -495,8 +506,8 @@ class UCBWaveform(GWwaveform):
 
         """
         # domain and in each channel
-        if channel == 'phasemeters':
-            pre = (self.armlength / (4 * c))
+        if channel == "phasemeters":
+            pre = self.armlength / (4 * c)
             derivative = 1
             # There is a mixing to convert it in the phasemeter measurements!
             # i_mix = [2, 0, 1]
@@ -510,15 +521,15 @@ class UCBWaveform(GWwaveform):
             k_p_list = [kp3, kp1, kp2]
             k_c_list = [kc3, kc1, kc2]
 
-        elif (channel == 'TDIAET') | (channel == 'TDIXYZ'):
+        elif (channel == "TDIAET") | (channel == "TDIXYZ"):
             pre = (self.armlength / c) ** 2
             derivative = 2
             # Compute the required coefficients response depending on channel
-            i, j = indices_low_freq('X1')  # 23
+            i, j = indices_low_freq("X1")  # 23
             kp23, kc23 = coeffs.k_coeffs(param_intr, self.phi_rot, i, j)
-            i, j = indices_low_freq('Y1')  # 31
+            i, j = indices_low_freq("Y1")  # 31
             kp31, kc31 = coeffs.k_coeffs(param_intr, self.phi_rot, i, j)
-            i, j = indices_low_freq('Z1')  # 12
+            i, j = indices_low_freq("Z1")  # 12
             kp12, kc12 = coeffs.k_coeffs(param_intr, self.phi_rot, i, j)
 
             k_p_list = [kp23, kp31, kp12]
@@ -526,7 +537,7 @@ class UCBWaveform(GWwaveform):
 
         return k_p_list, k_c_list, pre, derivative
 
-    def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET'):
+    def compute_signal_freq(self, f, params, del_t, tobs, channel="TDIAET"):
         """
         Compute LISA's response to the incoming galactic binary GW in the
         frequency domain
@@ -580,31 +591,30 @@ class UCBWaveform(GWwaveform):
         param_intr = np.array([theta, phi, f_0, f_dot])
         # Compute response coefficients
         k_p_list, k_c_list, pre, derivative = self.compute_response_coeffs(
-            param_intr, channel)
+            param_intr, channel
+        )
         # Compute model matrix in frequency domain (in fractional frequency)
         # uc, us = self.u_matrices(f, param_intr, del_t, 0, tobs,
         #                          derivative=derivative)
-        uc = self.u_matrices(f, param_intr, del_t, 0, tobs,
-                             derivative=derivative)
+        uc = self.u_matrices(f, param_intr, del_t, 0, tobs, derivative=derivative)
 
         # mat_list = [self.design_matrix_freq(uc, us, k_p_list[i], k_c_list[i])
         #             for i in range(len(k_p_list))]
-        mat_list = [self.single_design_matrix_freq(uc,
-                                                   k_p_list[i],
-                                                   k_c_list[i],
-                                                   full=True)
-                    for i in range(len(k_p_list))]
+        mat_list = [
+            self.single_design_matrix_freq(uc, k_p_list[i], k_c_list[i], full=True)
+            for i in range(len(k_p_list))
+        ]
 
         # Transform to complex number
         ch_list = [pre * mat.dot(beta) for mat in mat_list]
 
-        if channel == 'TDIAET':
+        if channel == "TDIAET":
             a, e, t = convert_xyz_to_aet(ch_list[0], ch_list[1], ch_list[2])
             return a, e, t
         else:
             return ch_list[0], ch_list[1], ch_list[2]
 
-    def transfer_function(self, f, params, del_t, tobs, channel='phasemeters'):
+    def transfer_function(self, f, params, del_t, tobs, channel="phasemeters"):
         """Compute an approximation of LISA's transfer function G(F) for a
         monochromatic wave, for phasemeter or TDI measurements.
         This is such that
@@ -648,13 +658,13 @@ class UCBWaveform(GWwaveform):
         # Vector of intrinsic parameters
         param_intr = np.array([theta, phi, f_0, f_dot])
         d0 = self.R * np.sin(theta) / c
-        varphi = phi + np.pi/2
+        varphi = phi + np.pi / 2
         m_vect = np.arange(0, 5)
-        e_vect = np.exp(1j*m_vect*varphi)
+        e_vect = np.exp(1j * m_vect * varphi)
 
         # domain and in each channel
-        if channel == 'phasemeters':
-            pre = (self.armlength / (4 * c))
+        if channel == "phasemeters":
+            pre = self.armlength / (4 * c)
             derivative = 1
             # Compute the required coefficients response depending on channel
             kp3, kc3 = coeffs.k_coeffs_single(param_intr, self.phi_rot, 3)
@@ -664,34 +674,36 @@ class UCBWaveform(GWwaveform):
             k_p_list = [kp3, kp1, kp2]
             k_c_list = [kc3, kc1, kc2]
 
-        elif (channel == 'TDIAET') | (channel == 'TDIXYZ'):
+        elif (channel == "TDIAET") | (channel == "TDIXYZ"):
             print(channel)
             pre = (self.armlength / c) ** 2
             derivative = 2
             # Compute the required coefficients response depending on channel
-            i, j = indices_low_freq('X1')  # 23
+            i, j = indices_low_freq("X1")  # 23
             kp23, kc23 = coeffs.k_coeffs(params, self.phi_rot, i, j)
-            i, j = indices_low_freq('Y1')  # 31
+            i, j = indices_low_freq("Y1")  # 31
             kp31, kc31 = coeffs.k_coeffs(params, self.phi_rot, i, j)
-            i, j = indices_low_freq('Z1')  # 12
+            i, j = indices_low_freq("Z1")  # 12
             kp12, kc12 = coeffs.k_coeffs(params, self.phi_rot, i, j)
             k_p_list = [kp23, kp31, kp12]
             k_c_list = [kc23, kc31, kc12]
 
         # Include derivative
-        jomega = (2*np.pi*1j*f)**derivative
+        jomega = (2 * np.pi * 1j * f) ** derivative
         # Bessel coefficients stored in a nf x 5 matrix, with derivative coeff
-        jw = np.array([special.jv(m, 2*np.pi*f*d0) * jomega for m in m_vect]).T
+        jw = np.array([special.jv(m, 2 * np.pi * f * d0) * jomega for m in m_vect]).T
         # Multiply exp(jm * varphi) by k_p[m]
         ek_p = [e_vect * k_p for k_p in k_p_list]
         ek_c = [e_vect * k_c for k_c in k_c_list]
-        minus_1_m = np.array((-1)**m_vect)
+        minus_1_m = np.array((-1) ** m_vect)
         # Transfer function for the + polarization, sum over m
-        g_p_list = [pre * np.sum((co + minus_1_m * np.conj(co)) * jw, axis=1)
-                    for co in ek_p]
+        g_p_list = [
+            pre * np.sum((co + minus_1_m * np.conj(co)) * jw, axis=1) for co in ek_p
+        ]
         # Transfer function for the x polarization, sum over m
-        g_c_list = [pre * np.sum((co + minus_1_m * np.conj(co)) * jw, axis=1)
-                    for co in ek_c]
+        g_c_list = [
+            pre * np.sum((co + minus_1_m * np.conj(co)) * jw, axis=1) for co in ek_c
+        ]
 
         return g_p_list, g_c_list
 
@@ -703,9 +715,17 @@ class UCBWaveformFull(GWwaveform):
 
     """
 
-    def __init__(self, v_func, del_t, tobs,
-                 phi_rot=0, armlength=2.5e9, nc=2**9, arm_list=None,
-                 e=0):
+    def __init__(
+        self,
+        v_func,
+        del_t,
+        tobs,
+        phi_rot=0,
+        armlength=2.5e9,
+        nc=2**9,
+        arm_list=None,
+        e=0,
+    ):
         """
 
         Parameters
@@ -732,7 +752,7 @@ class UCBWaveformFull(GWwaveform):
         super().__init__(phi_rot=phi_rot, armlength=armlength)
 
         # Name of intrinsic parameters
-        self.names = ['theta', 'phi', 'f_0', 'f_dot']
+        self.names = ["theta", "phi", "f_0", "f_dot"]
         # Phase function
         self.v_func = v_func
         # For the number of time samples in the Fourier series
@@ -755,8 +775,7 @@ class UCBWaveformFull(GWwaveform):
             self.arm_list_prime = [self.armlength for i in range(3)]
         else:
             self.arm_list = [arm(self.t_samples) for arm in arm_list[0:3]]
-            self.arm_list_prime = [arm(self.t_samples)
-                                   for arm in arm_list[3:6]]
+            self.arm_list_prime = [arm(self.t_samples) for arm in arm_list[3:6]]
         # Eccentricity
         self.e = e
         # List of arm indices measured on each optical bench i
@@ -776,26 +795,27 @@ class UCBWaveformFull(GWwaveform):
         """
         # List of arm lengths functions vs time
         self.arm_list = [arm(self.t_samples) for arm in arm_list[0:3]]
-        self.arm_list_prime = [arm(self.t_samples)
-                               for arm in arm_list[3:6]]
+        self.arm_list_prime = [arm(self.t_samples) for arm in arm_list[3:6]]
 
     def precompute_lisa_phase(self):
         """
         Compute terms in Phi_T(t) on a minimal grid in the time domain.
         """
         f_sample = 2 * self.nc
-        self.t_samples, self.dt = np.linspace(0, self.tobs, f_sample + 2,
-                                              endpoint=False, retstep=True)
+        self.t_samples, self.dt = np.linspace(
+            0, self.tobs, f_sample + 2, endpoint=False, retstep=True
+        )
 
-        self.cosphit_mat = np.array([np.cos(2*np.pi*m*self.f_t*self.t_samples)
-                                     for m in range(5)]).T
-        self.sinphit_mat = np.array([np.sin(2*np.pi*m*self.f_t*self.t_samples)
-                                     for m in range(5)]).T
+        self.cosphit_mat = np.array(
+            [np.cos(2 * np.pi * m * self.f_t * self.t_samples) for m in range(5)]
+        ).T
+        self.sinphit_mat = np.array(
+            [np.sin(2 * np.pi * m * self.f_t * self.t_samples) for m in range(5)]
+        ).T
         self.cs_mat = np.hstack((self.cosphit_mat, self.sinphit_mat))
 
-    def compute_modulation(self, theta, phi, i, channel='phasemeters'):
-
-        if channel == 'phasemeters':
+    def compute_modulation(self, theta, phi, i, channel="phasemeters"):
+        if channel == "phasemeters":
             # Compute the required coefficients response depending on channel
             k_pi, k_ci = coeffs.xi_coeffs(theta, phi, self.phi_rot, i)
         # Compute modulation functions
@@ -804,8 +824,9 @@ class UCBWaveformFull(GWwaveform):
 
         return xi_pi, xi_ci
 
-    def compute_slow_part(self, theta, phi, f_0, f_dot, i,
-                          channel='phasemeters', prime=False):
+    def compute_slow_part(
+        self, theta, phi, f_0, f_dot, i, channel="phasemeters", prime=False
+    ):
         """
         Compute the slow-varying part of the response in OB i
         in the time domain, such that
@@ -838,9 +859,14 @@ class UCBWaveformFull(GWwaveform):
         a, b = coeffs.kn_coeffs(theta, phi, self.phi_rot, i)
         kni = self.cosphit_mat[:, 0:3].dot(a) + self.sinphit_mat[:, 0:3].dot(b)
         # Compute k . r_0
-        kr0 = - self.R * np.sin(theta) * (
+        kr0 = (
+            -self.R
+            * np.sin(theta)
+            * (
                 self.cosphit_mat[:, 1] * np.cos(phi)
-                + self.sinphit_mat[:, 1] * np.sin(phi))
+                + self.sinphit_mat[:, 1] * np.sin(phi)
+            )
+        )
 
         # # Compute k.r_i
         # # In FD waveform
@@ -896,24 +922,21 @@ class UCBWaveformFull(GWwaveform):
         # Reception time
         # --------------
         a_re, b_re = coeffs.ku_coeffs(theta, phi, self.phi_rot, i_re)
-        ku_re = self.cosphit_mat[:,
-                0:3].dot(a_re) + self.sinphit_mat[:, 0:3].dot(b_re)
+        ku_re = self.cosphit_mat[:, 0:3].dot(a_re) + self.sinphit_mat[:, 0:3].dot(b_re)
         d_re = (kr0 + 2 * self.e * self.R * ku_re) / physics.c_light
 
         # Emission time
         # -------------
         a_em, b_em = coeffs.ku_coeffs(theta, phi, self.phi_rot, i_em)
-        ku_em = self.cosphit_mat[:,
-                0:3].dot(a_em) + self.sinphit_mat[:, 0:3].dot(b_em)
-        d_em = (kr0 + 2 * self.R * self.e * ku_em + arm_length)/physics.c_light
+        ku_em = self.cosphit_mat[:, 0:3].dot(a_em) + self.sinphit_mat[:, 0:3].dot(b_em)
+        d_em = (kr0 + 2 * self.R * self.e * ku_em + arm_length) / physics.c_light
 
         # Reception time
         dt_re = d_re * (1 - f_dot * (d_re + 2 * self.t_samples) / (2 * f_0))
         # Emission time
         dt_em = d_em * (1 - f_dot * (d_em + 2 * self.t_samples) / (2 * f_0))
 
-        phasing = (np.exp(-2j * np.pi * f_0 * dt_re)
-                   - np.exp(-2j * np.pi * f_0 * dt_em))
+        phasing = np.exp(-2j * np.pi * f_0 * dt_re) - np.exp(-2j * np.pi * f_0 * dt_em)
 
         # If v_func is monochromatic, we must include the f_dot dependence
         # of the GW phase in the slow part:
@@ -940,7 +963,7 @@ class UCBWaveformFull(GWwaveform):
         # return np.array([prefact * phasing]).T * np.array([xpi, xci]).T
         # return np.array([prefact * phasing * xpi, prefact * phasing * xci]).T
 
-    def design_matrix_freq(self, f, param_intr, channel='phasemeters'):
+    def design_matrix_freq(self, f, param_intr, channel="phasemeters"):
         """
         Compute the list of frequency-domain design matrix mat[i] such that
         LISA's response
@@ -977,11 +1000,18 @@ class UCBWaveformFull(GWwaveform):
         #                                       channel=channel)
         #                for i in index_list]
         # t1 = time.time()
-        a_slow_list = [self.compute_slow_part(theta, phi, f_0, f_dot,
-                                              self.index_list[j],
-                                              channel=channel,
-                                              prime=self.prime_list[j])
-                       for j in range(len(self.index_list))]
+        a_slow_list = [
+            self.compute_slow_part(
+                theta,
+                phi,
+                f_0,
+                f_dot,
+                self.index_list[j],
+                channel=channel,
+                prime=self.prime_list[j],
+            )
+            for j in range(len(self.index_list))
+        ]
         # Compute its FFC to get Fourier series coefficients
         # (list ot nc x 2 matrices)
         # t2 = time.time()
@@ -989,10 +1019,9 @@ class UCBWaveformFull(GWwaveform):
         # t1 = time.time()
         c_list = fft(np.array(a_slow_list), axis=1) / self.t_samples.size
         # Compute corresponding frequency vector
-        f_vect = np.fft.fftfreq(c_list[0].shape[0],
-                                d=self.tobs / c_list[0].shape[0])
+        f_vect = np.fft.fftfreq(c_list[0].shape[0], d=self.tobs / c_list[0].shape[0])
         # t2 = time.time()
-        #print("FFT: " + str(t2 - t1))
+        # print("FFT: " + str(t2 - t1))
         # print("Shape of c_list" + str(c_list.shape))
         # t1 = time.time()
         # Form the grid of frequency differences, size nf x nc
@@ -1010,8 +1039,9 @@ class UCBWaveformFull(GWwaveform):
         # v_list = [self.v_func(f - f_vect[k], f_0, f_dot, self.tobs, self.del_t)
         #           for k in range(c_list[0].shape[0])]
         # t1 = time.time()
-        a_mat_list = [self.compute_series(v_list, c_list[i]) / 2
-                      for i in range(len(c_list))]
+        a_mat_list = [
+            self.compute_series(v_list, c_list[i]) / 2 for i in range(len(c_list))
+        ]
         # t2 = time.time()
         # print("Series computation: " + str(t2 - t1))
         # # Extend with 3 primed channels: h3, h1, h2
@@ -1045,7 +1075,7 @@ class UCBWaveformFull(GWwaveform):
         # For n = -2nc..2nc, get a 2nc x nf x 2 array
         return np.sum(c * np.array([v_list]).T, axis=1)
 
-    def compute_signal_freq(self, f, params, channel='phasemeters'):
+    def compute_signal_freq(self, f, params, channel="phasemeters"):
         """
         Compute LISA's response to the incoming galactic binary GW in the
         frequency domain
@@ -1094,12 +1124,15 @@ class UCBWaveformFull(GWwaveform):
         a_p = h0_p * np.exp(1j * phi_0)
         a_c = 1j * h0_c * np.exp(1j * phi_0)
         # Compute complex vector of effective amplitudes
-        beta = np.array([a_p * np.cos(2 * psi) + a_c * np.sin(2 * psi),
-                         a_c * np.cos(2 * psi) - a_p * np.sin(2 * psi)])
+        beta = np.array(
+            [
+                a_p * np.cos(2 * psi) + a_c * np.sin(2 * psi),
+                a_c * np.cos(2 * psi) - a_p * np.sin(2 * psi),
+            ]
+        )
         # Compute design matrices
         param_intr = np.array([theta, phi, f_0, f_dot])
-        mat_list = np.array(self.design_matrix_freq(f, param_intr,
-                                                    channel=channel))
+        mat_list = np.array(self.design_matrix_freq(f, param_intr, channel=channel))
 
         return mat_list.dot(beta)
 
@@ -1135,7 +1168,7 @@ class MBHBWaveform(GWwaveform):
         super().__init__(phi_rot=phi_rot, armlength=armlength)
 
         # Name of intrinsic parameters
-        self.names = ['m1', 'm2', 'a1', 'a2', 'beta', 'psi', 'tc']
+        self.names = ["m1", "m2", "a1", "a2", "beta", "psi", "tc"]
 
         # For PhenomD waveform
         # --------------------
@@ -1154,9 +1187,8 @@ class MBHBWaveform(GWwaveform):
         self.i_intr = [0, 1, 2, 3, 4, 8, 9]
 
     def interpolate_waveform(self, fr_in, fr_out, x, real_imag=False):
-
-        real_func = spline(fr_in, np.real(x), ext='zeros')
-        imag_func = spline(fr_in, np.imag(x), ext='zeros')
+        real_func = spline(fr_in, np.real(x), ext="zeros")
+        imag_func = spline(fr_in, np.imag(x), ext="zeros")
         xf_real = real_func(fr_out)
         xf_imag = imag_func(fr_out)
 
@@ -1166,11 +1198,11 @@ class MBHBWaveform(GWwaveform):
             return xf_real + 1j * xf_imag
 
     def shift_time(self, f, xf, delay):
-
         return xf * np.exp(-2j * np.pi * f * delay)
 
-    def compute_signal_freq(self, f, params, del_t, tobs, channel='TDIAET',
-                            ldc=False, tref=0):
+    def compute_signal_freq(
+        self, f, params, del_t, tobs, channel="TDIAET", ldc=False, tref=0
+    ):
         """
         Compute LISA's response to the incoming MBHB GW in the frequency domain
 
@@ -1236,17 +1268,28 @@ class MBHBWaveform(GWwaveform):
         #
         # else:
         # TDI response
-        wftdi = lisa.GenerateLISATDI(params, tobs=tobs, minf=1e-5, maxf=1.,
-                                     tref=tref, torb=0., TDItag='TDIAET',
-                                     acc=1e-4, order_fresnel_stencil=0,
-                                     approximant='IMRPhenomD',
-                                     responseapprox='full', frozenLISA=False,
-                                     TDIrescaled=False)
+        wftdi = lisa.GenerateLISATDI(
+            params,
+            tobs=tobs,
+            minf=1e-5,
+            maxf=1.0,
+            tref=tref,
+            torb=0.0,
+            TDItag="TDIAET",
+            acc=1e-4,
+            order_fresnel_stencil=0,
+            approximant="IMRPhenomD",
+            responseapprox="full",
+            frozenLISA=False,
+            TDIrescaled=False,
+        )
         signal_freq = lisa.GenerateLISASignal(wftdi, f)
         # Divide by del_t to be consistent with the unnormalized DFT
-        ch_interp = [self.shift_time(f, signal_freq['ch1'], tobs).conj()/del_t,
-                     self.shift_time(f, signal_freq['ch2'], tobs).conj()/del_t,
-                     self.shift_time(f, signal_freq['ch3'], tobs).conj()/del_t]
+        ch_interp = [
+            self.shift_time(f, signal_freq["ch1"], tobs).conj() / del_t,
+            self.shift_time(f, signal_freq["ch2"], tobs).conj() / del_t,
+            self.shift_time(f, signal_freq["ch3"], tobs).conj() / del_t,
+        ]
 
         # Interpolate the response on required grid
         # return signal_freq['ch1'], signal_freq['ch2'], signal_freq['ch3']
@@ -1254,15 +1297,15 @@ class MBHBWaveform(GWwaveform):
         return ch_interp
 
     def single_design_matrix(self, tdi_resp_plus, tdi_resp_cros):
-
         a_mat = np.empty((2 * tdi_resp_plus.shape[0], 2), dtype=np.float64)
         a_mat[:, 0] = np.concatenate((tdi_resp_plus.real, tdi_resp_plus.imag))
         a_mat[:, 1] = np.concatenate((tdi_resp_cros.real, tdi_resp_cros.imag))
 
         return a_mat
 
-    def design_matrix_freq(self, f, params_intr, del_t, tobs, channel='TDIAET',
-                           complex=False, tref=0):
+    def design_matrix_freq(
+        self, f, params_intr, del_t, tobs, channel="TDIAET", complex=False, tref=0
+    ):
         """
         Compute design matrix such that the TDI variable (fist generation)
         can be written as
@@ -1322,8 +1365,8 @@ class MBHBWaveform(GWwaveform):
         params_1[self.i_dist] = 1e3
         params_2[self.i_dist] = 1e3
         # Inclination
-        params_1[self.i_inc] = 0.5 * np.pi # 0 
-        params_2[self.i_inc] = 0.5 * np.pi # 0 
+        params_1[self.i_inc] = 0.5 * np.pi  # 0
+        params_2[self.i_inc] = 0.5 * np.pi  # 0
         # Polarization angle
         params_1[self.i_psi] = 0.0
         params_2[self.i_psi] = np.pi / 4
@@ -1335,21 +1378,23 @@ class MBHBWaveform(GWwaveform):
         # 2. 1.e-21, 0.5*np.pi, 0.25*np.pi, 0.0
 
         # Calculate the response on required grid
-        tdi_response_plus = self.compute_signal_freq(f, params_1, del_t, tobs,
-                                                     channel=channel,
-                                                     tref=tref)
-        tdi_response_cros = self.compute_signal_freq(f, params_2, del_t, tobs,
-                                                     channel=channel,
-                                                     tref=tref)
+        tdi_response_plus = self.compute_signal_freq(
+            f, params_1, del_t, tobs, channel=channel, tref=tref
+        )
+        tdi_response_cros = self.compute_signal_freq(
+            f, params_2, del_t, tobs, channel=channel, tref=tref
+        )
 
         if not complex:
-            mat_list = [self.single_design_matrix(tdi_response_plus[i],
-                                                  tdi_response_cros[i])
-                        for i in range(len(tdi_response_plus))]
+            mat_list = [
+                self.single_design_matrix(tdi_response_plus[i], tdi_response_cros[i])
+                for i in range(len(tdi_response_plus))
+            ]
         else:
-            mat_list = [np.array([tdi_response_plus[i],
-                                  tdi_response_cros[i]]).T
-                        for i in range(len(tdi_response_plus))]
+            mat_list = [
+                np.array([tdi_response_plus[i], tdi_response_cros[i]]).T
+                for i in range(len(tdi_response_plus))
+            ]
 
         return mat_list
 
@@ -1373,12 +1418,12 @@ def generate_lisa_signal(wftdi, freq=None, channels=None):
     if channels is None:
         channels = [1, 2]
 
-    fs = wftdi['freq']
-    amp = wftdi['amp']
-    phase = wftdi['phase']
+    fs = wftdi["freq"]
+    amp = wftdi["amp"]
+    phase = wftdi["phase"]
     # print("Length of initial frequency grid " + str(len(fs)))
 
-    tr = [wftdi['transferL' + str(np.int(i))] for i in channels]
+    tr = [wftdi["transferL" + str(np.int(i))] for i in channels]
 
     if freq is not None:
         amp = pyspline.resample(freq, fs, amp)
@@ -1393,31 +1438,30 @@ def generate_lisa_signal(wftdi, freq=None, channels=None):
 
     h = amp * np.exp(1j * phase)
 
-    signal = {'ch' + str(np.int(i)): h * tr_int[i - 1] for i in channels}
-    signal['freq'] = freq
+    signal = {"ch" + str(np.int(i)): h * tr_int[i - 1] for i in channels}
+    signal["freq"] = freq
 
     return signal
 
 
-def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657,
-                      channels=None):
+def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657, channels=None):
     """
 
     Parameters
     ----------
     params : ndarray
-        full vector of parameters with format:  
-        m1     Redshifted mass of body 1 (solar masses)  
-        m2     Redshifted mass of body 2 (solar masses)  
-        chi1   Dimensionless spin of body 1 (in [-1, 1])  
-        chi2   Dimensionless spin of body 2 (in [-1, 1])  
-        Deltat Time shift (in seconds)  
-        dist   Luminosity distance (Mpc)  
-        inc    Inclination angle (rad)  
-        phi    Observer's azimuthal phase (rad)  
-        lambda Source longitude in SSB-frame (rad)  
-        beta   Source latitude in SSB-frame (rad)  
-        psi    Polarization angle (rad) 
+        full vector of parameters with format:
+        m1     Redshifted mass of body 1 (solar masses)
+        m2     Redshifted mass of body 2 (solar masses)
+        chi1   Dimensionless spin of body 1 (in [-1, 1])
+        chi2   Dimensionless spin of body 2 (in [-1, 1])
+        Deltat Time shift (in seconds)
+        dist   Luminosity distance (Mpc)
+        inc    Inclination angle (rad)
+        phi    Observer's azimuthal phase (rad)
+        lambda Source longitude in SSB-frame (rad)
+        beta   Source latitude in SSB-frame (rad)
+        psi    Polarization angle (rad)
     freq : ndarray
         array of frequency bins
     tobs : float
@@ -1439,20 +1483,28 @@ def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657,
         channels = [1, 2, 3]
 
     # TDI response
-    wftdi = lisa.GenerateLISATDI(params, tobs=tobs, minf=1e-5, maxf=1.,
-                                 tref=tref, torb=0., TDItag='TDIAET',
-                                 acc=1e-4, order_fresnel_stencil=0,
-                                 approximant='IMRPhenomD',
-                                 responseapprox='full', frozenLISA=False,
-                                 TDIrescaled=False)
+    wftdi = lisa.GenerateLISATDI(
+        params,
+        tobs=tobs,
+        minf=1e-5,
+        maxf=1.0,
+        tref=tref,
+        torb=0.0,
+        TDItag="TDIAET",
+        acc=1e-4,
+        order_fresnel_stencil=0,
+        approximant="IMRPhenomD",
+        responseapprox="full",
+        frozenLISA=False,
+        TDIrescaled=False,
+    )
 
     signal_freq = generate_lisa_signal(wftdi, freq, channels)
 
     # Phasor for the time shift
     z = np.exp(-2j * np.pi * freq * t_offset)
     # Get coalescence time
-    ch_interp = [(signal_freq['ch' + str(np.int(i))] * z).conj()
-                 for i in channels]
+    ch_interp = [(signal_freq["ch" + str(np.int(i))] * z).conj() for i in channels]
 
     return ch_interp
 
@@ -1489,7 +1541,7 @@ def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657,
 #     params_1[i_inc] = 0.5 * np.pi
 #     # Polarization angle
 #     params_1[i_psi] = 0.0
-    
+
 #     if channels is None:
 #         channels = [1, 2, 3]
 
@@ -1505,20 +1557,20 @@ def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657,
 #         fs1 = wftdi_1['freq']
 #         amp = pyspline.resample(freq, fs1, wftdi_1['amp'])
 #         phase = pyspline.resample(freq, fs1, wftdi_1['phase'])
-#         tr_int1 = [pyspline.resample(freq, fs1, 
+#         tr_int1 = [pyspline.resample(freq, fs1,
 #                                      wftdi_1['transferL' + str(np.int(i))])
 #                    for i in channels]
 #     else:
 #         freq = wftdi_1['freq']
 #         tr_int1 = [wftdi_1['transferL' + str(np.int(i))] for i in channels]
-    
+
 #     # Complex strain
 #     h = amp * np.exp(1j * phase)
 #     # Phasor for the time shift
 #     z = np.exp(-2j * np.pi * freq * t_offset)
 #     # If only one column
 #     if complex_amplitudes == 1:
-#         mat_list = [np.array([h * tr_int1[i - 1] * z]).conj().T 
+#         mat_list = [np.array([h * tr_int1[i - 1] * z]).conj().T
 #                     for i in channels]
 #     # Second column if required
 #     elif complex_amplitudes == 2:
@@ -1531,7 +1583,7 @@ def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657,
 #         params_2[i_inc] = 0.5 * np.pi
 #         # Polarization angle
 #         params_2[i_psi] = np.pi / 4
-        
+
 #         # TDI response 2
 #         wftdi_2 = lisa.GenerateLISATDI(params_2, tobs=tobs, minf=1e-5, maxf=1.,
 #                                        tref=tref, torb=0., TDItag='TDIAET',
@@ -1558,8 +1610,7 @@ def lisabeta_template(params, freq, tobs, tref=0, t_offset=52.657,
 #     return mat_list# , tr_int1, tr_int2
 
 
-def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657,
-                  channels=None):
+def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657, channels=None):
     """
     Design matrix for reduced order likelihood
     Parameters
@@ -1576,10 +1627,10 @@ def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657,
     -------
     mat_list : list
         list of design matrices for each channel
-        
+
     Reference
     ---------
-    Marsat, Sylvain and Baker, John G, Fourier-domain modulations and delays of 
+    Marsat, Sylvain and Baker, John G, Fourier-domain modulations and delays of
     gravitational-wave signals, 2018
     Neil J. Cornish and Kevin Shuman, Black Hole Hunting with LISA, 2020
 
@@ -1588,7 +1639,7 @@ def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657,
     # First column
     # m1, m2, chi1, chi2, tc, dist, inc, phi, lambd, beta, psi = params
     # Building the F-statistics basis
-    
+
     params_0 = np.zeros(11)
     # Save intrinsic parameters
     params_0[i_intr] = params_intr
@@ -1611,12 +1662,15 @@ def design_matrix(params_intr, freq, tobs, tref=0, t_offset=52.657,
     params_list[3][i_phi0] = np.pi / 4
     params_list[3][i_psi] = np.pi / 4
     # Compute all 4 elements for all channels
-    elements = [lisabeta_template(params, freq, tobs, 
-                                  tref=tref, 
-                                  t_offset=t_offset, 
-                                  channels=channels) for params in params_list]
+    elements = [
+        lisabeta_template(
+            params, freq, tobs, tref=tref, t_offset=t_offset, channels=channels
+        )
+        for params in params_list
+    ]
     # Compute the design matrices for each channel
-    mat_list = [np.vstack([el[i] for el in elements]).T 
-                for i in range(len(elements[0]))]
+    mat_list = [
+        np.vstack([el[i] for el in elements]).T for i in range(len(elements[0]))
+    ]
 
     return mat_list

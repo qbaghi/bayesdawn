@@ -14,7 +14,6 @@ from scipy import interpolate
 
 
 class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
-    
     def __init__(self, n_eff, fs, n_knots=30, d=3, fmin=None, fmax=None):
         """[summary]
 
@@ -34,9 +33,10 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
             Maximum frequency where the data is analysed, by default None
         """
 
-        psdmodel.PSDSpline.__init__(self, n_eff, fs, n_knots=n_knots, d=d, 
-                                    fmin=fmin, fmax=fmax)
-        
+        psdmodel.PSDSpline.__init__(
+            self, n_eff, fs, n_knots=n_knots, d=d, fmin=fmin, fmax=fmax
+        )
+
         # Periodogram of the residuals is an attribute
         self.I = []
         # Initialize the sampler
@@ -49,17 +49,17 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
         Parameters
         ----------
         z_fft : array_like
-            vector of residal DFT     
+            vector of residal DFT
         K2 : scalar float
-            periodogram normalization. Should always be 
+            periodogram normalization. Should always be
             sum(W**2) where W is the window function applied in the time domain.
             If k2 is None, the length n_data of the data is taken.
-        
+
         """
-        if type(z_fft) == np.ndarray :
-            self.I = self.periodogram(z_fft, k2= K2)
+        if type(z_fft) == np.ndarray:
+            self.I = self.periodogram(z_fft, k2=K2)
         elif type(z_fft) == list:
-            self.I = [self.periodogram(zf, k2= K2) for zf in z_fft]
+            self.I = [self.periodogram(zf, k2=K2) for zf in z_fft]
 
     def psd_likelihood(self, x):
         """
@@ -70,7 +70,7 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
         ----------
         x: array_like
             vector of log-PSD values at specific frequencies
-            
+
         Returns
         -------
         ll : scalar float
@@ -78,25 +78,33 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 
         """
 
-        logSfunc = interpolate.interp1d(self.logfc, x, kind='cubic', 
-                                        fill_value="extrapolate")
-        
+        logSfunc = interpolate.interp1d(
+            self.logfc, x, kind="cubic", fill_value="extrapolate"
+        )
+
         # If only one segment of data is analyzed
         if type(self.I) == np.ndarray:
             logS = logSfunc(self.logf[self.n_data])
-            I_weighted = self.I[1:self.n+1] * np.exp( - logS )
-            ll = np.real( -0.5*np.sum( logS + I_weighted ) )
-            
+            I_weighted = self.I[1 : self.n + 1] * np.exp(-logS)
+            ll = np.real(-0.5 * np.sum(logS + I_weighted))
+
         # If several segments of different lengths are considered:
         elif type(self.I) == list:
             Nsegs = list(self.logf.keys())
             Ls = len(Nsegs)
             logS_list = [logSfunc(self.logf[self.NI]) for NI in Nsegs]
-            
-            I_weighted_list = [self.I[j][1:np.int((Nsegs[j]-1)/2)+1] * np.exp( - logS_list[j] ) \
-                          for j in range(Ls)]
-            
-            ll = sum([np.real( -0.5*np.sum( logS_list[j] + I_weighted_list[j] ) ) for j in range(Ls)])
+
+            I_weighted_list = [
+                self.I[j][1 : np.int((Nsegs[j] - 1) / 2) + 1] * np.exp(-logS_list[j])
+                for j in range(Ls)
+            ]
+
+            ll = sum(
+                [
+                    np.real(-0.5 * np.sum(logS_list[j] + I_weighted_list[j]))
+                    for j in range(Ls)
+                ]
+            )
 
         return ll
 
@@ -107,7 +115,7 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 
         """
 
-        return -0.5 * np.sum((x - self.logSc)**2 / (2*self.varlogSc))
+        return -0.5 * np.sum((x - self.logSc) ** 2 / (2 * self.varlogSc))
 
     def psd_posterior(self, x_psd):
         """
@@ -117,7 +125,7 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 
         return self.psd_likelihood(x_psd) + self.psd_prior(x_psd)
 
-    def update_psd_func(self, logSc, kind='cubic'):
+    def update_psd_func(self, logSc, kind="cubic"):
         """
 
         Update the interpolating function of the PSD with new control
@@ -125,14 +133,15 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 
         """
         # Update PSD interpolation function
-        self.logPSD_fn = interpolate.interp1d(self.logfc, logSc, kind=kind, 
-                                              fill_value="extrapolate")
+        self.logPSD_fn = interpolate.interp1d(
+            self.logfc, logSc, kind=kind, fill_value="extrapolate"
+        )
         self.S = self.calculate(self.n_data)
 
     def sample_psd(self, nit, verbose=True, cov_update=1000):
         """
-        Update PSD parameters 
-        
+        Update PSD parameters
+
         Parameters
         ----------
         noise_params : array_like
@@ -141,32 +150,33 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
             discrete Fourier transform of the model residuals
         wd : array_like of size n_data
             apodization window (optional)
-            
+
         Returns
         -------
         noise_params_new : array_like
             updated PSD parameters
-            
-            
+
+
         """
 
         # Update likelihood
         self.logp_tilde = self.psd_posterior
         # update PSD parameters by MH steps
-        psd_samples, logpvalues = self.run_mcmc(np.copy(self.logSc), 
-                                                self.varlogSc/(self.J+1), 
-                                                nit,
-                                                verbose=verbose,
-                                                cov_update=cov_update)
+        psd_samples, logpvalues = self.run_mcmc(
+            np.copy(self.logSc),
+            self.varlogSc / (self.J + 1),
+            nit,
+            verbose=verbose,
+            cov_update=cov_update,
+        )
 
         return psd_samples, logpvalues
 
 
-
 #    def sample_psd(self,residual_fft,nit,verbose = True, cov_update = 1000,k2 = None):
 #        """
-#        Update PSD parameters 
-#        
+#        Update PSD parameters
+#
 #        Parameters
 #        ----------
 #        noise_params : array_like
@@ -175,15 +185,15 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 #            discrete Fourier transform of the model residuals
 #        wd : array_like of size n_data
 #            apodization window (optional)
-#            
+#
 #        Returns
 #        -------
 #        noise_params_new : array_like
 #            updated PSD parameters
-#            
-#            
+#
+#
 #        """
-#    
+#
 #        # Update the periodogram
 #        self.set_periodogram(residual_fft, k2 = k2)
 #        # Update likelihood
@@ -193,29 +203,29 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 #                                               verbose = verbose,
 #                                               cov_update = cov_update)
 #
-#        
+#
 #        return psd_samples,logpvalues
-      
-        
+
+
 #    def sample_psd(self,noise_params,residual_fft,nit):
 #        """
-#        Update PSD parameters 
-#        
+#        Update PSD parameters
+#
 #        Parameters
 #        ----------
 #        noise_params : array_like
 #            noise parameters
 #        residual_fft : array_like
 #            discrete Fourier transform of the model residuals
-#            
+#
 #        Returns
 #        -------
 #        noise_params_new : array_like
 #            updated PSD parameters
-#            
-#            
+#
+#
 #        """
-#    
+#
 #        # Update the periodogram
 #        self.set_periodogram(residual_fft)
 #        # Update likelihood
@@ -226,5 +236,5 @@ class PSDSampler(psdmodel.PSDSpline, samplers.MHSampler):
 #        noise_params_new = psd_samples[nit-1,:]
 #        # Update PSD function and Fourier spectrum
 #        self.update_psd_func(noise_params_new)
-#        
+#
 #        return noise_params_new

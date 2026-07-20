@@ -1,14 +1,17 @@
 import numpy as np
 from scipy import sparse
+
 # FTT modules
 import pyfftw
+
 pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
 
 from mecm import matrixalgebra
 from mecm import mecm
 
-def toeplitz_multiplication(v,first_row,first_column):
+
+def toeplitz_multiplication(v, first_row, first_column):
     """
 
     Performs the matrix-vector product T * v where
@@ -31,12 +34,12 @@ def toeplitz_multiplication(v,first_row,first_column):
     """
 
     N = len(v)
-    a_2N_fft = fft(np.concatenate((first_row,[0],first_column[1:][::-1])))
+    a_2N_fft = fft(np.concatenate((first_row, [0], first_column[1:][::-1])))
 
-    return np.real(ifft(a_2N_fft*fft(v,2*N))[0:N])
+    return np.real(ifft(a_2N_fft * fft(v, 2 * N))[0:N])
 
 
-def multiple_toepltiz_inverse(c_mat,lambda_n,a):
+def multiple_toepltiz_inverse(c_mat, lambda_n, a):
     """
 
     Efficiently compute several Toepltiz systems with the same Toepltiz
@@ -53,46 +56,45 @@ def multiple_toepltiz_inverse(c_mat,lambda_n,a):
     """
 
     N = c_mat.shape[0]
-    #zero_vect = np.zeros(N)
-
+    # zero_vect = np.zeros(N)
 
     # PRECOMPUTATIONS
     # Cf. Step 2 of Ref. [1]
-    #ae_2n = np.concatenate(([1],a,zero_vect))
-    #ae_2n_fft = fft(ae_2n)
-    ae_2n_fft = fft(np.concatenate(([1],a)),2*N)
+    # ae_2n = np.concatenate(([1],a,zero_vect))
+    # ae_2n_fft = fft(ae_2n)
+    ae_2n_fft = fft(np.concatenate(([1], a)), 2 * N)
     # using hermitian and real property of covariance matrices:
     # be_2n_fft = fft(be_2n)
-    be_2n_fft = ae_2n_fft.conj() #np.real(ae_2n_fft) - 1j*np.imag(ae_2n_fft)
+    be_2n_fft = ae_2n_fft.conj()  # np.real(ae_2n_fft) - 1j*np.imag(ae_2n_fft)
 
-    signs = (-1)**(np.arange(2*N)+1)
+    signs = (-1) ** (np.arange(2 * N) + 1)
 
     x_mat = np.empty(np.shape(c_mat))
 
     print("shape of c_mat is " + str(c_mat.shape))
 
     for j in range(c_mat.shape[1]):
-        #ce_2n = np.zeros(2*N)
-        #ce_2n[0:N] = c_mat[:,j]
-        #ce_2n = np.concatenate((c_mat[:,j],zero_vect))
-        #ce_2n_fft = fft(ce_2n)
-        ce_2n_fft = fft(c_mat[:,j],2*N)
-        u_2n = ifft( ae_2n_fft*ce_2n_fft )
-        v_2n = ifft( be_2n_fft*ce_2n_fft )
+        # ce_2n = np.zeros(2*N)
+        # ce_2n[0:N] = c_mat[:,j]
+        # ce_2n = np.concatenate((c_mat[:,j],zero_vect))
+        # ce_2n_fft = fft(ce_2n)
+        ce_2n_fft = fft(c_mat[:, j], 2 * N)
+        u_2n = ifft(ae_2n_fft * ce_2n_fft)
+        v_2n = ifft(be_2n_fft * ce_2n_fft)
 
-        #pe_2n_fft = fft( np.concatenate((v_2n[0:N],zero_vect)) )
-        #qe_2n_fft = fft( np.concatenate((u_2n[N:],zero_vect))  )
-        pe_2n_fft = fft( v_2n[0:N] , 2*N )
-        qe_2n_fft = fft( u_2n[N:] , 2*N  )
+        # pe_2n_fft = fft( np.concatenate((v_2n[0:N],zero_vect)) )
+        # qe_2n_fft = fft( np.concatenate((u_2n[N:],zero_vect))  )
+        pe_2n_fft = fft(v_2n[0:N], 2 * N)
+        qe_2n_fft = fft(u_2n[N:], 2 * N)
 
-        we_2n = ifft( ae_2n_fft*pe_2n_fft + signs*be_2n_fft*qe_2n_fft )
+        we_2n = ifft(ae_2n_fft * pe_2n_fft + signs * be_2n_fft * qe_2n_fft)
 
-        x_mat[:,j] = np.real(we_2n[0:N]/lambda_n)
+        x_mat[:, j] = np.real(we_2n[0:N] / lambda_n)
 
     return x_mat
 
 
-def toepltiz_inverse_jain(c,lambda_n,a):
+def toepltiz_inverse_jain(c, lambda_n, a):
     """
 
     Solve for the system Tx = c
@@ -135,22 +137,22 @@ def toepltiz_inverse_jain(c,lambda_n,a):
 
     # Cf. Step 2 of Ref. [1]
     # 1)
-    #ae_2n = np.concatenate(([1],a,np.zeros(N)))
+    # ae_2n = np.concatenate(([1],a,np.zeros(N)))
 
     # be_2n = np.concatenate(([1],np.zeros(N-1),[0],a[::-1]))
     # ce_2n = np.concatenate((c,np.zeros(N)))
 
     # 2)
-    #ce_2n_fft = fft(ce_2n)
-    #ae_2n_fft = fft(ae_2n)
-    ce_2n_fft = fft(c,2*N)
-    ae_2n_fft = fft(np.concatenate(([1],a)),2*N)
+    # ce_2n_fft = fft(ce_2n)
+    # ae_2n_fft = fft(ae_2n)
+    ce_2n_fft = fft(c, 2 * N)
+    ae_2n_fft = fft(np.concatenate(([1], a)), 2 * N)
     # using hermitian and real property of covariance matrices:
     # be_2n_fft = fft(be_2n)
     be_2n_fft = ae_2n_fft.conj()
-    #be_2n_fft = np.real(ae_2n_fft) - 1j*np.imag(ae_2n_fft)
-    u_2n = ifft( ae_2n_fft*ce_2n_fft )
-    v_2n = ifft( be_2n_fft*ce_2n_fft )
+    # be_2n_fft = np.real(ae_2n_fft) - 1j*np.imag(ae_2n_fft)
+    u_2n = ifft(ae_2n_fft * ce_2n_fft)
+    v_2n = ifft(be_2n_fft * ce_2n_fft)
 
     # 3)
     # pe_2n = np.zeros(2*N)
@@ -159,21 +161,20 @@ def toepltiz_inverse_jain(c,lambda_n,a):
     # qe_2n[0:N] = u_2n[N:]
 
     # or better:
-    #pe_2n_fft = fft( np.concatenate((v_2n[0:N],np.zeros(N))) )
-    #qe_2n_fft = fft( np.concatenate((u_2n[N:],np.zeros(N)))  )
+    # pe_2n_fft = fft( np.concatenate((v_2n[0:N],np.zeros(N))) )
+    # qe_2n_fft = fft( np.concatenate((u_2n[N:],np.zeros(N)))  )
     # or even better:
-    pe_2n_fft = fft( v_2n[0:N], 2*N )
-    qe_2n_fft = fft( u_2n[N:] , 2*N )
+    pe_2n_fft = fft(v_2n[0:N], 2 * N)
+    qe_2n_fft = fft(u_2n[N:], 2 * N)
 
     # 4)
-    signs = (-1)**(np.arange(2*N)+1)
-    we_2n = ifft( ae_2n_fft*pe_2n_fft + signs*be_2n_fft*qe_2n_fft )
+    signs = (-1) ** (np.arange(2 * N) + 1)
+    we_2n = ifft(ae_2n_fft * pe_2n_fft + signs * be_2n_fft * qe_2n_fft)
 
-    return np.real(we_2n[0:N]/lambda_n)
+    return np.real(we_2n[0:N] / lambda_n)
 
 
-
-def teopltiz_precompute(R,p=10,Nit = 1000,tol = 1e-4):
+def teopltiz_precompute(R, p=10, Nit=1000, tol=1e-4):
     """
     Solve the system T y = e1 where T is symmetric Toepltiz.
     where e1 = [1 0 0 0 0 0].T to compute the vector a and lambda_n for
@@ -212,29 +213,29 @@ def teopltiz_precompute(R,p=10,Nit = 1000,tol = 1e-4):
     """
     N = len(R)
     # First basis vector (of orthonormal cartesian basis)
-    e1 = np.concatenate(([1],np.zeros(N-1)))
+    e1 = np.concatenate(([1], np.zeros(N - 1)))
     # Compute spectrum
-    S_2N = fft(np.concatenate((R,[0],R[1:][::-1])))
+    S_2N = fft(np.concatenate((R, [0], R[1:][::-1])))
     # Linear operator correponding to the Toeplitz matrix
-    T_op = toepltizLinearOp(N,S_2N)
+    T_op = toepltizLinearOp(N, S_2N)
     # Preconditionner to approximate T^{-1}
-    Psolver = computeToepltizPrecond(R,p=p)
+    Psolver = computeToepltizPrecond(R, p=p)
     # Build the associated linear operator
-    P_op = matrixalgebra.precondLinearOp(Psolver,N,N)
+    P_op = matrixalgebra.precondLinearOp(Psolver, N, N)
     # Initial guess
-    z,info = sparse.linalg.bicgstab(T_op, e1, x0=np.zeros(N),tol=tol,
-    maxiter=Nit,M=P_op,callback=None)
+    z, info = sparse.linalg.bicgstab(
+        T_op, e1, x0=np.zeros(N), tol=tol, maxiter=Nit, M=P_op, callback=None
+    )
     matrixalgebra.printPCGstatus(info)
 
-    lambda_n = 1/z[0]
+    lambda_n = 1 / z[0]
     a = lambda_n * z[1:]
 
-    return lambda_n,a
-
+    return lambda_n, a
 
 
 # ==============================================================================
-def computeToepltizPrecond(R,p=10,taper = 'Wendland2'):
+def computeToepltizPrecond(R, p=10, taper="Wendland2"):
     """
     Compute a sparse preconditionner for solving T x = b where T is Toeplitz
     and symmetric, defined by autocovariance R
@@ -259,17 +260,15 @@ def computeToepltizPrecond(R,p=10,taper = 'Wendland2'):
     """
 
     # Preconditionning : use sparse matrix
-    T_approx = mecm.build_sparse_cov2(R, p, len(R), form="csc", taper = taper)
+    T_approx = mecm.build_sparse_cov2(R, p, len(R), form="csc", taper=taper)
     # Preconditionner
-    solve =  sparse.linalg.factorized(T_approx)
+    solve = sparse.linalg.factorized(T_approx)
 
     return solve
 
 
-
-
 # ==============================================================================
-def toepltizMatVectProd(y,S_2N):
+def toepltizMatVectProd(y, S_2N):
     """
     Linear operator that calculate T y_in assuming that we can write:
 
@@ -294,11 +293,10 @@ def toepltizMatVectProd(y,S_2N):
 
     """
 
-    return np.real( ifft( S_2N * fft(y,len(S_2N)) )[0:len(y)] )
+    return np.real(ifft(S_2N * fft(y, len(S_2N)))[0 : len(y)])
 
 
-
-def toepltizLinearOp(N,S_2N):
+def toepltizLinearOp(N, S_2N):
     """
     Construct a linear operator object that computes the operation C * v
     for any vector v, where C is a covariance matrix.
@@ -324,11 +322,14 @@ def toepltizLinearOp(N,S_2N):
 
     """
 
-    T_func = lambda x: toepltizMatVectProd(x,S_2N)
-    TH_func = lambda x: toepltizMatVectProd(x,S_2N)
-    Tmat_func = lambda X: np.array([toepltizMatVectProd(X[:,j],S_2N) for j in X.shape[1]]).T
+    T_func = lambda x: toepltizMatVectProd(x, S_2N)
+    TH_func = lambda x: toepltizMatVectProd(x, S_2N)
+    Tmat_func = lambda X: np.array(
+        [toepltizMatVectProd(X[:, j], S_2N) for j in X.shape[1]]
+    ).T
 
-    T_op = sparse.linalg.LinearOperator(shape = (N,N),matvec=T_func,
-    rmatvec = TH_func,matmat = Tmat_func,dtype=np.float64)
+    T_op = sparse.linalg.LinearOperator(
+        shape=(N, N), matvec=T_func, rmatvec=TH_func, matmat=Tmat_func, dtype=np.float64
+    )
 
     return T_op

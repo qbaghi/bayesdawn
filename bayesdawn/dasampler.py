@@ -3,20 +3,32 @@
 # Modules of bayesdawn package
 import numpy as np
 import h5py
+
 # FTT modules
 import pyfftw
 from pyfftw.interfaces.numpy_fft import fft, ifft
 from . import gaps
+
 pyfftw.interfaces.cache.enable()
 
 
 class FullModel(object):
-
-    def __init__(self, posterior_cls, psd_cls, dat_cls, sampler_cls, 
-                 outdir='./', window='modified_hann',
-                 n_wind=500, n_wind_psd=500000, prefix='samples', 
-                 n_psd=10, imputation=False, psd_estimation=False,
-                 normalized=False):
+    def __init__(
+        self,
+        posterior_cls,
+        psd_cls,
+        dat_cls,
+        sampler_cls,
+        outdir="./",
+        window="modified_hann",
+        n_wind=500,
+        n_wind_psd=500000,
+        prefix="samples",
+        n_psd=10,
+        imputation=False,
+        psd_estimation=False,
+        normalized=False,
+    ):
         """
 
         Parameters
@@ -67,7 +79,7 @@ class FullModel(object):
         self.sampler_cls = sampler_cls
         # Output directory path
         self.outdir = outdir
-        self.psd_file_name = prefix + '_psd.hdf5'
+        self.psd_file_name = prefix + "_psd.hdf5"
         # Type of time windowing
         self.window = window
         # Windowing smoothing parameter (optimized for signal estimation)
@@ -83,14 +95,17 @@ class FullModel(object):
         # If there are missing data, then the window for PSD does not have gaps
         if any(dat_cls.mask == 0):
             nd, nf = gaps.gapgenerator.find_ends(dat_cls.mask)
-            self.w_psd = gaps.gapgenerator.windowing(nd, nf, self.dat_cls.N, window=window,
-                                                     n_wind=self.n_wind_psd)
+            self.w_psd = gaps.gapgenerator.windowing(
+                nd, nf, self.dat_cls.N, window=window, n_wind=self.n_wind_psd
+            )
         else:
-            self.w_psd = gaps.gapgenerator.modified_hann(self.dat_cls.N, n_wind=self.n_wind_psd)
+            self.w_psd = gaps.gapgenerator.modified_hann(
+                self.dat_cls.N, n_wind=self.n_wind_psd
+            )
         # Normalization constant for noise amplitude
         self.K1_psd = np.sum(self.w_psd)
         # Normalization constant for noise power spectrum
-        self.K2_psd = np.sum(self.w_psd ** 2)
+        self.K2_psd = np.sum(self.w_psd**2)
         # Windowed signal DFT optimized for PSD estimation
         self.y_fft_psd = self.dat_cls.dft(self.dat_cls.y, self.w_psd)
         # Windowed signal DFT optimized for signal estimation
@@ -111,7 +126,9 @@ class FullModel(object):
         if self.normalized:
             self.posterior_cls.compute_log_norm(self.spectrum)
         # Reset log-likelihood with proper normalization and auxiliary variables
-        self.sampler_cls.update_log_likelihood(self.posterior_cls.log_likelihood, (self.spectrum, self.y_fft))
+        self.sampler_cls.update_log_likelihood(
+            self.posterior_cls.log_likelihood, (self.spectrum, self.y_fft)
+        )
 
     def compute_frequency_residuals(self, y_gw_fft):
         """
@@ -131,7 +148,10 @@ class FullModel(object):
         if type(y_gw_fft) == np.ndarray:
             z_fft = self.y_fft_psd - self.K1_psd / self.dat_cls.N * y_gw_fft
         elif type(y_gw_fft) == list:
-            z_fft = [self.y_fft_psd[i] - self.K1_psd / self.dat_cls.N * y_gw_fft[i] for i in range(len(y_gw_fft))]
+            z_fft = [
+                self.y_fft_psd[i] - self.K1_psd / self.dat_cls.N * y_gw_fft[i]
+                for i in range(len(y_gw_fft))
+            ]
 
         return z_fft
 
@@ -223,7 +243,9 @@ class FullModel(object):
         self.update_miss(pos0)
         # Initialization of PSD parameters and missing data
         # Draw the signal (windowed DFT)
-        y_gw_fft = self.posterior_cls.draw_frequency_signal(pos0, self.spectrum, self.y_fft)
+        y_gw_fft = self.posterior_cls.draw_frequency_signal(
+            pos0, self.spectrum, self.y_fft
+        )
         # Calculation of the model residuals
         z_fft = self.y_fft_psd - self.K1_psd / self.N * y_gw_fft
         # Initialization of periodogram
@@ -276,11 +298,11 @@ class FullModel(object):
         # PSD parameter posterior step
         if self.psd_estimation:
             self.update_psd(pos0)
-        self.sampler_cls.update_log_likelihood(self.posterior_cls.log_likelihood, 
-                                               (self.spectrum, self.y_fft))
+        self.sampler_cls.update_log_likelihood(
+            self.posterior_cls.log_likelihood, (self.spectrum, self.y_fft)
+        )
 
     def reset_psd_samples(self):
-
         # Store first value of PSD
         logSc0 = np.zeros((1, self.psd_cls.logSc.shape[0]))
         logSc0[0, :] = self.psd_cls.logSc
@@ -297,20 +319,31 @@ class FullModel(object):
         """
 
         # Initialization of PSD parameter file
-        fh5 = h5py.File(self.outdir + self.psd_file_name, 'a')
+        fh5 = h5py.File(self.outdir + self.psd_file_name, "a")
         # # Clear all data sets
         # if "psd/samples" + str(self.psd_save) in fh5:
         #     del fh5["psd/samples" + str(self.psd_save)]
         # if "psd/logpvals" + str(self.psd_save) in fh5:
         #     del fh5["psd/logpvals" + str(self.psd_save)]
-        dset_samples = fh5.create_dataset("psd/samples" + str(self.psd_save), np.shape(self.psd_samples))
-        dset_logpvals = fh5.create_dataset("psd/logpvals" + str(self.psd_save), np.shape(self.psd_logpvals))
+        dset_samples = fh5.create_dataset(
+            "psd/samples" + str(self.psd_save), np.shape(self.psd_samples)
+        )
+        dset_logpvals = fh5.create_dataset(
+            "psd/logpvals" + str(self.psd_save), np.shape(self.psd_logpvals)
+        )
         dset_samples[:] = self.psd_samples
         dset_logpvals[:] = self.psd_logpvals
         fh5.close()
         self.psd_save += 1
 
-    def run(self, n_it=100000, n_update=1000, n_thin=5, n_save=1000, save_path='./chains.hdf5'):
+    def run(
+        self,
+        n_it=100000,
+        n_update=1000,
+        n_thin=5,
+        n_save=1000,
+        save_path="./chains.hdf5",
+    ):
         """Metropolis-Hastings within Gibbs sampler using `PTMCMCSampler`
 
         The parameters are bounded in the finite interval described by ``lo`` and
@@ -356,7 +389,13 @@ class FullModel(object):
         else:
             callback = None
 
-        self.sampler_cls.run(n_it, n_update, n_thin, n_save, callback=callback, pos0=None, save_path=save_path,
-                             param_names=self.posterior_cls.signal_cls.names)
-
-
+        self.sampler_cls.run(
+            n_it,
+            n_update,
+            n_thin,
+            n_save,
+            callback=callback,
+            pos0=None,
+            save_path=save_path,
+            param_names=self.posterior_cls.signal_cls.names,
+        )

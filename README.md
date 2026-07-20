@@ -25,6 +25,24 @@ Install docs dependencies:
   uv pip install -e .[docs]
 ```
 
+Install development tools, including `pytest`, `pre-commit`, and `ruff`:
+
+```
+  uv pip install -e .[dev]
+```
+
+Install the Git hooks after the development dependencies are available:
+
+```
+  pre-commit install
+```
+
+If you want to run the hooks on every tracked file immediately, use:
+
+```
+  pre-commit run --all-files
+```
+
 Using pip:
 
 ```

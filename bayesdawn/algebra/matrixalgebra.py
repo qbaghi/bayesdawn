@@ -5,12 +5,14 @@
 This module provide codes to perform efficient matrix-matrix and matrix-vector
 computations.
 """
+
 import numpy as np
 from numpy import linalg as LA
 from scipy import sparse
 import pyfftw
 from pyfftw.interfaces.numpy_fft import fft, ifft
 from . import fastoeplitz
+
 pyfftw.interfaces.cache.enable()
 
 
@@ -90,15 +92,15 @@ def matmat_prod(a_in, ind_in, ind_out, mask, s_2n):
     N_in = len(ind_in)
     N_out = len(ind_out)
 
-    (N_in_A,K) = np.shape(a_in)
+    (N_in_A, K) = np.shape(a_in)
 
-    if N_in_A != N_in :
+    if N_in_A != N_in:
         raise TypeError("Matrix dimensions do not match")
 
-    A_out = np.empty((N_out,K), dtype=float)
+    A_out = np.empty((N_out, K), dtype=float)
 
     for j in range(K):
-        A_out[:,j] = mat_vect_prod(a_in[:,j],ind_in,ind_out,mask,s_2n)
+        A_out[:, j] = mat_vect_prod(a_in[:, j], ind_in, ind_out, mask, s_2n)
 
     return A_out
 
@@ -135,11 +137,11 @@ def precond_bicgstab(x0, b, a_func, n_it, stp, P, z0_hat=None, verbose=True):
     """
 
     # Default first guess
-    #z0_hat = None
+    # z0_hat = None
     # Initialization of residual vector
-    sr = np.zeros(n_it+1)
-    #sz = np.zeros(n_it+1)
-    k=0
+    sr = np.zeros(n_it + 1)
+    # sz = np.zeros(n_it+1)
+    k = 0
 
     # Intialization of the solution
     b_norm = LA.norm(b)
@@ -161,31 +163,30 @@ def precond_bicgstab(x0, b, a_func, n_it, stp, P, z0_hat=None, verbose=True):
     sr[0] = LA.norm(r)
 
     # Iteration
-    while (k < n_it) & (sr[k] > stp*b_norm):
-
+    while (k < n_it) & (sr[k] > stp * b_norm):
         # Ap_k-1
         Ap = a_func(p)
         # Mq_k-1=Ap_k-1
         q = P(Ap)
 
-        a = np.sum(np.conj(z)*z_hat) / np.sum(np.conj(q)*z_hat)
+        a = np.sum(np.conj(z) * z_hat) / np.sum(np.conj(q) * z_hat)
 
-        x_12 = x + a*p
-        r_12 = r - a*Ap
-        z_12 = z - a*q
+        x_12 = x + a * p
+        r_12 = r - a * Ap
+        z_12 = z - a * q
 
         Az_12 = a_func(z_12)
         s_12 = P(Az_12)
 
-        w = np.sum(np.conj(z_12)*s_12) / np.sum(np.conj(s_12)*s_12)
+        w = np.sum(np.conj(z_12) * s_12) / np.sum(np.conj(s_12) * s_12)
 
         x = x_12 + w * z_12
         r = r_12 - w * Az_12
         z_new = z_12 - w * s_12
 
-        b = a/w * np.sum(np.conj(z_new)*z_hat) / np.sum(np.conj(z)*z_hat)
+        b = a / w * np.sum(np.conj(z_new) * z_hat) / np.sum(np.conj(z) * z_hat)
 
-        p = z_new + b * (p - w*q)
+        p = z_new + b * (p - w * q)
 
         z[:] = z_new
         sr[k + 1] = LA.norm(r)
@@ -196,19 +197,25 @@ def precond_bicgstab(x0, b, a_func, n_it, stp, P, z0_hat=None, verbose=True):
 
         if verbose:
             if k % 20 == 0:
-                print('PCG Iteration ' + str(k) + ' completed')
-                print('Residuals = ' + str(sr[k])
-                      + ' compared to criterion = '+str(stp * b_norm))
+                print("PCG Iteration " + str(k) + " completed")
+                print(
+                    "Residuals = "
+                    + str(sr[k])
+                    + " compared to criterion = "
+                    + str(stp * b_norm)
+                )
 
     print("Preconditioned BiCGSTAB algorithm ended with:")
-    print(str(k) + "iterations." )
+    print(str(k) + "iterations.")
     info = 0
 
     if sr[k] > stp * b_norm:
-        print("Attention: Preconditioned BiCGSTAB algorithm ended \
+        print(
+            "Attention: Preconditioned BiCGSTAB algorithm ended \
         without reaching the specified convergence criterium. Check quality of \
-        reconstruction.")
-        print("Current criterium: " +str(sr[k] / b_norm) + " > " + str(stp))
+        reconstruction."
+        )
+        print("Current criterium: " + str(sr[k] / b_norm) + " > " + str(stp))
         info = 1
 
     # pcg_cls = PCG(a_func, n_it, stp, P)
@@ -238,12 +245,14 @@ def print_pcg_status(info):
         print("number of iterations: " + str(info))
     elif info < 0:
         print("illegal input or breakdown.")
-        
+
 
 def precond_linear_op(solver, N_out, N_in):
+    def P_func(x):
+        return solver(x)
 
-    P_func = lambda x: solver(x)
-    PH_func = lambda x: solver(x)
+    def PH_func(x):
+        return solver(x)
 
     def Pmat_func(X):
         # Z = np.empty((N_out,X.shape[1]),dtype = float)
@@ -251,9 +260,13 @@ def precond_linear_op(solver, N_out, N_in):
         #     Z[:,j] = solver(X[:,j])
         return np.array([solver(X[:, j]) for j in range(X.shape[1])]).T
 
-    p_op = sparse.linalg.LinearOperator(shape=(N_out, N_in), matvec=P_func,
-                                        rmatvec=PH_func, matmat=Pmat_func,
-                                        dtype=float)
+    p_op = sparse.linalg.LinearOperator(
+        shape=(N_out, N_in),
+        matvec=P_func,
+        rmatvec=PH_func,
+        matmat=Pmat_func,
+        dtype=float,
+    )
 
     return p_op
 
@@ -293,15 +306,24 @@ def cov_linear_op(ind_in, ind_out, mask, s_2n):
 
     """
 
-    C_func = lambda x: mat_vect_prod(x, ind_in, ind_out, mask, s_2n)
-    CH_func = lambda x: mat_vect_prod(x, ind_out, ind_in, mask, s_2n)
-    Cmat_func = lambda X: matmat_prod(X, ind_in, ind_out, mask, s_2n)
+    def C_func(x):
+        return mat_vect_prod(x, ind_in, ind_out, mask, s_2n)
+
+    def CH_func(x):
+        return mat_vect_prod(x, ind_out, ind_in, mask, s_2n)
+
+    def Cmat_func(X):
+        return matmat_prod(X, ind_in, ind_out, mask, s_2n)
 
     N_in = len(ind_in)
     N_out = len(ind_out)
-    Coi_op = sparse.linalg.LinearOperator(shape=(N_out, N_in), matvec=C_func,
-                                          rmatvec=CH_func, matmat=Cmat_func,
-                                          dtype=float)
+    Coi_op = sparse.linalg.LinearOperator(
+        shape=(N_out, N_in),
+        matvec=C_func,
+        rmatvec=CH_func,
+        matmat=Cmat_func,
+        dtype=float,
+    )
 
     return Coi_op
 
@@ -347,39 +369,41 @@ def pcg_solve(ind_obs, mask, s_2n, b, x0, tol, maxiter, p_solver, pcg_algo):
 
     n_o = len(ind_obs)
 
-    if pcg_algo == 'mine':
+    if pcg_algo == "mine":
 
         def coo_func(x):
             return mat_vect_prod(x, ind_obs, ind_obs, mask, s_2n)
 
         u, sr, info = precond_bicgstab(x0, b, coo_func, maxiter, tol, p_solver)
 
-    elif 'scipy' in pcg_algo:
+    elif "scipy" in pcg_algo:
         coo_op = cov_linear_op(ind_obs, ind_obs, mask, s_2n)
         p_op = precond_linear_op(p_solver, n_o, n_o)
         tol_eff = np.min([tol, tol * LA.norm(b)])
-        if (pcg_algo == 'scipy') | (pcg_algo == 'scipy.bicgstab'):
-            u, info = sparse.linalg.bicgstab(coo_op, b, x0=x0, tol=tol_eff,
-                                             maxiter=maxiter, M=p_op,
-                                             callback=None)
+        if (pcg_algo == "scipy") | (pcg_algo == "scipy.bicgstab"):
+            u, info = sparse.linalg.bicgstab(
+                coo_op, b, x0=x0, tol=tol_eff, maxiter=maxiter, M=p_op, callback=None
+            )
             print_pcg_status(info)
-        elif (pcg_algo == 'scipy.bicg'):
-            u, info = sparse.linalg.bicg(coo_op, b, x0=x0, tol=tol_eff,
-                                         maxiter=maxiter, M=p_op,
-                                         callback=None)
+        elif pcg_algo == "scipy.bicg":
+            u, info = sparse.linalg.bicg(
+                coo_op, b, x0=x0, tol=tol_eff, maxiter=maxiter, M=p_op, callback=None
+            )
             print_pcg_status(info)
-        elif (pcg_algo == 'scipy.cg'):
-            u, info = sparse.linalg.cg(coo_op, b, x0=x0, tol=tol_eff,
-                                       maxiter=maxiter, M=p_op, callback=None)
+        elif pcg_algo == "scipy.cg":
+            u, info = sparse.linalg.cg(
+                coo_op, b, x0=x0, tol=tol_eff, maxiter=maxiter, M=p_op, callback=None
+            )
             print_pcg_status(info)
-        elif (pcg_algo == 'scipy.cgs'):
-            u, info = sparse.linalg.cgs(coo_op, b, x0=x0, tol=tol_eff,
-                                        maxiter=maxiter, M=p_op, callback=None)
+        elif pcg_algo == "scipy.cgs":
+            u, info = sparse.linalg.cgs(
+                coo_op, b, x0=x0, tol=tol_eff, maxiter=maxiter, M=p_op, callback=None
+            )
             print_pcg_status(info)
         else:
             raise ValueError("Unknown PCG algorithm name")
         print("Value of || A * x - b ||/||b|| at exit:")
-        print(str(LA.norm(coo_op.dot(u)-b)/LA.norm(b)))
+        print(str(LA.norm(coo_op.dot(u) - b) / LA.norm(b)))
 
     else:
         raise ValueError("Unknown PCG algorithm name")
@@ -387,13 +411,13 @@ def pcg_solve(ind_obs, mask, s_2n, b, x0, tol, maxiter, p_solver, pcg_algo):
     return u, info
 
 
-def compute_precond(autocorr, mask, p=10, ptype='sparse', taper='Wendland2'):
+def compute_precond(autocorr, mask, p=10, ptype="sparse", taper="Wendland2"):
     """
-    For a given mask and a given PSD function, this function approximately 
-    computes the linear operator x = C_OO^{-1} b for any vector b, 
-    where C_OO is the covariance matrix of the observed data 
+    For a given mask and a given PSD function, this function approximately
+    computes the linear operator x = C_OO^{-1} b for any vector b,
+    where C_OO is the covariance matrix of the observed data
     (at points where mask==1).
-    It uses an operator that is close to C_OO^{-1} but not exaclty it, 
+    It uses an operator that is close to C_OO^{-1} but not exaclty it,
     and is fast to compute.
 
 
@@ -429,22 +453,20 @@ def compute_precond(autocorr, mask, p=10, ptype='sparse', taper='Wendland2'):
     ind_obs = np.where(mask != 0)[0]  # .astype(int)
     # Calculate the covariance matrix of the complete data
 
-    if ptype == 'sparse':
+    if ptype == "sparse":
         # Preconditionning : use sparse matrix
-        C = fastoeplitz.build_sparse_cov2(autocorr, p, n_data, 
-                                          form="csc", taper=taper)
+        C = fastoeplitz.build_sparse_cov2(autocorr, p, n_data, form="csc", taper=taper)
         # Calculate the covariance matrix of the observed data
         C_temp = C[:, ind_obs]
         # Preconditionner
         solve = sparse.linalg.factorized(C_temp[ind_obs, :])
 
-    elif ptype == 'circulant':
-
+    elif ptype == "circulant":
         s_2n = np.real(fft(autocorr))
         n_fft = len(s_2n)
 
         def solve(v):
-            return np.real(ifft(fft(v, n_fft)/s_2n, len(v)))
+            return np.real(ifft(fft(v, n_fft) / s_2n, len(v)))
 
     return solve
 
@@ -461,15 +483,16 @@ def gls(dat, mat, sn):
         design matrix, size n x p
     sn : ndarray
         variance vector, size n
-        
+
     Returns
     -------
     amps : ndarray
         estimated amplitudes, size p
     """
-    
+
     mat_weighted = mat / np.array([sn]).T
     amps = LA.pinv(np.dot(mat_weighted.conj().T, mat)).dot(
-        np.dot(mat_weighted.conj().T, dat))
-    
+        np.dot(mat_weighted.conj().T, dat)
+    )
+
     return amps

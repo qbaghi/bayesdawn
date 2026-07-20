@@ -7,16 +7,17 @@ Time-domain and frequency domain operators useful for gapped data analysis
 @author: qbaghi
 
 """
+
 import numpy as np
 import pyfftw
 from pyfftw.interfaces.numpy_fft import fft, ifft
 from scipy import sparse, linalg
 from bayesdawn.algebra import fastoeplitz
+
 pyfftw.interfaces.cache.enable()
 
 
 class MappingOperator(object):
-
     def __init__(self, inds, n_data):
         """Implement W_o and W_m operators mapping the observed/missing data
         to the full data vector and conversely.
@@ -71,14 +72,14 @@ class MappingOperator(object):
         if sp:
             data = np.ones(len(self.inds))
             row_ind = np.arange(0, len(self.inds))
-            w_o = sparse.csc_matrix((data, (row_ind, self.inds)), 
-                                    shape=(len(self.inds), self.n_data))
+            w_o = sparse.csc_matrix(
+                (data, (row_ind, self.inds)), shape=(len(self.inds), self.n_data)
+            )
             return w_o
         else:
             return np.array([self.binary_vector(ids) for ids in self.inds])
 
     def binary_vector(self, ids):
-
         v = np.zeros(self.n_data)
         v[ids] = 1
 
@@ -146,9 +147,12 @@ class MappingOperator(object):
         if len(y_tilde.shape) == 1:
             return self.apply(ifft(y_tilde) / np.sqrt(self.n_data))
         elif len(y_tilde.shape) == 2:
-            return np.array([
-                self.apply(ifft(y_tilde[:, i]) / np.sqrt(self.n_data))
-                for i in range(y_tilde.shape[1])]).T
+            return np.array(
+                [
+                    self.apply(ifft(y_tilde[:, i]) / np.sqrt(self.n_data))
+                    for i in range(y_tilde.shape[1])
+                ]
+            ).T
 
     def apply_transpose_fourier(self, y_o):
         """Apply transformation
@@ -171,15 +175,17 @@ class MappingOperator(object):
             return fft(self.apply_transpose(y_o)) / np.sqrt(self.n_data)
         elif len(y_o.shape) == 2:
             return np.array(
-                [fft(self.apply_transpose(y_o[:, i])) / np.sqrt(self.n_data)
-                 for i in range(y_o.shape[1])]).T
+                [
+                    fft(self.apply_transpose(y_o[:, i])) / np.sqrt(self.n_data)
+                    for i in range(y_o.shape[1])
+                ]
+            ).T
 
 
 class CovarianceOperator(object):
-    
     def __init__(self, autocorr, inds_obs, inds_mis):
         """
-        Toeplitz Noise covariance operator defined by a an autocovariance 
+        Toeplitz Noise covariance operator defined by a an autocovariance
         function calculated at sampling times.
 
         Parameters
@@ -191,14 +197,14 @@ class CovarianceOperator(object):
         inds_mis : array_like
             missing data indices, size n_m
         """
-        
+
         self.autocorr = autocorr
         self.inds_obs = inds_obs
         self.inds_mis = inds_mis
         self.no = len(inds_obs)
         self.nm = len(inds_mis)
         self.n = len(autocorr)
-        
+
         self.limit = 1e4
         # Covariance of missing data
         self.c_mm = np.array([])
@@ -206,32 +212,32 @@ class CovarianceOperator(object):
         self.c2_mm = np.array([])
         # Cubic covariance at missing data points
         self.c3_mm = np.array([])
-        
+
     def get_cmm(self):
         """
         Returns missing data covariance.
         """
-        
+
         if self.c_mm == np.array([]):
             self.compute_cmm()
-        
+
         return self.c_mm
-    
+
     def compute_cmm(self, power=1):
         """
         Compute the missing data covariance matrix and store it.
         """
-        
+
         id_mx, id_my = np.meshgrid(self.inds_mis, self.inds_mis)
         first_row = self.autocorr**power
-        
+
         if power == 1:
             self.c_mm = first_row[np.abs(id_mx - id_my)]
-        elif power == 2 :
+        elif power == 2:
             self.c2_mm = first_row[np.abs(id_mx - id_my)]
-        elif power == 3 :
+        elif power == 3:
             self.c3_mm = first_row[np.abs(id_mx - id_my)]
-        
+
     def dot(self, v):
         """
         Perform the dot product of the covariance matrix with a vector v
@@ -241,43 +247,55 @@ class CovarianceOperator(object):
         v : ndarray
             vector of size n
         """
-        
-        return fastoplitz.toeplitz_multiplication(v, self.autocorr, 
-                                                  self.autocorr)
-        
+
+        return fastoeplitz.toeplitz_multiplication(v, self.autocorr, self.autocorr)
+
     def compute_k_mat(self):
         """
-        Compute the matrix 
+        Compute the matrix
         K = I + Z^T Sigma Y involved in the Woodbury formula
         """
+        if self.c_mm.size == 0:
+            self.compute_cmm(power=1)
+        if self.c2_mm.size == 0:
+            self.compute_cmm(power=2)
+        if self.c3_mm.size == 0:
+            self.compute_cmm(power=3)
+
         i_mm = np.diag(np.ones(len(self.inds_mis)))
-        self.k_mat = np.block([[i_mm + self.c_mm - sigma2_mm,        
-                                self.c_mm],
-                               [self.c_mm - (1 + self.c_mm)*sigma2_mm + sigma3_mm,
-                            i_mm + sigma_mm_2 - sigma2_mm]])
-    
+        sigma2_mm = self.c2_mm
+        sigma3_mm = self.c3_mm
+        sigma_mm_2 = self.c2_mm
+        self.k_mat = np.block(
+            [
+                [i_mm + self.c_mm - sigma2_mm, self.c_mm],
+                [
+                    self.c_mm - (1 + self.c_mm) * sigma2_mm + sigma3_mm,
+                    i_mm + sigma_mm_2 - sigma2_mm,
+                ],
+            ]
+        )
+
     def get_coo(self):
         """
         Returns observed data covariance.
         """
-        
+
         id_ox, id_oy = np.meshgrid(self.inds_obs, self.inds_obs)
-        
+
         return self.autocorr[np.abs(id_ox - id_oy)]
-    
+
     def get_full_cov(self, n_max=None):
         """
         Return full covariance in the time domain.
         """
         if n_max is None:
             n_max = self.n
-        
+
         return linalg.toeplitz(self.autocorr[0:n_max])
-        
 
 
 def mask_matrix(mat, threshold=1e-3):
-
     inds = np.where(np.abs(mat) < np.max(np.abs(mat)) * threshold)
     matmask = np.zeros(mat.shape)
     matmask[inds] = 1

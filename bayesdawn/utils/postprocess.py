@@ -8,6 +8,7 @@ import matplotlib as mpl
 from . import loadings, physics
 import pyfftw
 from pyfftw.interfaces.scipy_fftpack import fft, ifft
+
 # Enable the cache to save FFTW plan to perform faster fft for the subsequent calls of pyfftw
 pyfftw.interfaces.cache.enable()
 
@@ -71,7 +72,7 @@ def get_simu_parameters(config_path, simu_path=None, ldc=True, intrinsic=True):
     config_path : string
         path to analysis configuration file
     simu_path : string, optional
-        path to the simulation file that was analyzed. If not provided, the 
+        path to the simulation file that was analyzed. If not provided, the
         path indicated in the configuration file will be used.
     ldc : bool, optional
         if the simulation is an LDC data set, by default True
@@ -101,14 +102,24 @@ def get_simu_parameters(config_path, simu_path=None, ldc=True, intrinsic=True):
         # sampler_type = 'dynesty'
 
     # Load the corresponding simulation
-    names_full = np.array([key for key in config['ParametersLowerBounds']])
+    names_full = np.array([key for key in config["ParametersLowerBounds"]])
     simu_name = os.path.basename(config["InputData"]["FilePath"])
-    names_math = [r'$M_c$', r'$q$', r'$t_c$', r'$\chi_1$', r'$\chi_2$',
-                  r'$\log D_L$', r'$\cos \i$',
-                  r'$\cos \beta$', r'$\lambda$', r'$\psi$', r'$\phi_0$']
+    names_math = [
+        r"$M_c$",
+        r"$q$",
+        r"$t_c$",
+        r"$\chi_1$",
+        r"$\chi_2$",
+        r"$\log D_L$",
+        r"$\cos \i$",
+        r"$\cos \beta$",
+        r"$\lambda$",
+        r"$\psi$",
+        r"$\phi_0$",
+    ]
 
     if simu_path is not None:
-        input_path = simu_path + '/' + simu_name
+        input_path = simu_path + "/" + simu_name
 
     if ldc:
         # simu_path='/Users/qbaghi/Codes/data/LDC/'
@@ -118,10 +129,11 @@ def get_simu_parameters(config_path, simu_path=None, ldc=True, intrinsic=True):
         par = physics.get_params(p, sampling=True)
         i_intr = [0, 1, 2, 3, 4, 7, 8]
     else:
-        simu_path = '/Users/qbaghi/Codes/data/simulations/mbhb/'
+        simu_path = "/Users/qbaghi/Codes/data/simulations/mbhb/"
         print("Simulation name: " + str(simu_name))
-        tvect, signal_list, noise_list, params, tstart, del_t, tobs = loadings.load_simulation(
-            simu_path + simu_name)
+        tvect, signal_list, noise_list, params, tstart, del_t, tobs = (
+            loadings.load_simulation(simu_path + simu_name)
+        )
         # Convert to sampling parameters
         par = physics.waveform_to_like(params)
         # i_intr = [0, 1, 2, 3, 4, 8, 9]
@@ -129,17 +141,21 @@ def get_simu_parameters(config_path, simu_path=None, ldc=True, intrinsic=True):
 
     # if sampler_type == 'ptemcee':
     # Load the MCMC samples
-    chain = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_chain.p')
-    lnprob = loadings.load_samples(os.path.dirname(config_path) + '/' + prefix + '_lnprob.p')
+    chain = loadings.load_samples(
+        os.path.dirname(config_path) + "/" + prefix + "_chain.p"
+    )
+    lnprob = loadings.load_samples(
+        os.path.dirname(config_path) + "/" + prefix + "_lnprob.p"
+    )
 
-    if not config["Model"].getboolean('reduced') and intrinsic:
+    if not config["Model"].getboolean("reduced") and intrinsic:
         # Even if all parameters were sampled, restrict to intrinsic ones
         names = np.array(names_math)[i_intr]
         par0 = np.array(par)[i_intr]
         chain0 = chain[:, :, :, i_intr]
         inds = np.where(chain0[0, 0, :, 0] != 0)[0]
         chain0 = chain0[:, :, inds, :]
-    elif not config["Model"].getboolean('reduced') and not intrinsic:
+    elif not config["Model"].getboolean("reduced") and not intrinsic:
         # Keep all parameters
         names = np.array(names_math)
         par0 = np.array(par)
@@ -156,20 +172,19 @@ def get_simu_parameters(config_path, simu_path=None, ldc=True, intrinsic=True):
     # elif sampler_type == 'dynesty':
     #     # fig, axes = dyplot.runplot(chain)  # summary (run) plot
     #     try:
-    #         chain0 = loadings.load_samples(os.path.dirname(config_path) 
+    #         chain0 = loadings.load_samples(os.path.dirname(config_path)
     #                                        + '/' + prefix + '_final_save.p')
     #     except ValueError:
     #         print("No final dinesty result, loading the initial file.")
-    #         chain0 = loadings.load_samples(os.path.dirname(config_path) 
+    #         chain0 = loadings.load_samples(os.path.dirname(config_path)
     #                                        + '/' + prefix + '_initial_save.p')
 
-    return names, par0, chain0, lnprob #, sampler_type
+    return names, par0, chain0, lnprob  # , sampler_type
 
 
-def periodogram(y, wd='blackman', del_t=1.0, module=True, sqroot=True,
-                onesided=True):
+def periodogram(y, wd="blackman", del_t=1.0, module=True, sqroot=True, onesided=True):
     """
-    Compute periodogram with time-domain windowing, using convensions of 
+    Compute periodogram with time-domain windowing, using convensions of
     one-sided power spectral density.
 
     Parameters
@@ -187,53 +202,49 @@ def periodogram(y, wd='blackman', del_t=1.0, module=True, sqroot=True,
     onesided : bool
         if True, the output is equivalent to the one-sided PSD
     """
-    
+
     if type(wd) == str:
-        if wd == 'hannning':
+        if wd == "hannning":
             wd = np.hanning(y.shape[0])
-        elif wd == 'blackman':
+        elif wd == "blackman":
             wd = np.blackman(y.shape[0])
-        elif wd == 'rect':
+        elif wd == "rect":
             wd = np.ones(y.shape[0])
-    
+
     if onesided:
         fact = 2.0
     else:
         fact = 1.0
-    
+
     y_fft = fft(y * wd) * np.sqrt(fact * del_t / np.sum(wd**2))
-    
+
     if module:
         per = np.abs(y_fft)
     else:
         per = y_fft[:]
     if not sqroot:
         per = np.sqrt(per)
-        
+
     return per
 
 
-def plotconfig(lbsize=17, lgsize=14, autolayout=True, figsize=[8, 6],
-               ticklabelsize=16):
+def plotconfig(lbsize=17, lgsize=14, autolayout=True, figsize=[8, 6], ticklabelsize=16):
+    ticks_font = mpl.font_manager.FontProperties(
+        family="serif", style="normal", weight="normal", stretch="normal", size=lbsize
+    )
 
-    ticks_font = mpl.font_manager.FontProperties(family='serif',
-                                                 style='normal',
-                                                 weight='normal',
-                                                 stretch='normal',
-                                                 size=lbsize)
-
-    mpl.rcParams['xtick.labelsize'] = ticklabelsize
-    mpl.rcParams['ytick.labelsize'] = ticklabelsize
-    mpl.rcParams['font.size'] = 15
-    mpl.rcParams['figure.autolayout'] = autolayout
+    mpl.rcParams["xtick.labelsize"] = ticklabelsize
+    mpl.rcParams["ytick.labelsize"] = ticklabelsize
+    mpl.rcParams["font.size"] = 15
+    mpl.rcParams["figure.autolayout"] = autolayout
     # mpl.rcParams['figure.figsize'] = 7.2, 4.45
-    mpl.rcParams['figure.figsize'] = figsize[0], figsize[1]
-    mpl.rcParams['axes.titlesize'] = 16
-    mpl.rcParams['axes.labelsize'] = lbsize
-    mpl.rcParams['lines.linewidth'] = 2
-    mpl.rcParams['lines.markersize'] = 6
-    mpl.rcParams['legend.fontsize'] = lgsize
-    mpl.rcParams['mathtext.fontset'] = 'stix'
-    mpl.rcParams['font.family'] = 'STIXGeneral'
+    mpl.rcParams["figure.figsize"] = figsize[0], figsize[1]
+    mpl.rcParams["axes.titlesize"] = 16
+    mpl.rcParams["axes.labelsize"] = lbsize
+    mpl.rcParams["lines.linewidth"] = 2
+    mpl.rcParams["lines.markersize"] = 6
+    mpl.rcParams["legend.fontsize"] = lgsize
+    mpl.rcParams["mathtext.fontset"] = "stix"
+    mpl.rcParams["font.family"] = "STIXGeneral"
 
     return ticks_font

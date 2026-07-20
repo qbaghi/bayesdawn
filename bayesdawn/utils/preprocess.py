@@ -2,31 +2,32 @@ from scipy import signal
 import numpy as np
 from bayesdawn.utils import physics
 import lisabeta.lisa.ldctools as ldctools
+
 # FTT modules
 import pyfftw
+
 pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
 
 
 def filter(dat, fc, del_t):
-    
-    b, a = signal.butter(5, fc, 'low', analog=False, fs=1/del_t)
+    b, a = signal.butter(5, fc, "low", analog=False, fs=1 / del_t)
     xd = signal.filtfilt(b, a, dat)
 
     return xd
 
-def preprocess_all(config, td, i1, i2, scale=1.0):
 
+def preprocess_all(config, td, i1, i2, scale=1.0):
     del_t = td[1, 0] - td[0, 0]
 
-    if config['InputData'].getboolean('decimation'):
-        fc = config['InputData'].getfloat('filterFrequency')
-        b, a = signal.butter(5, fc, 'low', analog=False, fs=1/del_t)
+    if config["InputData"].getboolean("decimation"):
+        fc = config["InputData"].getfloat("filterFrequency")
+        b, a = signal.butter(5, fc, "low", analog=False, fs=1 / del_t)
         Xd = signal.filtfilt(b, a, td[:, 1] * scale)
         Yd = signal.filtfilt(b, a, td[:, 2] * scale)
         Zd = signal.filtfilt(b, a, td[:, 3] * scale)
         # Downsampling
-        q = config['InputData'].getint('decimationFactor')
+        q = config["InputData"].getint("decimationFactor")
         tm = td[i1:i2:q, 0]
         Xd = Xd[i1:i2:q]
         Yd = Yd[i1:i2:q]
@@ -43,7 +44,6 @@ def preprocess_all(config, td, i1, i2, scale=1.0):
 
 
 def preprocess_ldc_data(p, td, config):
-
     del_t = float(p.get("Cadence"))
     tobs = float(p.get("ObservationDuration"))
 
@@ -56,7 +56,7 @@ def preprocess_ldc_data(p, td, config):
     # ==================================================================================================================
     # Pre-processing data: anti-aliasing and filtering
     # ==================================================================================================================
-    if config['InputData'].getboolean('trim'):
+    if config["InputData"].getboolean("trim"):
         i1 = np.int(config["InputData"].getfloat("StartTime") / del_t)
         i2 = np.int(config["InputData"].getfloat("EndTime") / del_t)
         t_offset = 52.657 + config["InputData"].getfloat("StartTime")
@@ -67,8 +67,7 @@ def preprocess_ldc_data(p, td, config):
         t_offset = 52.657
 
     scale = config["InputData"].getfloat("rescale")
-    tm, xd, yd, zd, q = preprocess_all(config, td, i1, i2,
-                                   scale=scale)
+    tm, xd, yd, zd, q = preprocess_all(config, td, i1, i2, scale=scale)
 
     return tm, xd, yd, zd, q, t_offset, tobs, del_t, p_sampl
 

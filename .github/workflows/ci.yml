@@ -26,5 +26,8 @@ jobs:
       - name: Install project dependencies
         run: uv pip install --python .venv/bin/python -e '.[dev]'
 
+      - name: Run scoped Ruff hooks
+        run: .venv/bin/pre-commit run --files $(git ls-files 'bayesdawn/algebra/*.py' 'bayesdawn/gaps/*.py' 'bayesdawn/datamodel.py')
+
       - name: Run imputation test
         run: .venv/bin/python -m pytest -q tests/test_imputation.py

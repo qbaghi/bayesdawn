@@ -44,12 +44,10 @@ def wrap(x, lo, hi):
 
 
 def logp(x, lo, hi):
-
     return np.where(((x >= lo) & (x <= hi)).all(-1), 0.0, -np.inf)
 
 
 class PosteriorModel(object):
-
     def __init__(self, signal_cls, bounds, rescaled=False):
         """
 
@@ -85,17 +83,25 @@ class PosteriorModel(object):
         self.log_norm = 0
 
     def compute_log_norm(self, spectrum):
-
         if type(spectrum) == np.array:
             # Normalization constant (calculated once and for all)
-            self.log_norm = np.real(-0.5 * (np.sum(np.log(self.spectrum)) + self.signal_cls.N * np.log(2 * np.pi)))
+            self.log_norm = np.real(
+                -0.5
+                * (
+                    np.sum(np.log(self.spectrum))
+                    + self.signal_cls.N * np.log(2 * np.pi)
+                )
+            )
         elif type(spectrum) == list:
             # If the noise spectrum is a list of spectra corresponding to each TDI channel, concatenate the spectra
             # in a single array
             # Restricted spectrum
             # spectrum_arr = np.concatenate([spect[self.posterior_cls.inds_pos] for spect in self.spectrum])
             spectrum_arr = np.concatenate([spect for spect in spectrum])
-            self.log_norm = np.real(-0.5 * (np.sum(np.log(spectrum_arr))) + len(spectrum) * self.signal_cls.N * np.log(2 * np.pi))
+            self.log_norm = np.real(
+                -0.5 * (np.sum(np.log(spectrum_arr)))
+                + len(spectrum) * self.signal_cls.N * np.log(2 * np.pi)
+            )
 
     def log_likelihood(self, u, *args):
         """
@@ -114,17 +120,23 @@ class PosteriorModel(object):
         """
 
         if self.rescaled:
-            return self.signal_cls.log_likelihood(self.uniform2param(u), *args) + self.log_norm
+            return (
+                self.signal_cls.log_likelihood(self.uniform2param(u), *args)
+                + self.log_norm
+            )
         else:
             return self.signal_cls.log_likelihood(u, *args) + self.log_norm
 
     def logp(self, x, lo, hi):
-
         return np.where(((x >= lo) & (x <= hi)).all(-1), 0.0, -np.inf)
 
     def logpo(self, x, i1, i2):
-
-        return np.where(((x >= self.lo_rescaled) & (x <= self.hi_rescaled)).all(-1) & (x[i1] <= x[i2]), 0.0, -np.inf)
+        return np.where(
+            ((x >= self.lo_rescaled) & (x <= self.hi_rescaled)).all(-1)
+            & (x[i1] <= x[i2]),
+            0.0,
+            -np.inf,
+        )
 
     # def log_prior(self, params):
     #     """
@@ -213,11 +225,7 @@ class PosteriorModel(object):
         return (x - self.lo) / (self.hi - self.lo)
 
     def compute_time_signal(self, u):
-
         return self.signal_cls.compute_time_signal(self.uniform2param(u))
 
     def compute_frequency_signal(self, u):
-
         return self.signal_cls.compute_frequency_signal(self.uniform2param(u))
-
-

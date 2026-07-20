@@ -10,6 +10,7 @@ import numpy as np
 import corner
 from ptemcee import util
 from scipy.integrate import simps
+
 # import load_mcmc_config
 # from LISAhdf5 import LISAhdf5
 from bayesdawn import psdsampler
@@ -47,11 +48,24 @@ def log_evidence_estimate(logl, betas, fburnin=0.1):
     return util.thermodynamic_integration_log_evidence(betas[-1], mean_logls)
 
 
-def cornerplot(s_list, truths_vect, offset, rscales, labels,
-               colors=['k', 'gray', 'b'], limits=None, fontsize=16,
-               bins=50, truth_color='cadetblue', figsize=(9, 8.5),
-               linewidth=1, smooth=1.0, smooth1d=1.0,
-               plot_datapoints=False, alpha=1):
+def cornerplot(
+    s_list,
+    truths_vect,
+    offset,
+    rscales,
+    labels,
+    colors=["k", "gray", "b"],
+    limits=None,
+    fontsize=16,
+    bins=50,
+    truth_color="cadetblue",
+    figsize=(9, 8.5),
+    linewidth=1,
+    smooth=1.0,
+    smooth1d=1.0,
+    plot_datapoints=False,
+    alpha=1,
+):
     """
 
     Parameters
@@ -87,7 +101,7 @@ def cornerplot(s_list, truths_vect, offset, rscales, labels,
     """
 
     if truths_vect is not None:
-        truths_res = (truths_vect[0:s_list[0].shape[1]]-offset)*rscales
+        truths_res = (truths_vect[0 : s_list[0].shape[1]] - offset) * rscales
     else:
         truths_res = None
 
@@ -95,49 +109,64 @@ def cornerplot(s_list, truths_vect, offset, rscales, labels,
 
     fig, axes = plt.subplots(ndim, ndim, figsize=figsize)
 
-    fig = corner.corner((s_list[0]-offset)*rscales, 
-                        truths=truths_res,
-                        labels=labels, 
-                        range=limits,
-                        color=colors[0],
-                        plot_datapoints=plot_datapoints, 
-                        fill_contours=True, 
-                        bins=bins,
-                        smooth=smooth,
-                        smooth1d=smooth1d,
-                        label_kwargs={"fontsize": fontsize},
-                        hist_kwargs={"linewidth": linewidth, "alpha": alpha},
-                        truth_color=truth_color, fig=fig, use_math_text=True)
+    fig = corner.corner(
+        (s_list[0] - offset) * rscales,
+        truths=truths_res,
+        labels=labels,
+        range=limits,
+        color=colors[0],
+        plot_datapoints=plot_datapoints,
+        fill_contours=True,
+        bins=bins,
+        smooth=smooth,
+        smooth1d=smooth1d,
+        label_kwargs={"fontsize": fontsize},
+        hist_kwargs={"linewidth": linewidth, "alpha": alpha},
+        truth_color=truth_color,
+        fig=fig,
+        use_math_text=True,
+    )
 
     # fig = plt.figure(figsize = (8,8))
 
     if len(s_list) > 1:
         for j in range(0, len(s_list)):
-            fig = corner.corner((s_list[j]-offset)*rscales, 
-                                truths=truths_res,
-                                labels=labels, 
-                                range=limits,
-                                color=colors[j],
-                                plot_datapoints=plot_datapoints, 
-                                fill_contours=True, 
-                                bins=bins,
-                                smooth=smooth, 
-                                smooth1d=smooth1d,
-                                label_kwargs={"fontsize": fontsize}, 
-                                hist_kwargs={"linewidth": linewidth, 
-                                             "alpha": alpha},
-                                truth_color=truth_color, 
-                                fig=fig, 
-                                use_math_text=True)
-
+            fig = corner.corner(
+                (s_list[j] - offset) * rscales,
+                truths=truths_res,
+                labels=labels,
+                range=limits,
+                color=colors[j],
+                plot_datapoints=plot_datapoints,
+                fill_contours=True,
+                bins=bins,
+                smooth=smooth,
+                smooth1d=smooth1d,
+                label_kwargs={"fontsize": fontsize},
+                hist_kwargs={"linewidth": linewidth, "alpha": alpha},
+                truth_color=truth_color,
+                fig=fig,
+                use_math_text=True,
+            )
 
     return fig, axes
 
 
-def jointplot(s_list, truths_vect, labels, legend_labels, kind="kde", 
-              colors=['k', 'gray', 'b'], levels=4,
-              linestyles = ['solid', 'dotted', 'dashed'], limits=None, 
-              fontsize=16, linewidth=3, alpha=0.7, shade=False):
+def jointplot(
+    s_list,
+    truths_vect,
+    labels,
+    legend_labels,
+    kind="kde",
+    colors=["k", "gray", "b"],
+    levels=4,
+    linestyles=["solid", "dotted", "dashed"],
+    limits=None,
+    fontsize=16,
+    linewidth=3,
+    alpha=0.7,
+    shade=False,
+):
     """
 
     Parameters
@@ -180,8 +209,6 @@ def jointplot(s_list, truths_vect, labels, legend_labels, kind="kde",
     #     elif (col == 'orange') | (col == 'o'):
     #         cmaps.append(plt.cm.Oranges)
 
-
-
     # >> > iris = sns.load_dataset("iris")
     # >> > g = sns.jointplot("sepal_width", "petal_length", data=iris,
     #                        ...
@@ -190,9 +217,8 @@ def jointplot(s_list, truths_vect, labels, legend_labels, kind="kde",
     if limits == None:
         limits = [(None, None) for s in s_list]
 
-
     # For one category of data
-    i=0
+    i = 0
 
     # Combine data into DataFrame
     df = pandas.DataFrame({labels[0]: s_list[i][:, 0], labels[1]: s_list[i][:, 1]})
@@ -207,11 +233,23 @@ def jointplot(s_list, truths_vect, labels, legend_labels, kind="kde",
 
     graph = sns.JointGrid(labels[0], labels[1], data=df, space=0.0, ratio=5)
 
-    graph = graph.plot_joint(sns.kdeplot, color=colors[i], linestyles=linestyles[i], label=legend_labels[i],
-                             shade=shade, levels=levels, shade_lowest=False)
-    graph = graph.plot_marginals(sns.distplot, hist=False, kde=True, color=colors[i],
-                                 kde_kws={"shade": True, "linewidth": linewidth, "linestyle": linestyles[i]})
-                                          #"alpha": alpha})
+    graph = graph.plot_joint(
+        sns.kdeplot,
+        color=colors[i],
+        linestyles=linestyles[i],
+        label=legend_labels[i],
+        shade=shade,
+        levels=levels,
+        shade_lowest=False,
+    )
+    graph = graph.plot_marginals(
+        sns.distplot,
+        hist=False,
+        kde=True,
+        color=colors[i],
+        kde_kws={"shade": True, "linewidth": linewidth, "linestyle": linestyles[i]},
+    )
+    # "alpha": alpha})
 
     # plt.sca("axis_name")
     # if len(s_list) > 1:
@@ -221,12 +259,23 @@ def jointplot(s_list, truths_vect, labels, legend_labels, kind="kde",
         # graph.plot_joint(plt.scatter, kde=True)
         # graph.plot_marginals(sns.distplot, kde=False, color=colors[i])
 
-        graph = graph.plot_joint(sns.kdeplot, color=colors[i],
-                                 linestyles=linestyles[i], label=legend_labels[i],
-                                 shade=shade, levels=levels, shade_lowest=False)#, xlim=limits[i][0], ylim=limits[i][1])#  cmap="Blues_d")
-        graph = graph.plot_marginals(sns.distplot, hist=False, kde=True, color=colors[i],
-                                     kde_kws={"shade": True, "linewidth": linewidth, "linestyle": linestyles[i]})
-                                              #"alpha": alpha})
+        graph = graph.plot_joint(
+            sns.kdeplot,
+            color=colors[i],
+            linestyles=linestyles[i],
+            label=legend_labels[i],
+            shade=shade,
+            levels=levels,
+            shade_lowest=False,
+        )  # , xlim=limits[i][0], ylim=limits[i][1])#  cmap="Blues_d")
+        graph = graph.plot_marginals(
+            sns.distplot,
+            hist=False,
+            kde=True,
+            color=colors[i],
+            kde_kws={"shade": True, "linewidth": linewidth, "linestyle": linestyles[i]},
+        )
+        # "alpha": alpha})
 
     graph.ax_joint.set_xlim(limits[0])
     graph.ax_joint.set_ylim(limits[1])
@@ -238,27 +287,25 @@ def jointplot(s_list, truths_vect, labels, legend_labels, kind="kde",
 
     # graph.ax_joint.legend(loc=4, fontsize=10)
 
-            # graph.plot_joint(s_list[i][:, 0], s_list[i][:, 1], data=None, kind=kind, stat_func=None, color=None,
-            #                  height=6, ratio=5, space=0.0, dropna=True, xlim=limits[0][0], ylim=limits[0][1],
-            #                  joint_kws=None, marginal_kws=None, annot_kws=None)
-            # sns.jointplot(s_list[i][:, 0], s_list[i][:, 1], data=None, kind=kind, stat_func=None,
-            #               color=None, height=6, ratio=5, space=0.0,
-            #               dropna=True, xlim=limits[0][0], ylim=limits[0][1], joint_kws=None,
-            #               marginal_kws=None, annot_kws=None)
-
+    # graph.plot_joint(s_list[i][:, 0], s_list[i][:, 1], data=None, kind=kind, stat_func=None, color=None,
+    #                  height=6, ratio=5, space=0.0, dropna=True, xlim=limits[0][0], ylim=limits[0][1],
+    #                  joint_kws=None, marginal_kws=None, annot_kws=None)
+    # sns.jointplot(s_list[i][:, 0], s_list[i][:, 1], data=None, kind=kind, stat_func=None,
+    #               color=None, height=6, ratio=5, space=0.0,
+    #               dropna=True, xlim=limits[0][0], ylim=limits[0][1], joint_kws=None,
+    #               marginal_kws=None, annot_kws=None)
 
     # axes.set_xlabel(labels[0], fontsize=fontsize)
     # axes.set_ylabel(labels[1], fontsize=fontsize)
 
-
-    #plt.xlabel(labels[0], fontsize=fontsize)
-    #plt.xlabel(labels[1], fontsize=fontsize)
+    # plt.xlabel(labels[0], fontsize=fontsize)
+    # plt.xlabel(labels[1], fontsize=fontsize)
     # axes = graph.axes
     # axes.set_xlim(limits[0])
     # axes.set_ylim(limits[1])
 
-    graph.ax_joint.axvline(truths_vect[0], color='green', linewidth=1.5)
-    graph.ax_joint.axhline(truths_vect[1], color='green', linewidth=1.5)
+    graph.ax_joint.axvline(truths_vect[0], color="green", linewidth=1.5)
+    graph.ax_joint.axhline(truths_vect[1], color="green", linewidth=1.5)
     # #[axes[i].axvline(truths_res[i], color='cadetblue', linewidth=1.5) for i in range(len(limits))]
     # [axes[i].axvline(truths_res[i], color='green', linewidth=1.5) for i in range(len(limits))]
 
@@ -269,17 +316,18 @@ def jointplot(s_list, truths_vect, labels, legend_labels, kind="kde",
 
 
 def create_sample_file(sample_data, file_name):
-
-    fd = h5py.File(file_name, 'w')
-    dset = fd.create_dataset('overall_post', sample_data.shape)
-    dset.attrs['right_ascension'] = sample_data[:, 0] - np.pi / 2
-    dset.attrs['declination'] = sample_data[:, 1] + np.pi
-    dset.attrs['frequency'] = sample_data[:, 2]
+    fd = h5py.File(file_name, "w")
+    dset = fd.create_dataset("overall_post", sample_data.shape)
+    dset.attrs["right_ascension"] = sample_data[:, 0] - np.pi / 2
+    dset.attrs["declination"] = sample_data[:, 1] + np.pi
+    dset.attrs["frequency"] = sample_data[:, 2]
 
     fd.close()
 
 
-def load_volume_map(input_name, nside=None, interpolate='nearest', contour=[90], simplify=True):
+def load_volume_map(
+    input_name, nside=None, interpolate="nearest", contour=[90], simplify=True
+):
     """
 
     Load volume posterior map from HEALPix probability map
@@ -328,7 +376,7 @@ def compute_log_evidence(logpvals, beta_ladder, deg=5):
     # Number of samples
     K = logpvals.shape[1]
     # Sample variance of log(p|theta)
-    vu = np.var(logpvals, axis=1)/K
+    vu = np.var(logpvals, axis=1) / K
 
     # Integral over beta
     beta_max = np.max(beta_ladder)
@@ -344,24 +392,21 @@ def compute_log_evidence(logpvals, beta_ladder, deg=5):
     # loge = spl.integral(0, 1)
     loge = simps(eu[::-1], beta_ladder[::-1])
 
-    return loge, loge_std #np.sqrt(loge_var)
-
-
-
+    return loge, loge_std  # np.sqrt(loge_var)
 
 
 def load_chain(chain_names, data_name="chains/chain/"):
     N_chains = len(chain_names)
 
     # Initialization if first chain
-    fd5 = h5py.File(chain_names[0], 'r')
+    fd5 = h5py.File(chain_names[0], "r")
     chaindata = fd5[data_name]
     chain = chaindata[:]
     fd5.close()
 
     if N_chains > 1:
         for i in range(N_chains):
-            fd5 = h5py.File(chain_names[i], 'r')
+            fd5 = h5py.File(chain_names[i], "r")
             chaindata = fd5[data_name]
             chain = np.hstack((chain, chaindata))
             fd5.close()
@@ -370,7 +415,6 @@ def load_chain(chain_names, data_name="chains/chain/"):
 
 
 def load_data(hdf5_name):
-
     LH = LISAhdf5(hdf5_name)
     dTDI = LH.getPreProcessTDI()
     GWs = LH.getSourcesName()
@@ -391,85 +435,112 @@ def loadtdi(hdf5_name):
         Tobs = p[0].get("ObservationDuration")
         for p0 in p:
             p0.display()
-            truths.append([p0.get("EclipticLatitude") + np.pi / 2,
-                           p0.get("EclipticLongitude") - np.pi,
-                           p0.get('Frequency')])
+            truths.append(
+                [
+                    p0.get("EclipticLatitude") + np.pi / 2,
+                    p0.get("EclipticLongitude") - np.pi,
+                    p0.get("Frequency"),
+                ]
+            )
         truths = np.concatenate(truths)
 
-        labels = np.array([r'$\hat{\theta}_1$ [rad]', r'$\hat{\phi}_1$ [rad]', r'$\hat{f}_{1}-f_1$ [nHz]',
-                           r'$\hat{\theta}_2$ [rad]', r'$\hat{\phi}_2$ [rad]', r'$\hat{f}_{2}-f_2$ [nHz]'])
+        labels = np.array(
+            [
+                r"$\hat{\theta}_1$ [rad]",
+                r"$\hat{\phi}_1$ [rad]",
+                r"$\hat{f}_{1}-f_1$ [nHz]",
+                r"$\hat{\theta}_2$ [rad]",
+                r"$\hat{\phi}_2$ [rad]",
+                r"$\hat{f}_{2}-f_2$ [nHz]",
+            ]
+        )
 
     else:
         p.display()
         ts = p.get("Cadence")
         Tobs = p.get("ObservationDuration")
-        truths = np.array([p.get("EclipticLatitude") + np.pi / 2,
-                           p.get("EclipticLongitude") - np.pi,
-                           p.get('Frequency')])
+        truths = np.array(
+            [
+                p.get("EclipticLatitude") + np.pi / 2,
+                p.get("EclipticLongitude") - np.pi,
+                p.get("Frequency"),
+            ]
+        )
 
-        labels = np.array([r'$\hat{\theta}$ [rad]', r'$\hat{\phi}$ [rad]', r'$\hat{f}_{0}-f_{0}$ [nHz]'])
+        labels = np.array(
+            [
+                r"$\hat{\theta}$ [rad]",
+                r"$\hat{\phi}$ [rad]",
+                r"$\hat{f}_{0}-f_{0}$ [nHz]",
+            ]
+        )
 
     return dTDI, p, truths, labels, ts, Tobs
 
 
-def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes, 
-                      maskname, conf, signal_name = "chains/chain1/"):
-
+def load_mcmc_results(
+    base,
+    filepaths,
+    filenames,
+    noisenames,
+    prefixes,
+    maskname,
+    conf,
+    signal_name="chains/chain1/",
+):
     # ==========================================================================
     # Prefixes for figure saving
     # ==========================================================================
 
-    if '1e-4Hz' in base:
-        f0 = '1e-4Hz'
-    elif ('2e-4Hz' in base) | ('2sources' in base):
-        f0 = '2e-4Hz'
-    elif '5e-4Hz' in base:
-        f0 = '5e-4Hz'
-    if maskname == 'periodic':
-        gaps = 'antgaps'
-    elif maskname == 'random':
-        gaps = 'randgaps'
-    if '2sources' in base:
-        if ('df=1e-7Hz' in base) | ('df1e-7Hz' in base):
-            prefix = '2sources_df=1e-7Hz_'
-        if ('df=1e-8Hz' in base) | ('df1e-8Hz' in base):
-            prefix = '2sources_df=1e-8Hz_'
-        elif ('df=1e-9Hz' in base) | ('df1e-9Hz' in base):
-            prefix = '2sources_df=1e-9Hz_'
-        elif ('df=1e-10Hz' in base) | ('df1e-10Hz' in base):
-            prefix = '2sources_df=1e-10Hz_'
+    if "1e-4Hz" in base:
+        f0 = "1e-4Hz"
+    elif ("2e-4Hz" in base) | ("2sources" in base):
+        f0 = "2e-4Hz"
+    elif "5e-4Hz" in base:
+        f0 = "5e-4Hz"
+    if maskname == "periodic":
+        gaps = "antgaps"
+    elif maskname == "random":
+        gaps = "randgaps"
+    if "2sources" in base:
+        if ("df=1e-7Hz" in base) | ("df1e-7Hz" in base):
+            prefix = "2sources_df=1e-7Hz_"
+        if ("df=1e-8Hz" in base) | ("df1e-8Hz" in base):
+            prefix = "2sources_df=1e-8Hz_"
+        elif ("df=1e-9Hz" in base) | ("df1e-9Hz" in base):
+            prefix = "2sources_df=1e-9Hz_"
+        elif ("df=1e-10Hz" in base) | ("df1e-10Hz" in base):
+            prefix = "2sources_df=1e-10Hz_"
             # hdf5_name = '/Users/qbaghi/Codes/data/simulations/' + '2019-03-18_14h33-04_monof0=2e-4Hz_2sources_df=1e-10_1year_ts=10s_mynoise.hdf5'
-        elif ('df=1e-6Hz' in base) | ('df1e-6Hz' in base):
-            prefix = '2sources_df=1e-6Hz_'
+        elif ("df=1e-6Hz" in base) | ("df1e-6Hz" in base):
+            prefix = "2sources_df=1e-6Hz_"
             # hdf5_name = '/Users/qbaghi/Codes/data/simulations/' + '2019-03-18_10h22-46_monof0=2e-4Hz_2sources_df=1e-6_1year_ts=10s_mynoise.hdf5'
         else:
-            prefix = '2sources_df=1e-7Hz_'
+            prefix = "2sources_df=1e-7Hz_"
     else:
-        prefix = ''
-    if 'single_model' in base:
-        sufix = '_single_model'
+        prefix = ""
+    if "single_model" in base:
+        sufix = "_single_model"
     else:
-        sufix = ''
-
+        sufix = ""
 
     # ==========================================================================
     # Load MCMC samples
     # ==========================================================================
     # Dimension of parameter space
     ndim = 3
-    if 'double_model' in base:
+    if "double_model" in base:
         ndim = 6
 
     # Number of last steps to retain for the analysis
     nsteps = 1000
     nwalkers = 12
-    #nsteps = 15000
-    #nsteps = 500
+    # nsteps = 15000
+    # nsteps = 500
     # nburn = 1000
     # Apply extra thinning
     # thin = 10
     thin = 1
-
 
     sample_list = []
     logp_list = []
@@ -481,21 +552,19 @@ def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes,
     # For noise parameters
     logSinds_list = []
     fs = 0.1
-    psd = psdsampler.PSDSampler(2 ** 22, fs, n_knots=30, d=3, fmin=None, fmax=None)
-    f = np.fft.fftfreq(psd.N)*fs
+    psd = psdsampler.PSDSampler(2**22, fs, n_knots=30, d=3, fmin=None, fmax=None)
+    f = np.fft.fftfreq(psd.N) * fs
     f1 = conf.f0 - conf.B / 2
     f2 = conf.f0 + conf.B / 2
     finds = f[(f >= f1) & (f <= f2)]
 
     def calculate_logpsd(logSc, psd_cls):
         psd_cls.update_psd_func(logSc)
-        return np.log(psd_cls.calculate(finds)*conf.scale**2)
+        return np.log(psd_cls.calculate(finds) * conf.scale**2)
 
     print("Length of prefixes is " + str(len(prefixes)))
 
     for j in range(len(prefixes)):
-
-
         # For GW parameters
         chain = load_chain([filepaths[j] + filenames[j]], data_name=signal_name)
         nburn = np.int(chain.shape[2] - nsteps)
@@ -506,9 +575,9 @@ def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes,
             # Size ntemps x nwalkers x nstep x ndim
             samples = chain[0, :nwalkers, nburn::thin, 0:ndim].reshape((-1, ndim))
 
-            if chain.shape[3] > ndim :
+            if chain.shape[3] > ndim:
                 ll = chain[:, :nwalkers, nburn::thin, ndim]
-                loglike = ll.reshape((ll.shape[0], np.int(ll.shape[1]*ll.shape[2])))
+                loglike = ll.reshape((ll.shape[0], np.int(ll.shape[1] * ll.shape[2])))
                 # size ntemps x nwalkers x nsteps x 2
                 logp = chain[0, :nwalkers, nburn::thin, ndim:].reshape((-1, 2))
             elif chain.shape[3] == ndim:
@@ -522,7 +591,7 @@ def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes,
             logp = chain[nburn::thin, ndim:]
 
         else:
-            print("Unknown chain shape for case j="+str(j))
+            print("Unknown chain shape for case j=" + str(j))
 
         # Rescale frequency values to same dimension if necessary
         pre_scale = np.ones(samples.shape[1])
@@ -534,11 +603,9 @@ def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes,
             if mus[5] > 1e-3:
                 pre_scale[5] = 1e-3
 
-
-        sample_list.append(samples*pre_scale)
+        sample_list.append(samples * pre_scale)
         logp_list.append(logp)
         logl_list.append(loglike)
-
 
         # # FOR PSD
         # psd_chain = load_chain([filepaths[j] + noisenames[j]], data_name="psd/samples")
@@ -559,7 +626,7 @@ def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes,
         # Resize it as the GW parameter samples
         # psd_sample_list.append(psd_samples[:, nburn::thin, :].reshape((-1, ndim_psd)))
 
-        fd5 = h5py.File(filepaths[j] + filenames[j], 'r')
+        fd5 = h5py.File(filepaths[j] + filenames[j], "r")
 
         try:
             beta_hist = fd5["temperatures/beta_hist"][()]
@@ -580,7 +647,9 @@ def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes,
 
             mean_logls = np.mean(np.mean(ll, axis=2), axis=1)
             betas = beta_hist[:, 0]
-            loge, loge_std = util.thermodynamic_integration_log_evidence(betas, mean_logls)
+            loge, loge_std = util.thermodynamic_integration_log_evidence(
+                betas, mean_logls
+            )
             bayes_list.append(loge)
             bayes_std_list.append(loge_std)
 
@@ -589,16 +658,22 @@ def load_mcmc_results(base, filepaths, filenames, noisenames, prefixes,
 
             fd5.close()
 
+    return (
+        sample_list,
+        logp_list,
+        logl_list,
+        bayes_list,
+        bayes_std_list,
+        f0,
+        gaps,
+        prefix,
+        sufix,
+    )
 
-    return sample_list, logp_list, logl_list, bayes_list, bayes_std_list, f0, gaps, prefix, sufix
 
-
-
-if __name__ == '__main__':
-
+if __name__ == "__main__":
     import os
     import tdi
-
 
     # FTT modules
     import pyfftw
@@ -673,14 +748,6 @@ if __name__ == '__main__':
     # prefixes = ["2019-03-04_23h53-12", "2019-03-04_23h57-01", "2019-03-05_13h36-46"]
     # maskname = 'random'
 
-
-
-
-
-
-
-
-
     # # For 2 sources and randgaps and df = 1e-6Hz
     # base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/results_2sources/df=1e-6Hz/double_model/"
     # filepaths = [base, base, base]
@@ -694,10 +761,8 @@ if __name__ == '__main__':
     # prefixes = ["2019-03-19_00h27-38", "2019-03-19_00h40-19", "2019-03-19_01h10-08"]
     # maskname = 'random'
 
-
-
     # For 2 sources and randgaps and df = 1e-7Hz
-    #base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/results_2sources_same_amp/df1e-7Hz/double_model/"
+    # base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/results_2sources_same_amp/df1e-7Hz/double_model/"
     # prefixes = ["2019-03-14_14h15-47", "2019-03-14_14h09-48", "2019-03-14_14h38-30"]
     # prefixes = ["2019-03-19_17h24-21", "2019-03-19_17h35-36", "2019-03-19_18h06-19"]
     # # With 100 temperatures
@@ -709,7 +774,6 @@ if __name__ == '__main__':
     # filepaths = [base, base, base]
     # prefixes = ["2019-03-19_17h24-21", "2019-03-19_17h35-36", "2019-05-06_18h45-34"]
     # maskname = 'random'
-
 
     # For 2 sources and random gaps and df = 1e-7Hz with SINGLE-SOURCE MODEL
     # base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/results_2sources/df=1e-7Hz/single_model/"
@@ -726,11 +790,7 @@ if __name__ == '__main__':
     base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/results_2sources_frequent_imputation/df1e-7Hz/single_model/"
     filepaths = [base, base, base]
     prefixes = ["2019-03-19_15h33-05", "2019-03-19_15h30-59", "2019-05-06_16h24-04"]
-    maskname = 'random'
-
-
-
-
+    maskname = "random"
 
     # # For 2 sources and randgaps and df = 1e-8Hz
     # # base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/results_2sources/df=1e-8Hz/double_model/"
@@ -749,9 +809,6 @@ if __name__ == '__main__':
     # prefixes = ["2019-03-19_15h41-45", "2019-03-19_15h30-34", "2019-03-19_15h54-12"]
     # maskname = 'random'
 
-
-
-
     # # For 2 sources and randgaps and df = 1e-9Hz
     # # base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/results_2sources/df=1e-9Hz/double_model/"
     # base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/results_2sources_same_amp/df1e-9Hz/double_model/"
@@ -768,8 +825,6 @@ if __name__ == '__main__':
     # prefixes = ["2019-03-19_15h45-34", "2019-03-19_15h35-53", "2019-03-19_15h53-26"]
     # maskname = 'random'
 
-
-
     # # For 2 sources and randgaps and df = 1e-10Hz
     # base = "/Users/qbaghi/Codes/data/results_ptemcee/discover/results_2sources_same_amp/df1e-10Hz/double_model/"
     # filepaths = [base, base, base]
@@ -784,8 +839,6 @@ if __name__ == '__main__':
     # # prefixes = ["2019-03-18_19h51-43", "2019-03-18_19h45-04", "2019-03-18_19h22-25"]
     # prefixes = ["2019-03-19_15h41-44", "2019-03-19_19h00-21", "2019-03-19_19h24-37"]
     # maskname = 'random'
-
-
 
     # ANTENNA GAPS
 
@@ -842,35 +895,45 @@ if __name__ == '__main__':
     # prefixes = ["2019-03-19_15h41-44", "2019-03-20_17h16-28", "2019-03-20_17h26-47"]
     # maskname = 'periodic'
 
-
     # ==========================================================================
     # Load configuration file
     # ==========================================================================
 
-    filenames = [pre + '_chain_full2.hdf5' for pre in prefixes]
-    noisenames = [pre + '__psd.hdf5' for pre in prefixes]
+    filenames = [pre + "_chain_full2.hdf5" for pre in prefixes]
+    noisenames = [pre + "__psd.hdf5" for pre in prefixes]
 
     # signal_name = "chains/chain/"
     # signal_name = "chain"
 
-
     # config_file = '/Users/qbaghi/Codes/python/inference/configs/wgmcmc_config_lowSNR_mono_2sources.txt'
     # config_file = '/Users/qbaghi/Codes/python/inference/configs/ptemcee_config_2e-4Hz_gaps.txt'
-    config_file = filepaths[0] + prefixes[0] + '_config.txt'
-
+    config_file = filepaths[0] + prefixes[0] + "_config.txt"
 
     # ==========================================================================
     # Load TDI data
     # ==========================================================================
     conf = load_mcmc_config.loadconfig(config_file)
-    hdf5_name = '/Users/qbaghi/Codes/data/simulations/' + os.path.basename(conf.hdf5_name)
+    hdf5_name = "/Users/qbaghi/Codes/data/simulations/" + os.path.basename(
+        conf.hdf5_name
+    )
     dTDI, p, truths, labels, ts, Tobs = loadtdi(hdf5_name)
 
     # ==========================================================================
     # Load MCMC results
     # ==========================================================================
-    sample_list, logp_list, logl_list, bayes_list, bayes_std_list, f0, gaps, prefix, sufix = \
-        load_mcmc_results(base, filepaths, filenames, noisenames, prefixes, maskname, conf)
+    (
+        sample_list,
+        logp_list,
+        logl_list,
+        bayes_list,
+        bayes_std_list,
+        f0,
+        gaps,
+        prefix,
+        sufix,
+    ) = load_mcmc_results(
+        base, filepaths, filenames, noisenames, prefixes, maskname, conf
+    )
     ndim = sample_list[0].shape[1]
 
     # Number of standard deviation fold to plot
@@ -879,36 +942,30 @@ if __name__ == '__main__':
     # To center the posterior distribution on zero
     frequency_offset = True
 
-
-
-
-
-
-
     # =========================================================================
     # PLot data
     # =========================================================================
     # import seaborn as sns
     # sns.set(style="white", palette="muted", color_codes=True)
     mpl.rcdefaults()
-    mpl.rcParams['font.family'] = 'serif'
-    mpl.rcParams['xtick.major.size'] = 6
-    mpl.rcParams['ytick.major.size'] = 6
-    mpl.rcParams['xtick.minor.size'] = 3
-    mpl.rcParams['ytick.minor.size'] = 3
-    mpl.rcParams['axes.linewidth'] = 2
-    mpl.rcParams['text.usetex'] = True
-    mpl.rcParams['xtick.labelsize'] = 12
-    mpl.rcParams['ytick.labelsize'] = 12
-    mpl.rcParams['axes.labelsize'] = 16
-    mpl.rcParams['xtick.major.width'] = 1
-    mpl.rcParams['ytick.major.width'] = 1
-    mpl.rcParams['xtick.minor.width'] = 1
-    mpl.rcParams['ytick.minor.width'] = 1
+    mpl.rcParams["font.family"] = "serif"
+    mpl.rcParams["xtick.major.size"] = 6
+    mpl.rcParams["ytick.major.size"] = 6
+    mpl.rcParams["xtick.minor.size"] = 3
+    mpl.rcParams["ytick.minor.size"] = 3
+    mpl.rcParams["axes.linewidth"] = 2
+    mpl.rcParams["text.usetex"] = True
+    mpl.rcParams["xtick.labelsize"] = 12
+    mpl.rcParams["ytick.labelsize"] = 12
+    mpl.rcParams["axes.labelsize"] = 16
+    mpl.rcParams["xtick.major.width"] = 1
+    mpl.rcParams["ytick.major.width"] = 1
+    mpl.rcParams["xtick.minor.width"] = 1
+    mpl.rcParams["ytick.minor.width"] = 1
     # mpl.rcParams['lines.markeredgewidth'] = 1
-    mpl.rcParams['lines.linewidth'] = 1
+    mpl.rcParams["lines.linewidth"] = 1
     # mpl.rcParams['legend.handletextpad'] = 0.3
-    mpl.rcParams['legend.fontsize'] = 14
+    mpl.rcParams["legend.fontsize"] = 14
     # # mpl.rcParams['figure.figsize'] = 8, 6
     # # mpl.rcParams['text.usetex'] = True
     # mpl.rcParams['figure.autolayout'] = True
@@ -929,7 +986,7 @@ if __name__ == '__main__':
     if ndim == 3:
         nsig = k_sig * np.ones(ndim)
         # nsig = 15 * np.ones(ndim)
-        #rscales = [1.0, 1.0, 1.0e3]
+        # rscales = [1.0, 1.0, 1.0e3]
         rscales = [1.0, 1.0, 1.0e9]
         offset = np.zeros(ndim)
 
@@ -956,16 +1013,26 @@ if __name__ == '__main__':
 
     sigmas = [np.std(sample_list[j0][:, i]) for i in range(ndim)]
     # limits = [(truths[i]-nsig*sigmas[i],truths[i]+nsig*sigmas[i]) for i in range(ndim)]
-    limits = [(sample_list[j0][imap, i] - nsig[i] * sigmas[i],
-               sample_list[j0][imap, i] + nsig[i] * sigmas[i]) for i in range(ndim)]
+    limits = [
+        (
+            sample_list[j0][imap, i] - nsig[i] * sigmas[i],
+            sample_list[j0][imap, i] + nsig[i] * sigmas[i],
+        )
+        for i in range(ndim)
+    ]
 
-    limits = [((limits[i][0]-offset[i])*rscales[i], (limits[i][1]-offset[i])*rscales[i]) for i in range(len(limits))]
+    limits = [
+        (
+            (limits[i][0] - offset[i]) * rscales[i],
+            (limits[i][1] - offset[i]) * rscales[i],
+        )
+        for i in range(len(limits))
+    ]
 
     # limits = None
-    colors = ['black', 'gray', 'blue']
-    cases = ['Complete data', 'Gaps, window method', 'Gaps, DA method']
-    caselabels = ['complete', 'window', 'da']
-
+    colors = ["black", "gray", "blue"]
+    cases = ["Complete data", "Gaps, window method", "Gaps, DA method"]
+    caselabels = ["complete", "window", "da"]
 
     # ==================================================================================================================
     # SKYMAP generation
@@ -985,13 +1052,12 @@ if __name__ == '__main__':
     #                  radecs=[(truths[1] + np.pi)*180/np.pi, (truths[0] - np.pi/2)*180/np.pi],
     #                  contour=[90], inset=True)
 
-    #mpl.rcParams['text.usetex'] = True
+    # mpl.rcParams['text.usetex'] = True
     # load_healpix_map("/Users/qbaghi/Codes/data/results_ptemcee/posteriors/", fitsoutname='skymap_multires.fits.gz',
     #                  radecs=[],
     #                  contour=[90], annotate=False)
 
     # create_sample_file(sample_list[0], "/Users/qbaghi/Codes/data/results_ptemcee/posteriors/SAMPLES.hdf5")
-
 
     # # ==================================================================================================================
     # # 2D Joint posterior plot using seaborn
@@ -1025,20 +1091,29 @@ if __name__ == '__main__':
     #
     # plt.show()
 
-
     # ==================================================================================================================
     # Corner plot using corner.py
     # ==================================================================================================================
 
-    fig, axes = cornerplot(sample_list, truths, offset, rscales, labels, colors=colors, limits=limits,
-                           fontsize=16, bins=50, truth_color='cadetblue', figsize=(8, 7.5), linewidth=1.5)
+    fig, axes = cornerplot(
+        sample_list,
+        truths,
+        offset,
+        rscales,
+        labels,
+        colors=colors,
+        limits=limits,
+        fontsize=16,
+        bins=50,
+        truth_color="cadetblue",
+        figsize=(8, 7.5),
+        linewidth=1.5,
+    )
 
     # plt.savefig('/Users/qbaghi/Documents/studies/gaps/mcmc_superimposed/' + prefix + f0 + '_' + gaps + sufix + '.pdf')
     #
     # plt.savefig('/Users/qbaghi/Documents/studies/gaps/mcmc_superimposed/' + prefix + 'frequency_' + f0 + '_'
     #             + gaps + sufix + '.pdf')
-
-
 
     # =========================================================================
     # Grid of corner plots using sns
@@ -1175,11 +1250,11 @@ if __name__ == '__main__':
 
     #    [axes[1,i].set_ylim(limits[i]) for i in range(len(limits))]
     #    [axes[0,i].set_ylim(limits[i]) for i in range(len(limits))]
-       #[axes[i].set_xticks(fontsize=14) for i in range(len(labels))]
-       #plt.yticks(fontsize=14)
-    #axes[0].legend(loc=4, fontsize=10)
-       #plt.tight_layout()
-       #plt.axvline(x=truths[2], color = 'green',linewidth = 2, linestyle = 'dashed')#, linestyle=(0, (1, 3)))
+    # [axes[i].set_xticks(fontsize=14) for i in range(len(labels))]
+    # plt.yticks(fontsize=14)
+    # axes[0].legend(loc=4, fontsize=10)
+    # plt.tight_layout()
+    # plt.axvline(x=truths[2], color = 'green',linewidth = 2, linestyle = 'dashed')#, linestyle=(0, (1, 3)))
 
     # axes.set_xlabel(labels[2], fontsize=20)
     # # axes.set_xlim(limits[2])
@@ -1191,8 +1266,6 @@ if __name__ == '__main__':
     # # plt.savefig('/Users/qbaghi/Documents/studies/gaps/mcmc_superimposed/histograms_'+f0+'_'+gaps+'.pdf')
     # plt.savefig('/Users/qbaghi/Documents/studies/gaps/mcmc_superimposed/frequency_histogram_' + f0 + '_' + gaps + '.pdf')
     # plt.show()
-
-
 
     # # =========================================================================
     # # Single histograms FOR 2 SOURCES
@@ -1284,13 +1357,6 @@ if __name__ == '__main__':
     # # plt.savefig('/Users/qbaghi/Documents/studies/gaps/mcmc_superimposed/'+prefix+'frequency_hist_' + f0 + '_' + gaps + '.pdf')
     # plt.show()
 
-
-
-
-
-
-
-
     # # ==========================================================================
     # # Barplots for Bayes factors
     # # ==========================================================================
@@ -1327,13 +1393,9 @@ if __name__ == '__main__':
     #                                     "Gapped data, DA method": logB_DA,
     #                                      "Df": [r'$10^{-7}$', r'$10^{-8}$', r'$10^{-9}$']})
 
-
-
-
-
     #
     # sns.barplot(x='Df', y=["Complete data", "Gapped data, windowing", "Gapped data, DA method"], data=df_bfactors)
 # "Df": [r'$10^{-7}$', r'$10^{-8}$', r'$10^{-9}$'
-    # df_bars = pandas.DataFrame(data=np.hstack(Y).T,
-    #                            columns=['Complete data', 'Gapped data, windowing', 'Gapped data, DA method'],
-    #                            index=delta_f)
+# df_bars = pandas.DataFrame(data=np.hstack(Y).T,
+#                            columns=['Complete data', 'Gapped data, windowing', 'Gapped data, DA method'],
+#                            index=delta_f)

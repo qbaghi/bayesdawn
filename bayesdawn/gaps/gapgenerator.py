@@ -16,34 +16,36 @@ def modified_hann(n_data, n_wind=60):
     if 2 * n_wind <= n_data:
         n_w = copy.copy(n_wind)
     else:
-        n_w = int(n_wind / 2.)
-        warnings.warn("Size of window decay is larger than half the window size",
-                      UserWarning)
+        n_w = int(n_wind / 2.0)
+        warnings.warn(
+            "Size of window decay is larger than half the window size", UserWarning
+        )
 
     # w[0:n_w] = 0.5 * ( 1 - np.cos( 2*np.pi * n[0:n_w] / (2*n_w) ) )
     w[0:n_w] = 0.5 * (1 - np.cos(np.pi * n[0:n_w] / n_w))
 
     # w[n_data-n_w:] = 0.5 * ( 1 - np.cos( 2*np.pi * (n[n_data-n_w:]-n_data+1+2*n_w) / (2*n_w) ) )
-    w[n_data - n_w:] = 0.5 * \
-        (1 - np.cos(np.pi * (n[n_data - n_w:] - n_data + 1) / n_w))
+    w[n_data - n_w :] = 0.5 * (
+        1 - np.cos(np.pi * (n[n_data - n_w :] - n_data + 1) / n_w)
+    )
 
     return w
 
 
-def windowing(nd, nf, n, window='rect', n_wind=160):
+def windowing(nd, nf, n, window="rect", n_wind=160):
     """
-    Function that produces a mask vector M from the index locations of gaps 
-    edges. The non-zero values can be chosen to be just ones (rectangular 
-    window, default) or apodization windows smoothly going to zero at the gap 
+    Function that produces a mask vector M from the index locations of gaps
+    edges. The non-zero values can be chosen to be just ones (rectangular
+    window, default) or apodization windows smoothly going to zero at the gap
     edges.
 
     Parameters
     ----------
-    nd : array_like 
+    nd : array_like
         vector containing the indices of the begening of each hole. has size
         nh x 1 where nh is the number of holes
-    nf : array_like 
-        vector containing the indices of the end of each hole, size nh x 1 
+    nf : array_like
+        vector containing the indices of the end of each hole, size nh x 1
         where nh is the number of holes
     n : int
         size of the data
@@ -69,29 +71,37 @@ def windowing(nd, nf, n, window='rect', n_wind=160):
     # Windowed mask initialization
     mw = np.zeros((n))
 
-    if window == 'rect':
-        def windowfunc(x): return np.ones(x)
+    if window == "rect":
+
+        def windowfunc(x):
+            return np.ones(x)
+
         # First window
-        mw[0:nd[0]] = windowfunc(nd[0])
+        mw[0 : nd[0]] = windowfunc(nd[0])
 
         for k in range(0, nh - 1):
-            mw[nf[k]:nd[k + 1]] = windowfunc(nd[k + 1] - nf[k])
+            mw[nf[k] : nd[k + 1]] = windowfunc(nd[k + 1] - nf[k])
 
         # last window :
-        mw[nf[nh - 1]:n] = windowfunc(n - nf[nh - 1])
+        mw[nf[nh - 1] : n] = windowfunc(n - nf[nh - 1])
 
     else:
+        if window == "hann":
 
-        if window == 'hann':
-            def windowfunc(x): return np.hanning(x)
-        elif window == 'blackman':
-            def windowfunc(x): return np.blackman(x)
-        elif window == 'modified_hann':
-            def windowfunc(x): return modified_hann(x, n_wind)
+            def windowfunc(x):
+                return np.hanning(x)
+        elif window == "blackman":
+
+            def windowfunc(x):
+                return np.blackman(x)
+        elif window == "modified_hann":
+
+            def windowfunc(x):
+                return modified_hann(x, n_wind)
 
         # First window
         # we want that the window has value zero at entry n = Nd[0]
-        mw[0:nd[0] + 1] = windowfunc(nd[0] + 2)[1:]
+        mw[0 : nd[0] + 1] = windowfunc(nd[0] + 2)[1:]
         #
         #        for k in range(0,nh-1) :
         #
@@ -101,7 +111,7 @@ def windowing(nd, nf, n, window='rect', n_wind=160):
         #            mw[Nf[k]+1:Nd[k+1]+1] = windowfunc(Nd[k+1] - Nf[k])
         #
         # last window :
-        mw[nf[nh - 1] - 1:n] = windowfunc(n - nf[nh - 1] + 2)[:-1]
+        mw[nf[nh - 1] - 1 : n] = windowfunc(n - nf[nh - 1] + 2)[:-1]
 
         # Extend to take into account beginning and end of time series
         #        Nde = np.concatenate(([-1],Nd,[n_data]))
@@ -110,13 +120,22 @@ def windowing(nd, nf, n, window='rect', n_wind=160):
             # We have mw[Nf[k]] = 1 (end of gap), so we don't want the window
             # to be zero here.
             # We also have mw[Nd[k+1]] = 0. The window must end here.
-            mw[nf[k] - 1:nd[k + 1] + 1] = windowfunc(nd[k + 1] - nf[k] + 2)
+            mw[nf[k] - 1 : nd[k + 1] + 1] = windowfunc(nd[k + 1] - nf[k] + 2)
 
     return mw
 
 
-def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
-                 wind_type='rect', std_loc=0, std_dur=0):
+def generategaps(
+    n_data,
+    fs,
+    n_gaps,
+    t_gaps,
+    gap_type="random",
+    f_gaps=1e-2,
+    wind_type="rect",
+    std_loc=0,
+    std_dur=0,
+):
     """
     Function that generates the indices of begening and end of data holes, and
     then uses the windowing function to creates the corresponding mask vector.
@@ -152,8 +171,7 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
 
     np.random.seed()
 
-    if 'random' in gap_type:  # N_gaps of T_gaps seconds
-
+    if "random" in gap_type:  # N_gaps of T_gaps seconds
         # Taille du trou en nombre de points
         if isinstance(t_gaps, (int, float, int, np.float64)):
             d_n = int(t_gaps * fs) * np.ones(n_gaps)
@@ -161,15 +179,13 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
         elif isinstance(t_gaps, (list, tuple, np.ndarray)):
             d_n = np.array(fs * t_gaps).astype(int)
         # Small deviations in the gap duration
-        d_n = d_n + std_dur * fs * \
-            np.random.normal(loc=0.0, scale=1.0, size=len(d_n))
+        d_n = d_n + std_dur * fs * np.random.normal(loc=0.0, scale=1.0, size=len(d_n))
         # Uniform random location of gaps
-        if 'poisson' in gap_type:
+        if "poisson" in gap_type:
             # Calculate the average inter-gap inverval
             inter_gap_mean = (n_data - np.sum(d_n)) / (n_gaps + 1)
             # Draw the inter-gap durations from a Poisson distribution
-            inter_gap = np.random.exponential(
-                scale=inter_gap_mean, size=n_gaps)
+            inter_gap = np.random.exponential(scale=inter_gap_mean, size=n_gaps)
             # Set the gaps locations
             nd = np.empty(n_gaps, dtype=int)
             ref_point = 0
@@ -192,8 +208,7 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
         nf = nf[inds]
         nd = nd[inds]
 
-    elif gap_type == 'periodic':
-
+    elif gap_type == "periodic":
         # Number of holes :
         n_gaps = int(f_gaps * n_data / fs)
         print("Warning: number of gaps derived from f_gaps: " + str(n_gaps))
@@ -202,11 +217,13 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
         # Calculate CDF for all n
         nd = np.arange(fs / f_gaps, n_data, fs / f_gaps).astype(int)
         # Introduce some randomness on the gap locations
-        nd = (nd + std_loc * fs * np.random.normal(loc=0.0,
-                                                   scale=1.0, size=len(nd))).astype(int)
+        nd = (
+            nd + std_loc * fs * np.random.normal(loc=0.0, scale=1.0, size=len(nd))
+        ).astype(int)
         # Length of gaps in term of data points, including possible deviations
-        d_n = t_gaps * fs + std_dur * fs * \
-            np.random.normal(loc=0.0, scale=1.0, size=len(nd))
+        d_n = t_gaps * fs + std_dur * fs * np.random.normal(
+            loc=0.0, scale=1.0, size=len(nd)
+        )
         d_n = d_n.astype(int)
         # d_n = (T_gaps*fs*np.ones(len(nd))).astype(int)
 
@@ -215,8 +232,7 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
         # Sort the holes
         # Remove overlapping
         for k in range(len(nd) - 1):
-
-            if (nd[k + 1] - nd[k] <= d_n[k]):
+            if nd[k + 1] - nd[k] <= d_n[k]:
                 nd[k + 1] = nd[k] + d_n[k]
                 nf[k + 1] = nf[k] + d_n[k]
         # Keep only hole locations that do not exceed data span
@@ -224,7 +240,7 @@ def generategaps(n_data, fs, n_gaps, t_gaps, gap_type='random', f_gaps=1e-2,
         nd = nd[nf < n_data - 1]
 
     else:
-        raise ValueError('Unknown gap type')
+        raise ValueError("Unknown gap type")
 
     return nd, nf
 
@@ -252,7 +268,6 @@ def find_ends(m):
 
     nd_eff = np.append(nd_eff, i_mis[0])
     for n in range(n_mis - 1):
-
         # If the next hole is not just after this one
         if i_mis[n + 1] != i_mis[n] + 1:
             # End of holes is just after
@@ -297,7 +312,7 @@ def segmentwise(y, M):
     seg_ends = np.concatenate((Nd, [len(M)]))
     # segment_ffts = [fft(y[seg_starts[j]:seg_ends[j]],n=n) for j in range(len(seg_starts))]
 
-    return [y[seg_starts[j]:seg_ends[j]] for j in range(len(seg_starts))]
+    return [y[seg_starts[j] : seg_ends[j]] for j in range(len(seg_starts))]
 
 
 # y_segs = gg.segmentwise(data,self.M)
@@ -361,19 +376,16 @@ def select_freq(f_segs, Tstarts, Tends, f1, f2):
     return freqs, T1, T2, inds_freq, ipos
 
 
-if __name__ == '__main__':
-
+if __name__ == "__main__":
     import h5py
-    import time
     import datetime
-    from matplotlib import pyplot as plt
 
-    N = 2 ** 22
+    N = 2**22
     fs = 0.1
     ts = 10
 
     # wind_type = 'rect'
-    wind_type = 'modified_hann'
+    wind_type = "modified_hann"
 
     # gap_config = "antenna"
     # gap_config = "random"
@@ -381,59 +393,86 @@ if __name__ == '__main__':
     # gap_config = "micrometeorites"
 
     if gap_config == "antenna":
-
         # Gap frequency
         # f_gaps = 1/(10*3600.*24)
-        f_gaps = 2 / (10 * 3600. * 24)
+        f_gaps = 2 / (10 * 3600.0 * 24)
         # Gap location deviation
         std_loc = 3600 * 24
         # Gap duration
         # L_gaps = 2*3600.
-        L_gaps = 3600.
+        L_gaps = 3600.0
         # Gap duration deviation
         std_dur = 10 * 60
 
-        M = generategaps(N, fs, int(N * ts * f_gaps), L_gaps,
-                         gap_type='periodic', f_gaps=f_gaps, wind_type=wind_type,
-                         std_loc=std_loc, std_dur=std_dur)
+        M = generategaps(
+            N,
+            fs,
+            int(N * ts * f_gaps),
+            L_gaps,
+            gap_type="periodic",
+            f_gaps=f_gaps,
+            wind_type=wind_type,
+            std_loc=std_loc,
+            std_dur=std_dur,
+        )
 
     elif gap_config == "micrometeorites":
-
         # Gap frequency
-        f_gaps = 1 / (3600. * 24)
+        f_gaps = 1 / (3600.0 * 24)
         # Gap location deviation
-        std_loc = 3600.
+        std_loc = 3600.0
         # Gap duration
-        L_gaps = 10 * 60.
+        L_gaps = 10 * 60.0
         # Gap duration deviation
-        std_dur = 60.
+        std_dur = 60.0
 
-        M = generategaps(N, fs, int(N * ts * f_gaps), L_gaps,
-                         gap_type='random_poisson', f_gaps=f_gaps, wind_type=wind_type,
-                         std_loc=std_loc, std_dur=std_dur)
+        M = generategaps(
+            N,
+            fs,
+            int(N * ts * f_gaps),
+            L_gaps,
+            gap_type="random_poisson",
+            f_gaps=f_gaps,
+            wind_type=wind_type,
+            std_loc=std_loc,
+            std_dur=std_dur,
+        )
 
     elif gap_config == "random":
-
         # Gap frequency
-        f_gaps = 1 / (3600. * 24)
+        f_gaps = 1 / (3600.0 * 24)
         # Gap location deviation
-        std_loc = 3600.
+        std_loc = 3600.0
         # Gap duration
-        L_gaps = 10 * 60.
+        L_gaps = 10 * 60.0
         # Gap duration deviation
-        std_dur = 60.
+        std_dur = 60.0
 
-        M = generategaps(N, fs, int(N * ts * f_gaps), L_gaps,
-                         gap_type='random', f_gaps=f_gaps, wind_type=wind_type,
-                         std_loc=std_loc, std_dur=std_dur)
+        M = generategaps(
+            N,
+            fs,
+            int(N * ts * f_gaps),
+            L_gaps,
+            gap_type="random",
+            f_gaps=f_gaps,
+            wind_type=wind_type,
+            std_loc=std_loc,
+            std_dur=std_dur,
+        )
 
     elif gap_config == "periodic":
-
         f_gaps = 1 / (14 * 3600 * 24)
         # f_gaps = 1/86400.
-        L_gaps = 7 * 3600.
-        M = generategaps(N, fs, int(N * ts * f_gaps), L_gaps,
-                         gap_type='periodic', f_gaps=f_gaps, wind_type=wind_type)
+        L_gaps = 7 * 3600.0
+        M = generategaps(
+            N,
+            fs,
+            int(N * ts * f_gaps),
+            L_gaps,
+            gap_type="periodic",
+            f_gaps=f_gaps,
+            wind_type=wind_type,
+        )
 
     # file_path = "/Users/qbaghi/Codes/data/masks/"
     # file_name = gap_config
@@ -448,19 +487,19 @@ if __name__ == '__main__':
     file_path = "/Users/qbaghi/Codes/data/masks/"
 
     file_name1 = file_path + "2018-10-29_15h22-12_mask_antenna.hdf5"
-    fh5 = h5py.File(file_name1, 'r')
-    M1 = fh5['mask'].value
+    fh5 = h5py.File(file_name1, "r")
+    M1 = fh5["mask"].value
     fh5.close()
 
     file_name2 = file_path + "2018-11-14_15h48-51_mask_micrometeorites.hdf5"
-    fh5 = h5py.File(file_name2, 'r')
-    M2 = fh5['mask'].value
+    fh5 = h5py.File(file_name2, "r")
+    M2 = fh5["mask"].value
     fh5.close()
 
     Nd1, Nf1 = find_ends(M1)
     Nd2, Nf2 = find_ends(M2)
-    MW1 = windowing(Nd1, Nf1, N, window='modified_hann', n_wind=260)
-    MW2 = windowing(Nd2, Nf2, N, window='modified_hann', n_wind=260)
+    MW1 = windowing(Nd1, Nf1, N, window="modified_hann", n_wind=260)
+    MW2 = windowing(Nd2, Nf2, N, window="modified_hann", n_wind=260)
 
     #
     # # Prepare data files to save
@@ -472,9 +511,9 @@ if __name__ == '__main__':
 
     # Prepare data files to save
     now = datetime.datetime.now()
-    fh5 = h5py.File(file_name1[:-5] + '_hann260.hdf5', 'w')
+    fh5 = h5py.File(file_name1[:-5] + "_hann260.hdf5", "w")
     fh5.create_dataset("mask", data=MW1)
     fh5.close()
-    fh5 = h5py.File(file_name2[:-5] + '_hann260.hdf5', 'w')
+    fh5 = h5py.File(file_name2[:-5] + "_hann260.hdf5", "w")
     fh5.create_dataset("mask", data=MW2)
     fh5.close()

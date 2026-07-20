@@ -4,15 +4,19 @@ Created on Tue Jan 22 17:11:56 2019
 
 @author: qbaghi
 """
+
 import numpy as np
 from scipy import linalg
+
 # FTT modules
 import pyfftw
 from pyfftw.interfaces.numpy_fft import fft, ifft
+
 # from .waveforms import lisaresp
 from . import gaps
 from .utils import physics
 from .algebra import matrixalgebra
+
 pyfftw.interfaces.cache.enable()
 
 
@@ -64,7 +68,8 @@ def gls(mat_fft, psd, y_fft):
     mat_fft_weighed = mat_fft / np.array([psd]).T
 
     return linalg.pinv(mat_fft_weighed.conj().T.dot(mat_fft)).dot(
-        mat_fft_weighed.conj().T.dot(y_fft))
+        mat_fft_weighed.conj().T.dot(y_fft)
+    )
 
 
 # class LikelihoodModel(object):
@@ -617,15 +622,25 @@ def gls(mat_fft, psd, y_fft):
 
 
 class LogLike(object):
-
-    def __init__(self, data, sn, inds, tobs, del_t,
-                 signal_func,
-                 signal_reduced_func,
-                 signal_args=[],
-                 signal_kwargs={},
-                 normalized=False, channels=None,
-                 model_cls=None, psd_cls=None, wd=None, wd_full=None,
-                 gap_convolution=False):
+    def __init__(
+        self,
+        data,
+        sn,
+        inds,
+        tobs,
+        del_t,
+        signal_func,
+        signal_reduced_func,
+        signal_args=[],
+        signal_kwargs={},
+        normalized=False,
+        channels=None,
+        model_cls=None,
+        psd_cls=None,
+        wd=None,
+        wd_full=None,
+        gap_convolution=False,
+    ):
         """
 
         Parameters
@@ -645,25 +660,25 @@ class LogLike(object):
         normalized : boolean
             whether to apply normalization constant for the log-likelihood
         signal_func : callable
-            GW waveform generator function, taking the full sampling parameter 
-            vector and a frequency vector as input, and outputing a list of 
-            waveforms in the frequency domain (one for each channel). 
-            The amplitude should be normalized as the discrete Fourier 
+            GW waveform generator function, taking the full sampling parameter
+            vector and a frequency vector as input, and outputing a list of
+            waveforms in the frequency domain (one for each channel).
+            The amplitude should be normalized as the discrete Fourier
             transform multiplied by the sampling time (like data_dft).
         signal_reduced_func : callable
-            GW waveform generator function, taking as input the intrinsic 
-            sampling parameter vector, a frequency vector, 
-            the discrete Fourier transformed data vector list, and the PSD 
-            list. It should output a list of waveforms in the frequency domain 
-            (one for each channel). 
-            The amplitude shouldbe normalized as the discrete Fourier transform 
+            GW waveform generator function, taking as input the intrinsic
+            sampling parameter vector, a frequency vector,
+            the discrete Fourier transformed data vector list, and the PSD
+            list. It should output a list of waveforms in the frequency domain
+            (one for each channel).
+            The amplitude shouldbe normalized as the discrete Fourier transform
             multiplied by the sampling time (like data_dft).
         signal_args : list
-            list of secondary arguments to pass to signal_func or 
+            list of secondary arguments to pass to signal_func or
             signal_reduced_func
         signal_kargs : dictionnary
-            list of keyword arguments to pass to signal_func or 
-            signal_reduced_func           
+            list of keyword arguments to pass to signal_func or
+            signal_reduced_func
         channels : list of ints
             TDI channels to consider
         model_cls : bayesdawn.datamodel.GaussianStationaryModel instance
@@ -689,7 +704,7 @@ class LogLike(object):
         # Fourier bin indices where we restrict the analysis
         # intersect, self.inds, comm2 = np.intersect1d(self.f, freq)
         self.inds = inds
-        
+
         # Waveform generators
         self.signal_func = signal_func
         self.signal_reduced_func = signal_reduced_func
@@ -713,8 +728,9 @@ class LogLike(object):
         self.resc_full = self.n_data / np.sum(self.wd_full)
         # Convert time data to frequency domain and restrict it to the band of
         # interest
-        self.data_dft = [fft(self.wd * dat)[self.inds] * self.del_t * self.resc
-                         for dat in self.data]
+        self.data_dft = [
+            fft(self.wd * dat)[self.inds] * self.del_t * self.resc for dat in self.data
+        ]
 
         if normalized:
             self.ll_norm = self.log_norm(self.data_dft, sn)
@@ -752,12 +768,14 @@ class LogLike(object):
 
         # Estimate PSD parameters from the residuals in the time domain,
         # in the first TDI channel.
-        [self.psd_list[i].estimate(data[i] - y_gw_list[i], wind='hanning')
-         for i in range(len(data))]
+        [
+            self.psd_list[i].estimate(data[i] - y_gw_list[i], wind="hanning")
+            for i in range(len(data))
+        ]
         # Calculate the spectrum in the estimation band
         sn = [psd.calculate(self.f[self.inds]) for psd in self.psd_list]
         # It is currently x fs / 2. Should correct for that.
-        
+
         return sn
 
     def update_missing_data(self, y_gw_list):
@@ -774,7 +792,7 @@ class LogLike(object):
         Nothing, just update the attribute self.data_dft
 
         """
-        
+
         # Update Gaussian process mean
         self.model.update_mean(y_gw_list)
         # Impute missing data
@@ -782,12 +800,11 @@ class LogLike(object):
         # Transform back to Fourier domain, applying the windowing for complete
         # time series, with re-scaling
         resc = self.del_t * self.resc_full
-        data_dft = [fft(y_imp0 * self.wd_full)[self.inds] * resc
-                    for y_imp0 in y_imp]
+        data_dft = [fft(y_imp0 * self.wd_full)[self.inds] * resc for y_imp0 in y_imp]
         # self.data_dft = data_dft[:]
-        
+
         return y_imp, data_dft
-    
+
     def compute_signal(self, par):
         """
         Compute the GW signal in the frequency domain
@@ -795,25 +812,25 @@ class LogLike(object):
         Parameters
         ----------
         par : array_like
-            array of sampling parameters 
+            array of sampling parameters
             [Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0]
 
         Returns
         -------
         ch_list : list[ndarray]
-            list of frequency-domain signal for each channel. Should be 
-            directly comparable to the Fourier-transformed data with the 
+            list of frequency-domain signal for each channel. Should be
+            directly comparable to the Fourier-transformed data with the
             following normalization:
-            FFT(y) * scale * del_t, where del_t is the sampling time and 
+            FFT(y) * scale * del_t, where del_t is the sampling time and
             scale is any rescaling factor applied to the data.
             This waveform generator does not account for any smooth windowing.
 
         """
-        
-        return self.signal_func(par, self.f[self.inds], 
-                                *self.signal_args,
-                                **self.signal_kwargs)
-        
+
+        return self.signal_func(
+            par, self.f[self.inds], *self.signal_args, **self.signal_kwargs
+        )
+
     def compute_signal_reduced(self, par_intr, data_dft, sn):
         """
 
@@ -823,7 +840,7 @@ class LogLike(object):
             vector of intrinsic waveform parameters in the following order:
             [Mc, q, tc, chi1, chi2, sb, lam]
         data_dft :  list[ndarray]
-            List of windowed frequency-domain data restricted to the band 
+            List of windowed frequency-domain data restricted to the band
             of interest
         sn : list of ndarrays
             list of noise PSDs computed at freq for each channel
@@ -834,16 +851,18 @@ class LogLike(object):
             list of complex GW strains for each channel
 
         """
-        return self.signal_reduced_func(par_intr, self.f[self.inds], data_dft,
-                                        sn, 
-                                        *self.signal_args,
-                                        **self.signal_kwargs)
-        
+        return self.signal_reduced_func(
+            par_intr,
+            self.f[self.inds],
+            data_dft,
+            sn,
+            *self.signal_args,
+            **self.signal_kwargs,
+        )
 
-    def update_auxiliary_params(self, par, par_aux, 
-                                reduced=True,
-                                update_mis=True,
-                                update_psd=True):
+    def update_auxiliary_params(
+        self, par, par_aux, reduced=True, update_mis=True, update_psd=True
+    ):
         """
         Update auxiliary parameters (PSD + data).
 
@@ -861,11 +880,14 @@ class LogLike(object):
             If True, perform PSD estimation step to update PSD
         """
         # Extract Fourier-domain data
-        data_dft = [par_aux[i*self.nf:(i+1)*self.nf] 
-                    for i in range(len(self.channels))]
+        data_dft = [
+            par_aux[i * self.nf : (i + 1) * self.nf] for i in range(len(self.channels))
+        ]
         # Extract PSD
-        sn = [par_aux[i*self.nf:(i+1)*self.nf] 
-                for i in range(2, 2 + len(self.channels))]
+        sn = [
+            par_aux[i * self.nf : (i + 1) * self.nf]
+            for i in range(2, 2 + len(self.channels))
+        ]
 
         if (self.psd_list is not None) | (self.model is not None):
             # Compute waveform template in the frequency domain
@@ -874,8 +896,9 @@ class LogLike(object):
             else:
                 at, et = self.compute_signal(par)
             # Convert the signal in the time domain (factor 1 / del_t incluced)
-            y_gw_list = [self.frequency_to_time(y_gw_fft_pos)
-                         for y_gw_fft_pos in [at, et]]
+            y_gw_list = [
+                self.frequency_to_time(y_gw_fft_pos) for y_gw_fft_pos in [at, et]
+            ]
         # Update missing data if requested
         if update_mis:
             data, data_dft = self.update_missing_data(y_gw_list)
@@ -897,11 +920,11 @@ class LogLike(object):
         """
         Compute normalizing constant for the log-likelihood
 
-        
+
         Parameters
         ----------
         data_dft :  list[ndarray]
-            List of windowed frequency-domain data restricted to the band 
+            List of windowed frequency-domain data restricted to the band
             of interest
         sn : list of ndarrays
             list of noise PSDs computed at freq for each channel
@@ -913,10 +936,14 @@ class LogLike(object):
 
         """
 
-        ll_norm = - self.nf/2 * np.log(2 * np.pi * 2 * self.del_t)
-        ll_norm += sum([- 0.5 * np.sum(np.log(sn[i]))
-                        - 0.5 * np.sum(np.abs(data_dft[i]) ** 2 / sn[i])
-                        for i in range(len(data_dft))])
+        ll_norm = -self.nf / 2 * np.log(2 * np.pi * 2 * self.del_t)
+        ll_norm += sum(
+            [
+                -0.5 * np.sum(np.log(sn[i]))
+                - 0.5 * np.sum(np.abs(data_dft[i]) ** 2 / sn[i])
+                for i in range(len(data_dft))
+            ]
+        )
 
         return ll_norm
 
@@ -931,8 +958,8 @@ class LogLike(object):
         y_gw_fft[self.inds] = y_gw_fft_pos
         y_gw_fft[self.n_data - self.inds] = np.conj(y_gw_fft_pos)
 
-        return np.real(ifft(y_gw_fft))/self.del_t
-    
+        return np.real(ifft(y_gw_fft)) / self.del_t
+
     def apply_gap_convolution(self, y_gw_fft_pos):
         """
         Transform the frequency-domain waveform to account for gaps.
@@ -941,20 +968,22 @@ class LogLike(object):
         ----------
         y_gw_fft_pos : list[ndarray]
             list of frequency-domain waveforms for all channels.
-            
+
         Returns
         -------
         y_gw_masked_fft : list[ndarray]
             list of distorted frequency-domain waveforms for all channels.
         """
-        
+
         # Convert waveform to time domain
-        y_gw_list = [self.frequency_to_time(y_gw_fft_pos[i]) 
-                     for i in range(len(y_gw_fft_pos))]
+        y_gw_list = [
+            self.frequency_to_time(y_gw_fft_pos[i]) for i in range(len(y_gw_fft_pos))
+        ]
         # Apply mask window and Fourier transform back
-        y_gw_masked_fft = [fft(self.wd * dat)[self.inds] * self.del_t * self.resc
-                           for dat in y_gw_list]
-        
+        y_gw_masked_fft = [
+            fft(self.wd * dat)[self.inds] * self.del_t * self.resc for dat in y_gw_list
+        ]
+
         return y_gw_masked_fft
 
     def log_likelihood(self, par, par_aux):
@@ -966,7 +995,7 @@ class LogLike(object):
             vector of waveform parameters in the following order:
             [Mc, q, tc, chi1, chi2, logDL, ci, sb, lam, psi, phi0]
         par_aux :  ndarray
-            Concatenated list of windowed frequency-domain data restricted to the 
+            Concatenated list of windowed frequency-domain data restricted to the
             band of interest + PSD values in the same band.
 
         Returns
@@ -980,10 +1009,14 @@ class LogLike(object):
             data_dft = self.data_dft
             sn = self.sn
         else:
-            data_dft = [par_aux[i*self.nf:(i+1)*self.nf] 
-                        for i in range(len(self.channels))]
-            sn = [par_aux[i*self.nf:(i+1)*self.nf] 
-                  for i in range(2, 2 + len(self.channels))]
+            data_dft = [
+                par_aux[i * self.nf : (i + 1) * self.nf]
+                for i in range(len(self.channels))
+            ]
+            sn = [
+                par_aux[i * self.nf : (i + 1) * self.nf]
+                for i in range(2, 2 + len(self.channels))
+            ]
 
         # Compute waveform template
         at, et = self.compute_signal(par)
@@ -1000,8 +1033,8 @@ class LogLike(object):
         ee = np.sum(np.abs(et) ** 2 / sn[1])
 
         # (h | y) - 1/2 (h | h)
-        ll_a = 4.0 * self.df * (sna - 0.5*aa)
-        ll_e = 4.0 * self.df * (sne - 0.5*ee)
+        ll_a = 4.0 * self.df * (sna - 0.5 * aa)
+        ll_e = 4.0 * self.df * (sne - 0.5 * ee)
 
         return np.real(ll_a + ll_e + self.ll_norm)
 
@@ -1014,7 +1047,7 @@ class LogLike(object):
     #         vector of intrinsic waveform parameters in the following order:
     #         [Mc, q, tc, chi1, chi2, sb, lam]
     #     data_dft :  list[ndarray]
-    #         List of windowed frequency-domain data restricted to the band 
+    #         List of windowed frequency-domain data restricted to the band
     #         of interest
     #     sn : list of ndarrays
     #         list of noise PSDs computed at freq for each channel
@@ -1038,7 +1071,7 @@ class LogLike(object):
     #     # mat_list_weighted = [mat_list[i] / np.array([sn[i]]).T
     #     #                      for i in range(len(self.channels))]
     #     # Compute amplitudes
-    #     amps = [matrixalgebra.gls(data_dft[i], mat_list[i], sn[i]) 
+    #     amps = [matrixalgebra.gls(data_dft[i], mat_list[i], sn[i])
     #             for i in range(len(self.channels))]
     #     # amps = [linalg.pinv(np.dot(mat_list_weighted[i].conj().T,
     #     #                        mat_list[i])).dot(
@@ -1062,23 +1095,27 @@ class LogLike(object):
             vector of intrinsic waveform parameters in the following order:
             [Mc, q, tc, chi1, chi2, sb, lam]
         par_aux :  ndarray
-            Concatenated list of windowed frequency-domain data restricted to the 
+            Concatenated list of windowed frequency-domain data restricted to the
             band of interest + PSD values in the same band.
-            
+
 
         Returns
         -------
 
         """
-        
+
         if par_aux is None:
             data_dft = self.data_dft
             sn = self.sn
         else:
-            data_dft = [par_aux[i*self.nf:(i+1)*self.nf] 
-                        for i in range(len(self.channels))]
-            sn = [par_aux[i*self.nf:(i+1)*self.nf] 
-                  for i in range(len(self.channels), 2*len(self.channels))]
+            data_dft = [
+                par_aux[i * self.nf : (i + 1) * self.nf]
+                for i in range(len(self.channels))
+            ]
+            sn = [
+                par_aux[i * self.nf : (i + 1) * self.nf]
+                for i in range(len(self.channels), 2 * len(self.channels))
+            ]
 
         # Compute the signal in the frequency domain
         at, et = self.compute_signal_reduced(par_intr, data_dft, sn)

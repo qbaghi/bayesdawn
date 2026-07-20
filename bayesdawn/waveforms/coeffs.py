@@ -41,14 +41,13 @@ def k_coeffs(params, Phi_rot, i, j):
     # Two vectors of size 10: coeffs_p = da_p,db_p and coeffs_c = da_c,db_c
     coeffs_p, coeffs_c = xi_diff_coeffs(theta, phi, Phi_rot, i, j)
 
-    k_p = coeffs_p[0:5] - 1j*coeffs_p[5:10]
-    k_c = coeffs_c[0:5] - 1j*coeffs_c[5:10]
+    k_p = coeffs_p[0:5] - 1j * coeffs_p[5:10]
+    k_c = coeffs_c[0:5] - 1j * coeffs_c[5:10]
 
     return k_p, k_c
 
 
 def phi_rot_i_func(i, phi_rot):
-
     return (i - 1) * 2 * np.pi / 3 - phi_rot
 
 
@@ -79,7 +78,7 @@ def kn_coeffs(theta, phi, phi_rot, i):
     """
 
     # phi_i = (2 * i + 1) * np.pi / 3 - phi_rot
-    phi_i = (phi_rot_i_func(i + 2, phi_rot) + phi_rot_i_func(i + 1, phi_rot))/2
+    phi_i = (phi_rot_i_func(i + 2, phi_rot) + phi_rot_i_func(i + 1, phi_rot)) / 2
 
     a = np.zeros(3, dtype=np.float64)
     b = np.zeros(3, dtype=np.float64)
@@ -88,9 +87,9 @@ def kn_coeffs(theta, phi, phi_rot, i):
     a[0] = 3 / 4 * np.sin(theta) * np.sin(phi_i - phi)
     # m = 1
     a[1] = np.sqrt(3) / 2 * np.cos(theta) * np.sin(phi_i)
-    b[1] = - np.sqrt(3) / 2 * np.cos(theta) * np.cos(phi_i)
+    b[1] = -np.sqrt(3) / 2 * np.cos(theta) * np.cos(phi_i)
     # m = 2
-    a[2] = - np.sin(theta) / 4 * np.sin(phi + phi_i)
+    a[2] = -np.sin(theta) / 4 * np.sin(phi + phi_i)
     b[2] = np.sin(theta) / 4 * np.cos(phi + phi_i)
 
     return a, b
@@ -126,16 +125,16 @@ def kn_bar_coeffs(theta, phi, phi_rot, i):
     """
 
     # phi_i = (2 * i + 1) * np.pi / 3 - phi_rot
-    phi_i = (phi_rot_i_func(i, phi_rot) + phi_rot_i_func(i - 1, phi_rot))/2
+    phi_i = (phi_rot_i_func(i, phi_rot) + phi_rot_i_func(i - 1, phi_rot)) / 2
 
     a = np.zeros(3, dtype=np.float64)
     b = np.zeros(3, dtype=np.float64)
 
     # m = 0
-    a[0] = - 3 / 8 * np.sin(theta) * np.cos(phi - phi_i)
+    a[0] = -3 / 8 * np.sin(theta) * np.cos(phi - phi_i)
     # m = 1
-    a[1] = - np.sqrt(3) / 4 * np.cos(theta) * np.cos(phi_i)
-    b[1] = - np.sqrt(3) / 4 * np.cos(theta) * np.sin(phi_i)
+    a[1] = -np.sqrt(3) / 4 * np.cos(theta) * np.cos(phi_i)
+    b[1] = -np.sqrt(3) / 4 * np.cos(theta) * np.sin(phi_i)
     # m = 2
     a[2] = np.sin(theta) / 8 * np.cos(phi + phi_i)
     b[2] = np.sin(theta) / 8 * np.sin(phi + phi_i)
@@ -183,8 +182,8 @@ def ku_coeffs(theta, phi, phi_rot, i):
     a[1] = np.sqrt(3) / 2 * np.cos(theta) * np.cos(phi_rot_i)
     b[1] = np.sqrt(3) / 2 * np.cos(theta) * np.sin(phi_rot_i)
     # m = 2
-    a[2] = - np.sin(theta) / 4 * np.cos(phi + phi_rot_i)
-    b[2] = - np.sin(theta) / 4 * np.sin(phi + phi_rot_i)
+    a[2] = -np.sin(theta) / 4 * np.cos(phi + phi_rot_i)
+    b[2] = -np.sin(theta) / 4 * np.sin(phi + phi_rot_i)
 
     return a, b
 
@@ -243,7 +242,7 @@ def xi_diff_coeffs(theta, phi, phi_rot, i, j):
     da_p[1] = -3 * np.sqrt(3) / 8 * sin2theta * np.sin(-phi + Phi_plus)
     da_p[2] = 9 / 16 * (1 - cos2theta) * np.sin(Phi_plus)
     da_p[3] = np.sqrt(3) / 8 * sin2theta * np.sin(phi + Phi_plus)
-    da_p[4] = 1 / 32. * (cos2theta + 3) * np.sin(2 * phi + Phi_plus)
+    da_p[4] = 1 / 32.0 * (cos2theta + 3) * np.sin(2 * phi + Phi_plus)
     da_p = sinPhi_minus * da_p
 
     db_p = np.zeros(5, dtype=np.float64)
@@ -251,26 +250,26 @@ def xi_diff_coeffs(theta, phi, phi_rot, i, j):
     db_p[1] = 3 * np.sqrt(3) / 8 * sin2theta * np.cos(-phi + Phi_plus)
     db_p[2] = -9 / 16 * (1 - cos2theta) * np.cos(Phi_plus)
     db_p[3] = -np.sqrt(3) / 8 * sin2theta * np.cos(phi + Phi_plus)
-    db_p[4] = -1 / 32. * (cos2theta + 3) * np.cos(2 * phi + Phi_plus)
+    db_p[4] = -1 / 32.0 * (cos2theta + 3) * np.cos(2 * phi + Phi_plus)
 
     db_p = sinPhi_minus * db_p
 
     # Compute coefficients for x polarization
     da_c = np.zeros(5, dtype=np.float64)
-    da_c[0] = - 9 / 8. * costheta * np.cos(2 * phi - Phi_plus)
-    da_c[1] = 3 / 4. * np.sqrt(3) * sintheta * np.cos(phi - Phi_plus)
+    da_c[0] = -9 / 8.0 * costheta * np.cos(2 * phi - Phi_plus)
+    da_c[1] = 3 / 4.0 * np.sqrt(3) * sintheta * np.cos(phi - Phi_plus)
     da_c[2] = 0
-    da_c[3] = (1 / 4.) * np.sqrt(3) * sintheta * np.cos(phi + Phi_plus)
-    da_c[4] = 1 / 8. * costheta * np.cos(2 * phi + Phi_plus)
+    da_c[3] = (1 / 4.0) * np.sqrt(3) * sintheta * np.cos(phi + Phi_plus)
+    da_c[4] = 1 / 8.0 * costheta * np.cos(2 * phi + Phi_plus)
 
     da_c = sinPhi_minus * da_c
 
     db_c = np.zeros(5, dtype=np.float64)
     db_c[0] = 0
-    db_c[1] = - 3 / 4. * np.sqrt(3) * sintheta * np.sin(phi - Phi_plus)
+    db_c[1] = -3 / 4.0 * np.sqrt(3) * sintheta * np.sin(phi - Phi_plus)
     db_c[2] = 0
-    db_c[3] = 1 / 4. * np.sqrt(3) * sintheta * np.sin(phi + Phi_plus)
-    db_c[4] = 1 / 8. * costheta * np.sin(2 * phi + Phi_plus)
+    db_c[3] = 1 / 4.0 * np.sqrt(3) * sintheta * np.sin(phi + Phi_plus)
+    db_c[4] = 1 / 8.0 * costheta * np.sin(2 * phi + Phi_plus)
 
     db_c = sinPhi_minus * db_c
 
@@ -307,8 +306,8 @@ def k_coeffs_single(params, phi_rot, i):
     # Two vectors of size 10: coeffs_p = da_p,db_p and coeffs_c = da_c,db_c
     coeffs_p, coeffs_c = xi_coeffs(theta, phi, phi_rot, i)
 
-    k_p = coeffs_p[0:5] - 1j*coeffs_p[5:10]
-    k_c = coeffs_c[0:5] - 1j*coeffs_c[5:10]
+    k_p = coeffs_p[0:5] - 1j * coeffs_p[5:10]
+    k_c = coeffs_c[0:5] - 1j * coeffs_c[5:10]
 
     return k_p, k_c
 
@@ -361,24 +360,40 @@ def xi_coeffs(theta, phi, phi_rot, i):
 
     # Compute the coefficients for + polarization
     a_p = np.zeros(5, dtype=np.float64)
-    a_p[0] = -1/64 * (9 * np.cos(2 * phi - 2 * phi_i) * (cos2theta + 3) + 2 * (cos2theta - 1))
-    a_p[1] = np.sqrt(3) / 16 * sin2theta * (3 * np.cos(phi - 2 * phi_i) - 2 * np.cos(phi))
+    a_p[0] = (
+        -1
+        / 64
+        * (9 * np.cos(2 * phi - 2 * phi_i) * (cos2theta + 3) + 2 * (cos2theta - 1))
+    )
+    a_p[1] = (
+        np.sqrt(3) / 16 * sin2theta * (3 * np.cos(phi - 2 * phi_i) - 2 * np.cos(phi))
+    )
     # a_p[2] = 3 / 32 * (3 * np.cos(2 * phi_i) * (cos2theta - 2) - np.cos(2 * phi) * (cos2theta + 6))
-    a_p[2] = 3 / 32 * (3 * np.cos(2 * phi_i) * (cos2theta - 1) - np.cos(2 * phi) * (cos2theta + 3))
-    a_p[3] = - np.sqrt(3) / 16 * sin2theta * np.cos(phi + 2 * phi_i)
-    a_p[4] = - 1/64 * np.cos(2 * phi + 2 * phi_i) * (cos2theta + 3)
+    a_p[2] = (
+        3
+        / 32
+        * (3 * np.cos(2 * phi_i) * (cos2theta - 1) - np.cos(2 * phi) * (cos2theta + 3))
+    )
+    a_p[3] = -np.sqrt(3) / 16 * sin2theta * np.cos(phi + 2 * phi_i)
+    a_p[4] = -1 / 64 * np.cos(2 * phi + 2 * phi_i) * (cos2theta + 3)
 
     b_p = np.zeros(5, dtype=np.float64)
     b_p[0] = 0
-    b_p[1] = - np.sqrt(3) / 16 * sin2theta * (3 * np.sin(phi - 2 * phi_i) + 2 * np.sin(phi))
+    b_p[1] = (
+        -np.sqrt(3) / 16 * sin2theta * (3 * np.sin(phi - 2 * phi_i) + 2 * np.sin(phi))
+    )
     # b_p[2] = 3 / 32 * (3 * np.sin(2 * phi_i) * (cos2theta - 2) - np.sin(2 * phi) * (cos2theta + 6))
-    b_p[2] = 3 / 32 * (3 * np.sin(2 * phi_i) * (cos2theta - 1) - np.sin(2 * phi) * (cos2theta + 3))
-    b_p[3] = - np.sqrt(3) / 16 * sin2theta * np.sin(phi + 2 * phi_i)
-    b_p[4] = - 1/64 * np.sin(2 * phi + 2 * phi_i) * (cos2theta + 3)
+    b_p[2] = (
+        3
+        / 32
+        * (3 * np.sin(2 * phi_i) * (cos2theta - 1) - np.sin(2 * phi) * (cos2theta + 3))
+    )
+    b_p[3] = -np.sqrt(3) / 16 * sin2theta * np.sin(phi + 2 * phi_i)
+    b_p[4] = -1 / 64 * np.sin(2 * phi + 2 * phi_i) * (cos2theta + 3)
 
     # Compute coefficients for x polarization
     a_c = np.zeros(5, dtype=np.float64)
-    a_c[0] = 9/16 * costheta * np.sin(2 * phi - 2 * phi_i)
+    a_c[0] = 9 / 16 * costheta * np.sin(2 * phi - 2 * phi_i)
     a_c[1] = np.sqrt(3) / 8 * sintheta * (2 * np.sin(phi) - 3 * np.sin(phi - 2 * phi_i))
     a_c[2] = 3 / 8 * costheta * np.sin(2 * phi)
     a_c[3] = np.sqrt(3) / 8 * sintheta * np.sin(phi + 2 * phi_i)
@@ -386,10 +401,12 @@ def xi_coeffs(theta, phi, phi_rot, i):
 
     b_c = np.zeros(5, dtype=np.float64)
     b_c[0] = 0
-    b_c[1] = - np.sqrt(3) / 8 * sintheta * (2 * np.cos(phi) + 3 * np.cos(phi - 2 * phi_i))
-    b_c[2] = - 3 / 8 * costheta * np.cos(2 * phi)
-    b_c[3] = - np.sqrt(3) / 8 * sintheta * np.cos(phi + 2 * phi_i)
-    b_c[4] = - 1 / 16 * costheta * np.cos(2 * phi + 2 * phi_i)
+    b_c[1] = (
+        -np.sqrt(3) / 8 * sintheta * (2 * np.cos(phi) + 3 * np.cos(phi - 2 * phi_i))
+    )
+    b_c[2] = -3 / 8 * costheta * np.cos(2 * phi)
+    b_c[3] = -np.sqrt(3) / 8 * sintheta * np.cos(phi + 2 * phi_i)
+    b_c[4] = -1 / 16 * costheta * np.cos(2 * phi + 2 * phi_i)
 
     coeffs_plus = np.concatenate((a_p, b_p))
     coeffs_cros = np.concatenate((a_c, b_c))
@@ -427,15 +444,18 @@ def beta_gb(a0, incl, phi_0, psi):
     a_c = -2 * a0 * np.cos(incl)
 
     c_p = a_p * np.cos(phi_0)
-    s_p = - a_p * np.sin(phi_0)
+    s_p = -a_p * np.sin(phi_0)
     c_c = a_c * np.sin(phi_0)
     s_c = a_c * np.cos(phi_0)
 
     beta = np.array(
-        [c_p * np.cos(2 * psi) + c_c * np.sin(2 * psi),
-         - c_p * np.sin(2 * psi) + c_c * np.cos(2 * psi),
-         s_p * np.cos(2 * psi) + s_c * np.sin(2 * psi),
-         - s_p * np.sin(2 * psi) + s_c * np.cos(2 * psi)])
+        [
+            c_p * np.cos(2 * psi) + c_c * np.sin(2 * psi),
+            -c_p * np.sin(2 * psi) + c_c * np.cos(2 * psi),
+            s_p * np.cos(2 * psi) + s_c * np.sin(2 * psi),
+            -s_p * np.sin(2 * psi) + s_c * np.cos(2 * psi),
+        ]
+    )
 
     return beta
 
@@ -448,8 +468,8 @@ def beta_gb_complex(a0, incl, phi_0, psi):
 
     beta = beta_gb(a0, incl, phi_0, psi)
 
-    beta_p = beta[0] - 1j*beta[2]
-    beta_c = beta[1] - 1j*beta[3]
+    beta_p = beta[0] - 1j * beta[2]
+    beta_c = beta[1] - 1j * beta[3]
 
     return np.array([beta_p, beta_c])
 

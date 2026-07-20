@@ -6,6 +6,7 @@ import numpy.fft
 
 # FTT modules
 import pyfftw
+
 pyfftw.interfaces.cache.enable()
 from pyfftw.interfaces.numpy_fft import fft, ifft
 
@@ -18,7 +19,7 @@ from scipy import signal
 from plottools import myplots
 
 
-def compute_periodogram(x, fs=1.0, wind='tukey'):
+def compute_periodogram(x, fs=1.0, wind="tukey"):
     """
 
     Parameters
@@ -43,46 +44,54 @@ def compute_periodogram(x, fs=1.0, wind='tukey'):
 
     freq = np.fft.fftfreq(n) * fs
 
-    if wind == 'tukey':
+    if wind == "tukey":
         w = signal.tukey(n)
-    elif wind == 'hanning':
+    elif wind == "hanning":
         w = np.hanning(n)
-    elif wind == 'blackman':
+    elif wind == "blackman":
         w = np.blackman(n)
-    elif wind == 'rectangular':
+    elif wind == "rectangular":
         w = np.ones(n)
 
     k2 = np.sum(w**2)
 
-    return freq, np.abs(fft(x * w))**2 / (k2 * fs)
+    return freq, np.abs(fft(x * w)) ** 2 / (k2 * fs)
 
 
-def plot_periodogram(x, fs=1.0, wind='tukey', xlabel='Frequency [Hz]', ylabel='Periodogram', sqr=True, colors=None,
-                     linewidths=None, labels=None, linestyles='solid'):
-
+def plot_periodogram(
+    x,
+    fs=1.0,
+    wind="tukey",
+    xlabel="Frequency [Hz]",
+    ylabel="Periodogram",
+    sqr=True,
+    colors=None,
+    linewidths=None,
+    labels=None,
+    linestyles="solid",
+):
     if type(x) == list:
         data_list = [compute_periodogram(xi, fs=fs, wind=wind) for xi in x]
     else:
         data_list = [compute_periodogram(x, fs=fs, wind=wind)]
 
-
-    fp = myplots.fplot(plotconf='frequency')
-    fp.xscale = 'log'
-    fp.yscale = 'log'
+    fp = myplots.fplot(plotconf="frequency")
+    fp.xscale = "log"
+    fp.yscale = "log"
     fp.draw_frame = True
-    fp.ylabel = r'Fractional frequency'
-    fp.legendloc = 'upper left'
+    fp.ylabel = r"Fractional frequency"
+    fp.legendloc = "upper left"
     fp.xlabel = xlabel
     fp.ylabel = ylabel
 
     if labels is None:
         labels = [None for dat in data_list]
-    if linestyles=='solid':
-        linestyles = ['solid' for dat in data_list]
+    if linestyles == "solid":
+        linestyles = ["solid" for dat in data_list]
     if linewidths is None:
         linewidths = np.ones(7)
     if colors is None:
-        colors = ['k', 'r', 'b', 'g', 'm', 'gray', 'o']
+        colors = ["k", "r", "b", "g", "m", "gray", "o"]
 
     colors = [colors[i] for i in range(len(data_list))]
 
@@ -92,34 +101,45 @@ def plot_periodogram(x, fs=1.0, wind='tukey', xlabel='Frequency [Hz]', ylabel='P
     else:
         y_list = [dat[1][dat[0] > 0] for dat in data_list]
 
-    fig1, ax1 = fp.plot(x_list, y_list, colors, linewidths, linestyles=linestyles, labels=labels)
+    fig1, ax1 = fp.plot(
+        x_list, y_list, colors, linewidths, linestyles=linestyles, labels=labels
+    )
 
     return fig1, ax1
 
 
-def plot_time_series(x_list, y_list, xlabel='Time [s]', ylabel='Amplitude', colors=None, linewidths=None,
-                     labels=None, linestyles='solid'):
-
-    fp = myplots.fplot(plotconf='time')
-    fp.xscale = 'linear'
-    fp.yscale = 'linear'
+def plot_time_series(
+    x_list,
+    y_list,
+    xlabel="Time [s]",
+    ylabel="Amplitude",
+    colors=None,
+    linewidths=None,
+    labels=None,
+    linestyles="solid",
+):
+    fp = myplots.fplot(plotconf="time")
+    fp.xscale = "linear"
+    fp.yscale = "linear"
     fp.draw_frame = True
-    fp.ylabel = r'Fractional frequency'
-    fp.legendloc = 'upper left'
+    fp.ylabel = r"Fractional frequency"
+    fp.legendloc = "upper left"
     fp.xlabel = xlabel
     fp.ylabel = ylabel
 
     if labels is None:
         labels = [None for dat in y_list]
-    if linestyles=='solid':
-        linestyles = ['solid' for dat in y_list]
+    if linestyles == "solid":
+        linestyles = ["solid" for dat in y_list]
     if linewidths is None:
         linewidths = np.ones(7)
     if colors is None:
-        colors = ['k', 'r', 'b', 'g', 'm', 'gray', 'o']
+        colors = ["k", "r", "b", "g", "m", "gray", "o"]
 
     colors = [colors[i] for i in range(len(y_list))]
-    fig1, ax1 = fp.plot(x_list, y_list, colors, linewidths, linestyles=linestyles, labels=labels)
+    fig1, ax1 = fp.plot(
+        x_list, y_list, colors, linewidths, linestyles=linestyles, labels=labels
+    )
 
     return fig1, ax1
 
@@ -146,14 +166,14 @@ def compute_psd_map(chain_psd, logp_psd, fs, N):
     J = 30
     fmin = fs / N
     fmax = fs / 2
-    ns = - np.log(fmax) / np.log(10)
-    n0 = - np.log(fmin) / np.log(10)  # 6
+    ns = -np.log(fmax) / np.log(10)
+    n0 = -np.log(fmin) / np.log(10)  # 6
     jvect = np.arange(0, J)
     alpha_guess = 0.8
     targetfunc = lambda x: n0 - (1 - x ** (J)) / (1 - x) - ns
     result = optimize.fsolve(targetfunc, alpha_guess)
     alpha = result[0]
-    n_knots = n0 - (1 - alpha ** jvect) / (1 - alpha)
+    n_knots = n0 - (1 - alpha**jvect) / (1 - alpha)
     f_knots = 10 ** (-n_knots)
 
     fc = np.concatenate((f_knots, [fs / 2]))

@@ -25,7 +25,7 @@ def build_heterogeneous_mask(n_data):
     starts = np.array([200, 520, 900, 1330, 1800, 2400, 3020, 3600])
     lengths = np.array([8, 19, 11, 27, 14, 35, 9, 22])
     for start, length in zip(starts, lengths):
-        mask[start:start + length] = 0
+        mask[start : start + length] = 0
     return mask
 
 
@@ -36,13 +36,9 @@ def build_tutorial_dataset(n_data=4096, fs=1.0, seed=42):
 
     # Build complex white FFT and color it with the PSD model.
     f = np.fft.rfftfreq(n_data) * fs
-    n_fft = noise[0:n_data // 2 + 1].astype(np.complex128)
-    n_fft[1:] = n_fft[1:] + 1j * noise[n_data // 2:]
-    n_fft = (
-        np.sqrt(psd_function(f))
-        * n_fft
-        * np.sqrt(n_data * fs / 4.0)
-    )
+    n_fft = noise[0 : n_data // 2 + 1].astype(np.complex128)
+    n_fft[1:] = n_fft[1:] + 1j * noise[n_data // 2 :]
+    n_fft = np.sqrt(psd_function(f)) * n_fft * np.sqrt(n_data * fs / 4.0)
     n = np.fft.irfft(n_fft)
 
     # Deterministic mean component.
@@ -54,7 +50,7 @@ def build_tutorial_dataset(n_data=4096, fs=1.0, seed=42):
     return s + n, s
 
 
-@pytest.fixture(scope='module')
+@pytest.fixture(scope="module")
 def imputation_setup():
     """Build a reusable setup for heterogeneous multi-gap imputation tests."""
     n_data = 4096
@@ -68,27 +64,27 @@ def imputation_setup():
         s,
         mask,
         psd_cls,
-        method='nearest',
+        method="nearest",
         na=int(50 * fs),
         nb=int(50 * fs),
     )
     imp_cls.compute_offline()
 
     return {
-        'y': y,
-        's': s,
-        'mask': mask,
-        'y_masked': y_masked,
-        'imp_cls': imp_cls,
+        "y": y,
+        "s": s,
+        "mask": mask,
+        "y_masked": y_masked,
+        "imp_cls": imp_cls,
     }
 
 
 def test_conditional_mean_improves_multi_gap_reconstruction(imputation_setup):
     setup = imputation_setup
-    y = setup['y']
-    mask = setup['mask']
-    y_masked = setup['y_masked']
-    imp_cls = setup['imp_cls']
+    y = setup["y"]
+    mask = setup["mask"]
+    y_masked = setup["y_masked"]
+    imp_cls = setup["imp_cls"]
 
     y_rec = imp_cls.impute(y_masked, draw=False)
 
@@ -111,9 +107,9 @@ def test_conditional_mean_improves_multi_gap_reconstruction(imputation_setup):
 
 def test_stochastic_draw_is_seed_reproducible_and_keeps_observed_data(imputation_setup):
     setup = imputation_setup
-    mask = setup['mask']
-    y_masked = setup['y_masked']
-    imp_cls = setup['imp_cls']
+    mask = setup["mask"]
+    y_masked = setup["y_masked"]
+    imp_cls = setup["imp_cls"]
 
     np.random.seed(321)
     y_draw_1 = imp_cls.impute(y_masked, draw=True)
