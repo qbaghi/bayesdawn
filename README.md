@@ -13,18 +13,24 @@ BayesDawn now uses a modern pyproject-based build and supports Python >= 3.12.
 
 Using uv (recommended):
 
+```
   uv venv --python 3.12
   source .venv/bin/activate
   uv pip install -e .
+```
 
 Install docs dependencies:
 
+```
   uv pip install -e .[docs]
+```
 
 Using pip:
 
+```
   python -m pip install -e .
-    
+```
+
 Quick start
 -----------
 

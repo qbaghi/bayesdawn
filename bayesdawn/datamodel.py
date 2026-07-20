@@ -552,7 +552,6 @@ class GaussianStationaryProcess(object):
             #print('recomputing preconditioner')
         # If there is only one array
         if type(y) == np.ndarray:
-            #t1 = time.time()
             # Impute the missing data: estimation of missing residuals
             y_mis_res = self.imputation(y - self.y_mean, 
                                         self.autocorr, 
@@ -563,8 +562,6 @@ class GaussianStationaryProcess(object):
             # at observed value this is the same
             y_rec = copy.deepcopy(y)
             y_rec[self.ind_mis] = y_mis_res + self.y_mean[self.ind_mis]
-            #t2 = time.time()
-            #print("Missing data imputation took " + str(t2-t1))
             
         elif type(y) == list:
             
@@ -696,14 +693,7 @@ class GaussianStationaryProcess(object):
                                                         self.mask[indj], 
                                                         c, r, s2) 
                            for indj in self.indices]
-            # else:
-            #     # If the number of points inside the gaps is too large, use a
-            #     # FFT-based method
-            #     results = [self.single_imputation_fast(y[indj],
-            #                                            self.mask[indj],
-            #                                            r,
-            #                                            s2)
-            #                for indj in self.indices]
+
             y_mis = np.concatenate(results)
             
         else:
@@ -727,45 +717,6 @@ class GaussianStationaryProcess(object):
                 y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
                                                     self.mask, s2)
             
-        # elif self.method == 'tapered':
-        #     # Approximately solve the linear system C_oo x = eps
-        #     u = solve(y[self.ind_obs])
-        #     # Compute the missing data conditional mean via z | o = Cmo Coo^-1 z_o
-        #     y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
-        #                                         self.mask, s2)
-        # elif self.method == 'PCG':
-        #     # Precompute solver if necessary
-        #     if solve is None:
-        #         # self.compute_preconditioner(r)
-        #         raise ValueError("Please provide preconditionning operator")
-        #     # First guess
-        #     x0 = np.zeros(len(self.ind_obs))
-        #     # Solve the linear system C_oo x = eps
-        #     u, _ = matrixalgebra.pcg_solve(self.ind_obs, self.mask, s2,
-        #                                    y[self.ind_obs], x0,
-        #                                    self.tol, self.n_it_max,
-        #                                    solve,
-        #                                   'scipy')
-        #     # Compute the missing data conditional mean z | o = Cmo Coo^-1 z_o
-        #     y_mis = matrixalgebra.mat_vect_prod(u, self.ind_obs, self.ind_mis,
-        #                                         self.mask, s2)
-            
-        # elif self.method == 'woodbury':
-
-        #     epsilon_masked = self.mask * y
-        #     # Apply inverse sigma
-        #     v = fastoeplitz.toepltiz_inverse_jain(epsilon_masked, 
-        #                                           self.lambda_n, 
-        #                                           self.a)
-        #     y_ = np.zeros(self.mask.shape[0])
-        #     y_[self.ind_mis] = self.sig_inv_mm_inv.dot(v[self.ind_mis])
-        #     e_ = v - fastoeplitz.toepltiz_inverse_jain(y_, 
-        #                                                self.lambda_n, 
-        #                                                self.a)
-        #     # Apply Sigma after multiplying by the mask
-        #     eps_given_o = fastoeplitz.toeplitz_multiplication(self.mask * e_, 
-        #                                                       r, r)  
-        #     y_mis = eps_given_o[self.ind_mis]
 
         return y_mis
             
