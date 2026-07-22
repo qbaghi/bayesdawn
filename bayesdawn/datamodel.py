@@ -26,10 +26,6 @@ pyfftw.interfaces.cache.enable()
 
 def generate_freq_noise_from_psd(psd, fs, myseed=None):
     """
-    Generate noise in the frequency domain from the values of the DSP.
-    """
-
-    """
     Function generating a colored noise from a vector containing the DSP.
     The PSD contains Np points such that Np > 2N and the output noise should
     only contain N points in order to avoid boundary effects. However, the
@@ -64,35 +60,59 @@ def generate_freq_noise_from_psd(psd, fs, myseed=None):
     np.random.seed(myseed)
 
     n_fft = int((n_psd - 1) / 2)
-    # Real part of the Noise fft : it is a gaussian random variable
-    noise_ft_real = np.sqrt(0.5 * psd[0 : n_fft + 1]) * np.random.normal(
-        loc=0.0, scale=1.0, size=n_fft + 1
-    )
-    # Imaginary part of the Noise fft :
-    noise_ft_imag = np.sqrt(0.5 * psd[0 : n_fft + 1]) * np.random.normal(
-        loc=0.0, scale=1.0, size=n_fft + 1
-    )
-    # The Fourier transform must be real in f = 0
-    noise_ft_imag[0] = 0.0
-    noise_ft_real[0] = noise_ft_real[0] * np.sqrt(2.0)
 
-    # Create the NoiseTF complex numbers for positive frequencies
-    Noise_TF = noise_ft_real + 1j * noise_ft_imag
+    if psd.ndim == 1:
+        psd_sqrt = np.sqrt(psd[0:n_fft + 2])
+        # Real part of the Noise fft : it is a gaussian random variable
+        noise_tf_real = np.sqrt(0.5) * psd_sqrt[0:n_fft + 1] * np.random.normal(
+            loc=0.0, scale=1.0, size=n_fft + 1)
+        # Imaginary part of the Noise fft :
+        noise_tf_im = np.sqrt(0.5) * psd_sqrt[0:n_fft + 1] * np.random.normal(
+            loc=0.0,  scale=1.0, size=n_fft + 1)
+        # The Fourier transform must be real in f = 0
+        noise_tf_im[0] = 0.
+        noise_tf_real[0] = noise_tf_real[0]*np.sqrt(2.)
+        # Create the NoiseTF complex numbers for positive frequencies
+        noise_tf = noise_tf_real + 1j*noise_tf_im
+    elif psd.ndim == 3:
+        # Number of variables
+        p = psd.shape[1]
+        # Form the covariance matrices in the Fourier domain
+        cov = psd[0:n_fft + 1]
+        # Perform Cholesky factorization of the correlation matrices C_m
+        psd_sqrt = np.linalg.cholesky(cov)
+        # Real part of the Noise fft : it is a gaussian random variable
+        w_real = np.sqrt(0.5) * np.random.multivariate_normal(
+            np.zeros(p), np.eye(p), size=n_fft + 1)
+        w_imag = np.sqrt(0.5) * np.random.multivariate_normal(
+            np.zeros(p), np.eye(p), size=n_fft + 1)
+        # Generate the Z_m in the Fourier domain
+        noise_tf = np.einsum("...jk, ...k", psd_sqrt, w_real + 1j*w_imag)
+        # The Fourier transform must be real in f = 0
+        noise_tf[0].imag = 0
+        noise_tf[0].real = noise_tf[0].real*np.sqrt(2.)
 
     # To get a real valued signal we must have NoiseTF(-f) = NoiseTF*
-    if n_psd % 2 == 0:
+    if (n_psd % 2 == 0) & (psd.ndim == 1):
         # The TF at Nyquist frequency must be real in the case of an even number of data
-        Noise_sym0 = np.array([np.sqrt(psd[n_fft + 1]) * np.random.normal(0, 1)])
+        noise_sym0 = np.array([psd_sqrt[n_fft + 1] * np.random.normal(0, 1)])
         # Add the symmetric part corresponding to negative frequencies
-        Noise_TF = np.hstack(
-            (Noise_TF, Noise_sym0, np.conj(Noise_TF[1 : n_fft + 1])[::-1])
-        )
+        noise_tf = np.hstack((noise_tf, noise_sym0,
+                              np.conj(noise_tf[1:n_fft+1])[::-1]))
+    elif (n_psd % 2 != 0) & (psd.ndim == 1):
+        noise_tf = np.hstack((noise_tf, np.conj(noise_tf[1:n_fft+1])[::-1]))
 
+    elif (n_psd % 2 == 0) & (psd.ndim == 3):
+        noise_sym0 = np.random.multivariate_normal(np.zeros(p), psd[n_fft + 1].real)
+        noise_tf = np.concatenate((noise_tf, noise_sym0[np.newaxis, :],
+                                   np.conj(noise_tf[1:n_fft+1])[::-1]))
+
+    elif (n_psd % 2 != 0) & (psd.ndim == 3):
+        noise_tf = np.concatenate((noise_tf, np.conj(noise_tf[1:n_fft+1])[::-1]))
     else:
-        # Noise_TF = np.hstack( (Noise_TF, Noise_sym[::-1]) )
-        Noise_TF = np.hstack((Noise_TF, np.conj(Noise_TF[1 : n_fft + 1])[::-1]))
+        warnings.WarningMessage("Invalid spectrum dimension", UserWarning, "invalid_dim", 149)
 
-    return np.sqrt(n_psd * fs / 2.0) * Noise_TF
+    return np.sqrt(n_psd * fs / 2.0) * noise_tf
 
 
 def generate_noise_from_psd(psd, fs, myseed=None):
@@ -441,7 +461,7 @@ class GaussianStationaryProcess(object):
         self.sig_inv_mm_inv = None
         self.w_m_cls = None
         self.a = None
-        self.lamdba_n = None
+        self.lambda_n = None
 
     def update_psd(self, psd_cls):
         """
