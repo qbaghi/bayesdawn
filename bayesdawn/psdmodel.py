@@ -268,6 +268,7 @@ class PSD(object):
     """
     Class to calculate the power spectral density of a univariate time series.
     """
+
     def __init__(self, n_data, fs, fmin=None, fmax=None):
         """Instantiate the PSD estimator class.
 

@@ -113,7 +113,9 @@ def generate_freq_noise_from_psd(psd, fs, myseed=None):
 
     elif (n_psd % 2 == 0) & (psd.ndim == 3):
         psd_sqrt_nyq = np.linalg.cholesky(psd[n_fft + 1])
-        noise_sym0 = psd_sqrt_nyq @ np.random.multivariate_normal(np.zeros(p), np.eye(p))
+        noise_sym0 = psd_sqrt_nyq @ np.random.multivariate_normal(
+            np.zeros(p), np.eye(p)
+        )
         noise_tf = np.concatenate(
             (
                 noise_tf,
