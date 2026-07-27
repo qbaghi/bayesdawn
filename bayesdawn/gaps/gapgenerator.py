@@ -132,13 +132,11 @@ def generategaps(
     t_gaps,
     gap_type="random",
     f_gaps=1e-2,
-    wind_type="rect",
     std_loc=0,
     std_dur=0,
 ):
     """
-    Function that generates the indices of begening and end of data holes, and
-    then uses the windowing function to creates the corresponding mask vector.
+    Function that generates the indices of begening and end of data holes.
 
 
     Parameters
@@ -155,8 +153,6 @@ def generategaps(
         option to choose the type of window to apply
     f_gaps : scalar float
         frequency of the gaps in the periodic case, optional
-    wind_type :  string
-        type of window function, optional (default is rectangular window)
     std_loc : scalar float
         standard deviation of the gap locations (seconds, apply for periodic
         gap only)
@@ -281,65 +277,59 @@ def find_ends(m):
     return nd_eff.astype(int), nf_eff.astype(int)
 
 
-def segmentedges(M):
+def segmentedges(mask):
     """
     Find the segment edges
     """
-    Nd, Nf = find_ends(M)
-    seg_starts = np.concatenate(([0], Nf))
-    seg_ends = np.concatenate((Nd, [len(M)]))
+    nd, nf = find_ends(mask)
+    seg_starts = np.concatenate(([0], nf))
+    seg_ends = np.concatenate((nd, [len(mask)]))
 
     return seg_starts, seg_ends
 
 
-def segmentlengths(M):
+def segmentlengths(mask):
     """
     Compute segments lengths from mask
     """
-    seg_starts, seg_ends = segmentedges(M)
+    seg_starts, seg_ends = segmentedges(mask)
 
     return (seg_ends - seg_starts).astype(int)
 
 
-def segmentwise(y, M):
+def segmentwise(y, mask):
     """
     Separate the masked data in a list of segments
 
     """
 
-    Nd, Nf = find_ends(M)
-    seg_starts = np.concatenate(([0], Nf))
-    seg_ends = np.concatenate((Nd, [len(M)]))
+    nd, nf = find_ends(mask)
+    seg_starts = np.concatenate(([0], nf))
+    seg_ends = np.concatenate((nd, [len(mask)]))
     # segment_ffts = [fft(y[seg_starts[j]:seg_ends[j]],n=n) for j in range(len(seg_starts))]
 
     return [y[seg_starts[j] : seg_ends[j]] for j in range(len(seg_starts))]
 
 
-# y_segs = gg.segmentwise(data,self.M)
-# Nstart,Nend = gg.segmentedges(self.M)
-# y_segs_fft = [fft(seg) for seg in y_segs]
-# f_segs = [np.fft.fftfreq(len(seg))*fs for seg in y_segs]
-
-
-def compute_freq_times(M, ts):
+def compute_freq_times(mask, ts):
     """
     Function that computes the begining and end times of each segment of
 
     Parameters
     ----------
-    M : array_like
+    mask : array_like
         binary mask
     ts : array_like
         sampling time
     """
     # Edges of segments
-    Nstarts, Nends = segmentedges(M)
+    nstarts, nends = segmentedges(mask)
     # Lengths of segments
-    slen = (Nends - Nstarts).astype(int)
+    slen = (nends - nstarts).astype(int)
     # y_segs_fft = [fft(seg) for seg in y_segs]
     f_segs = [np.fft.fftfreq(Ns) / ts for Ns in slen]
 
-    return f_segs, Nstarts * ts, Nends * ts
+    return f_segs, nstarts * ts, nends * ts
 
 
 def findinds(f, fmin, fmax):

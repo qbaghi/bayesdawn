@@ -27,7 +27,7 @@ jobs:
         run: uv pip install --python .venv/bin/python -e '.[dev]'
 
       - name: Run scoped Ruff hooks
-        run: .venv/bin/pre-commit run --files $(git ls-files 'bayesdawn/algebra/*.py' 'bayesdawn/gaps/*.py' 'bayesdawn/datamodel.py')
+        run: .venv/bin/pre-commit run --files $(git ls-files 'bayesdawn/algebra/*.py' 'bayesdawn/gaps/*.py' 'bayesdawn/datamodel.py' 'bayesdawn/psdmodel.py')
 
       - name: Run imputation test
-        run: .venv/bin/python -m pytest -q tests/test_imputation.py
+        run: .venv/bin/python -m pytest -q tests/test_imputation.py tests/test_noise_generation.py
