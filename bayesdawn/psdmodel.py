@@ -14,7 +14,7 @@ from pyfftw.interfaces.numpy_fft import fft, ifft
 
 try:
     import tdi
-except:
+except ImportError:
     print("MLDC modules could not be loaded.")
 
 pyfftw.interfaces.cache.enable()
@@ -245,7 +245,10 @@ def choose_frequency_knots(n_knots, freq_min=1e-5, freq_max=1.0, base=10):
     n0 = np.log(freq_max) / np.log(base)
     jvect = np.arange(0, n_knots)
     alpha_guess = 1 + 1 / (ns - n0)  # Soln for k=inf
-    targetfunc = lambda x: n0 - (1 - x ** (n_knots)) / (1 - x) - ns
+
+    def targetfunc(x):
+        return n0 - (1 - x ** (n_knots)) / (1 - x) - ns
+
     result = optimize.fsolve(targetfunc, alpha_guess)
     alpha = result[0]
     # print('alpha',alpha)
@@ -262,6 +265,9 @@ def choose_frequency_knots(n_knots, freq_min=1e-5, freq_max=1.0, base=10):
 # General PSD CLASS
 # =============================================================================
 class PSD(object):
+    """
+    Class to calculate the power spectral density of a univariate time series.
+    """
     def __init__(self, n_data, fs, fmin=None, fmax=None):
         """Instantiate the PSD estimator class.
 
@@ -415,6 +421,136 @@ class PSD(object):
         return np.real(ifft(self.calculate(2 * N))[0:N]) * self.fs / 2
 
 
+class MultivariatePSD(PSD):
+    """
+    Matrix-valued PSD/CSD base class for multivariate time series.
+
+    Notes
+    -----
+    Subclasses are expected to implement `psd_fn(x)` and return a spectral
+    matrix with shape `(n_freq, n_chan, n_chan)` evaluated at the requested
+    non-negative frequencies.
+    """
+
+    def __init__(self, n_data, fs, n_chan, fmin=None, fmax=None):
+        PSD.__init__(self, n_data, fs, fmin=fmin, fmax=fmax)
+        self.n_chan = n_chan
+
+    def periodogram(self, y_fft, k2=None):
+        """
+        Matrix-valued periodogram/cross-periodogram.
+
+        Parameters
+        ----------
+        y_fft : ndarray
+            Fourier-transformed multichannel data with shape `(n_freq, n_chan)`.
+        k2 : float, optional
+            Window normalization. If None, use `n_freq` as in the univariate
+            implementation.
+
+        Returns
+        -------
+        per : ndarray
+            Cross-spectral matrix with shape `(n_freq, n_chan, n_chan)`.
+        """
+
+        y_fft = np.asarray(y_fft)
+        if y_fft.ndim != 2:
+            raise ValueError("y_fft must have shape (n_freq, n_chan)")
+        if y_fft.shape[1] != self.n_chan:
+            raise ValueError("y_fft second dimension must match n_chan")
+
+        if k2 is None:
+            per = np.einsum("fi,fj->fij", y_fft, np.conj(y_fft)) / len(y_fft)
+        else:
+            per = np.einsum("fi,fj->fij", y_fft, np.conj(y_fft)) / k2
+
+        return per * 2 / self.fs
+
+    def psd_fn(self, x):
+        """
+        Return the spectral matrix evaluated at frequencies `x`.
+
+        Must be implemented by subclasses.
+        """
+
+        raise NotImplementedError(
+            "MultivariatePSD subclasses must implement psd_fn(x)."
+        )
+
+    def _validate_spectral_matrix(self, spectr, n_freq):
+        spectr = np.asarray(spectr)
+        if spectr.shape != (n_freq, self.n_chan, self.n_chan):
+            raise ValueError("Spectral matrix must have shape (n_freq, n_chan, n_chan)")
+
+        # Enforce Hermitian structure up to numerical noise.
+        return 0.5 * (spectr + np.conj(np.swapaxes(spectr, 1, 2)))
+
+    def calculate(self, arg):
+        """
+        Calculate the PSD-CSD matrix on an arbitrary frequency grid or on the
+        symmetric FFT grid of size `N`.
+        """
+
+        if isinstance(arg, int):
+            n_data = arg
+            if n_data % 2 == 0:
+                if n_data == self.n_data:
+                    n = self.n
+                    f_tot = np.abs(np.concatenate(([self.f[1]], self.f[1 : n + 2])))
+                else:
+                    f = np.fft.fftfreq(n_data) * self.fs
+                    n = int((n_data - 1) / 2.0)
+                    f_tot = np.abs(np.concatenate(([f[1]], f[1 : n + 2])))
+
+                spectr = self._validate_spectral_matrix(self.psd_fn(f_tot), len(f_tot))
+                spectr_sym = np.concatenate(
+                    (
+                        spectr[0 : n + 1],
+                        np.conj(np.swapaxes(spectr[1 : n + 2], 1, 2))[::-1],
+                    )
+                )
+
+            else:
+                if n_data == self.n_data:
+                    n = self.n
+                    f_tot = np.abs(np.concatenate(([self.f[1]], self.f[1 : n + 1])))
+                else:
+                    f = np.fft.fftfreq(n_data) * self.fs
+                    n = int((n_data - 1) / 2.0)
+                    f_tot = np.abs(np.concatenate(([f[1]], f[1 : n + 1])))
+
+                spectr = self._validate_spectral_matrix(self.psd_fn(f_tot), len(f_tot))
+                spectr_sym = np.concatenate(
+                    (
+                        spectr[0 : n + 1],
+                        np.conj(np.swapaxes(spectr[1 : n + 1], 1, 2))[::-1],
+                    )
+                )
+
+        elif isinstance(arg, np.ndarray):
+            f = np.asarray(arg)
+            spectr_sym = self._validate_spectral_matrix(self.psd_fn(f), len(f))
+
+        else:
+            raise TypeError("Argument must be integer or ndarray")
+
+        return spectr_sym
+
+    def calculate_autocorr(self, N):
+        """
+        Compute lag-domain cross-correlation matrices from the PSD-CSD model.
+
+        Returns
+        -------
+        corr : ndarray
+            Array of shape `(N, n_chan, n_chan)`.
+        """
+
+        corr = ifft(self.calculate(2 * N), axis=0)
+        return np.real(corr[0:N]) * self.fs / 2
+
+
 # ==============================================================================
 # Spline PSD model
 # ==============================================================================
@@ -556,7 +692,7 @@ class PSDSpline(PSD):
 
         """
 
-        if type(wind) == np.ndarray:
+        if isinstance(wind, np.ndarray):
             w = wind[:]
         elif wind == "hanning":
             w = np.hanning(len(y))
@@ -578,10 +714,10 @@ class PSDSpline(PSD):
         """
 
         # If there is only one periodogram
-        if type(y_fft) == np.ndarray:
+        if isinstance(y_fft, np.ndarray):
             per = self.periodogram(y_fft, k2=k2)
         # Otherwise calculate the periodogram for each data set:
-        elif type(y_fft) == list:
+        elif isinstance(y_fft, list):
             per = [self.periodogram(y_fft[i], k2=k2[i]) for i in range(len(y_fft))]
 
         self.estimate_from_periodogram(per)
@@ -594,10 +730,10 @@ class PSDSpline(PSD):
         """
 
         # If there is only one periodogram
-        if type(per) == np.ndarray:
+        if isinstance(per, np.ndarray):
             self.log_psd_fn = self.spline_lsqr(per)
             self.beta = self.log_psd_fn.get_coeffs()
-        elif type(per) == list:
+        elif isinstance(per, list):
             # If there are several periodograms, average the estimates
             spl_list = [
                 self.spline_lsqr(I0)
@@ -788,7 +924,11 @@ class PSDEstimator(object):
             spl_imag = interpolate.LSQUnivariateSpline(
                 freq, per.imag, self.f_knots, k=self.d, ext=self.ext
             )
-            self.psd_fn = lambda x: spl_real(x) + 1j * spl_imag(x)
+
+            def psd_func(x):
+                return spl_real(x) + 1j * spl_imag(x)
+
+            self.psd_fn = psd_func
 
     def calculate(self, x):
         """
@@ -850,8 +990,12 @@ class PSDEstimator(object):
             s_imag_func = interpolate.interp1d(
                 self.f_knots, x.imag, kind=self.kind, fill_value="extrapolate"
             )
+
             # Update the log-PSD function of the log-frequency
-            self.psd_fn = lambda x: s_real_func(x) + 1j * s_imag_func(x)
+            def psd_func(x):
+                return s_real_func(x) + 1j * s_imag_func(x)
+
+            self.psd_fn = psd_func
 
     def likelihood(self, x, logfr, per):
         """
@@ -878,12 +1022,12 @@ class PSDEstimator(object):
         self.set_params(x)
 
         # If only one segment of data is analyzed
-        if type(per) == np.ndarray:
+        if isinstance(per, np.ndarray):
             logs = self.log_psd_fn(logfr)
             ll = np.real(-0.5 * np.sum(logs + per * np.exp(-logs)))
 
         # If several segments of different lengths are considered:
-        elif type(per) == list:
+        elif isinstance(per, list):
             logs_list = [self.log_psd_fn(logfj) for logfj in logfr]
             ll = sum(
                 [
@@ -973,7 +1117,9 @@ class PSDPowerLaw(PSD):
         jvect = np.arange(0, self.n_knots)
         alpha_guess = 0.8
 
-        targetfunc = lambda x: n0 - (1 - x ** (self.n_knots)) / (1 - x) - ns
+        def targetfunc(x):
+            return n0 - (1 - x ** (self.n_knots)) / (1 - x) - ns
+
         result = optimize.fsolve(targetfunc, alpha_guess)
         alpha = result[0]
         n_knots = n0 - (1 - alpha**jvect) / (1 - alpha)
@@ -994,7 +1140,7 @@ class PSDPowerLaw(PSD):
 
         """
 
-        if type(wind) == np.ndarray:
+        if isinstance(wind, np.ndarray):
             w = wind[:]
         elif wind == "hanning":
             w = np.hanning(len(y))
@@ -1014,10 +1160,10 @@ class PSDPowerLaw(PSD):
         """
 
         # If there is only one periodogram
-        if type(y_fft) == np.ndarray:
+        if isinstance(y_fft, np.ndarray):
             per = self.periodogram(y_fft, k2=k2)
         # Otherwise calculate the periodogram for each data set:
-        elif type(y_fft) == list:
+        elif isinstance(y_fft, list):
             per = [self.periodogram(y_fft[i], k2=k2[i]) for i in range(len(y_fft))]
 
         self.estimate_from_periodogram(per)
@@ -1059,9 +1205,9 @@ class PSDPowerLaw(PSD):
         """
 
         # If there is only one periodogram
-        if type(per) == np.ndarray:
+        if isinstance(per, np.ndarray):
             self.beta = self.fit_lsqr(per)
-        elif type(per) == list:
+        elif isinstance(per, list):
             # If there are several periodograms, average the estimates
             self.beta = [
                 self.fit_lsqr(I0) for I0 in per if self.fs / len(I0) < self.f_knots[0]
@@ -1139,12 +1285,14 @@ def theoretical_spectrum_func(channel, scale=1.0):
 
     """
 
-    if channel == "a_mat":
-        psd_fn = lambda x: tdi.noisepsd_AE(x, model="SciRDv1") * scale**2
-    elif channel == "E":
-        psd_fn = lambda x: tdi.noisepsd_AE(x, model="SciRDv1") * scale**2
-    elif channel == "T":
-        psd_fn = lambda x: tdi.noisepsd_T(x, model="SciRDv1") * scale**2
+    def psd_fn(x):
+        if channel == "a_mat":
+            return tdi.noisepsd_AE(x, model="SciRDv1") * scale**2
+        if channel == "E":
+            return tdi.noisepsd_AE(x, model="SciRDv1") * scale**2
+        if channel == "T":
+            return tdi.noisepsd_T(x, model="SciRDv1") * scale**2
+        raise ValueError("Unknown channel")
 
     return psd_fn
 
@@ -1171,7 +1319,11 @@ class PSDTheoretical(PSD):
         PSD.__init__(self, n_data, fs, fmin=fmin, fmax=fmax)
         self.channel = channel
         self.scale = scale
-        self.log_psd_fn = lambda x: np.log(self.psd_fn(np.exp(x)))
+
+        def log_psd_func(x):
+            return np.log(self.psd_fn(np.exp(x)))
+
+        self.log_psd_fn = log_psd_func
 
     def psd_fn(self, x):
         if self.channel == "A":
@@ -1292,7 +1444,7 @@ class ModelFDDataPSD(PSD):
         self.chdata = None
         try:
             self.chdata = data[channel]
-        except:
+        except Exception:
             pass
 
         if fmax is not None:
@@ -1318,7 +1470,10 @@ class ModelFDDataPSD(PSD):
             if smooth_df is not None:
                 nsmooth = int(smooth_df / df)
                 w = np.hanning(nsmooth)
-                smooth = lambda s: np.convolve(w / w.sum(), s, mode="same")
+
+                def smooth(s):
+                    return np.convolve(w / w.sum(), s, mode="same")
+
                 Sinit = smooth(Sinit)
         else:
             Sinit = None
@@ -1329,7 +1484,11 @@ class ModelFDDataPSD(PSD):
             self.logSinit = interpolate.interp1d(
                 np.log(f), np.log(Sinit), fill_value="extrapolate"
             )
-            self.Sinit = lambda x: np.exp(self.logSinit(np.log(x)))
+
+            def sinit_func(x):
+                return np.exp(self.logSinit(np.log(x)))
+
+            self.Sinit = sinit_func
 
         self.fit = None
         if fit_type is None:
@@ -1363,7 +1522,7 @@ class ModelFDDataPSD(PSD):
         else:
             raise ValueError("Fit scale not understood for fit_type" + fit_type)
         # Now a check:
-        if not fit_func in ["poly", "spline"]:
+        if fit_func not in ["poly", "spline"]:
             raise ValueError(
                 "Couldn't process fit_type '"
                 + fit_type
@@ -1413,12 +1572,15 @@ class ModelFDDataPSD(PSD):
             pf = np.polyfit(x, y, fit_dof + 1, w=w)
             # print('poly fit:',pf)
             fitpoly = np.poly1d(pf)
-            self.fit = lambda x: fitpoly(x)
+
+            def fit_func_poly(x):
+                return fitpoly(x)
+
+            self.fit = fit_func_poly
         elif fit_func == "spline":
             # I tried using the functionality in psdmodel.py but couldn't get it working.
             # to stay close to the existing implementation in psdmodel.py
             # print(f[0],'< f < ',f[-1],'fmin/fmax=',fmin,fmax)
-            n_knots = fit_dof - 2  # dof=n_knots+2 (maybe, sort of guessing)
             knots = self.choose_knots(f)  # This function needs f, not x
             xknots = knots
             # print('lowest f knots:',knots[:5])
@@ -1463,7 +1625,6 @@ class ModelFDDataPSD(PSD):
                 k = 3
                 iscan = 0
                 while j + k + 1 < len(t):
-                    nmin = 1  # minimum number of points in the segment
                     # First scan to the relevant part of the data
                     while x[iscan] <= t[j] and iscan < len(x):
                         iscan += 1
@@ -1486,12 +1647,16 @@ class ModelFDDataPSD(PSD):
 
                 if not dfitpack.fpchec(x, t, k) == 0:
                     print("Failed")
-                scipy.interpolate.LSQUnivariateSpline(
+                interpolate.LSQUnivariateSpline(
                     x, y, xknots[1:-1], w=1 / f, k=3, ext=3, check_finite=False
                 )
 
             self.knots = knots
-            self.fit = lambda x: fitspline(x)
+
+            def fit_func_spline(x):
+                return fitspline(x)
+
+            self.fit = fit_func_spline
             self.interior_knots = fitspline.get_knots()
             self.spline_coeffs = fitspline.get_coeffs()
 
@@ -1556,7 +1721,6 @@ class ModelFDDataPSD(PSD):
         k = 1  # we use 1 instead of 3 to be conservative, and to hopefully avoid issues that seem to happen near ends
         iscan = 0
         while j + k + 1 < len(t):
-            nmin = 1  # minimum number of points in the segment
             # First scan to the relevant part of the data
             while x[iscan] <= t[j] and iscan < len(x):
                 iscan += 1
@@ -1700,7 +1864,11 @@ class ModelFDDataPSD(PSD):
         # print('knots changed to:',self.knots)
         self.coeffs = splinedict["coeffs"]
         self.spline = interpolate.BSpline(knots, self.coeffs, 3)
-        self.fit = lambda x: self.spline(x)
+
+        def fit_func(x):
+            return self.spline(x)
+
+        self.fit = fit_func
 
     def psd_fn(self, x):
         # returns the psd function defined earlier

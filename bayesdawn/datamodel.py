@@ -85,7 +85,7 @@ def generate_freq_noise_from_psd(psd, fs, myseed=None):
         p = psd.shape[1]
         # Form the covariance matrices in the Fourier domain
         cov = psd[0 : n_fft + 1]
-        # Perform Cholesky factorization of the correlation matrices C_m
+        # Perform Cholesky factorization of the spectrum matrices
         psd_sqrt = np.linalg.cholesky(cov)
         # Real part of the Noise fft : it is a gaussian random variable
         w_real = np.sqrt(0.5) * np.random.multivariate_normal(
@@ -112,7 +112,8 @@ def generate_freq_noise_from_psd(psd, fs, myseed=None):
         noise_tf = np.hstack((noise_tf, np.conj(noise_tf[1 : n_fft + 1])[::-1]))
 
     elif (n_psd % 2 == 0) & (psd.ndim == 3):
-        noise_sym0 = np.random.multivariate_normal(np.zeros(p), psd[n_fft + 1].real)
+        psd_sqrt_nyq = np.linalg.cholesky(psd[n_fft + 1])
+        noise_sym0 = psd_sqrt_nyq @ np.random.multivariate_normal(np.zeros(p), np.eye(p))
         noise_tf = np.concatenate(
             (
                 noise_tf,
@@ -161,7 +162,7 @@ def generate_noise_from_psd(psd, fs, myseed=None):
         time sample of the colored noise (size N)
     """
 
-    return ifft(generate_freq_noise_from_psd(psd, fs, myseed=myseed))
+    return np.real(ifft(generate_freq_noise_from_psd(psd, fs, myseed=myseed), axis=0))
 
 
 class NdTimeSeries(ndarray):
@@ -814,7 +815,7 @@ class GaussianStationaryProcess(object):
         else:
             if draw:
                 # For missing data draw:
-                e = np.real(generate_noise_from_psd(s2, self.psd_cls.fs)[0 : self.n])
+                e = generate_noise_from_psd(s2, self.psd_cls.fs)[0 : self.n]
                 u = self.apply_coo_inv(
                     y[self.ind_obs] - e[self.ind_obs], s2, solve=solve
                 )
@@ -909,11 +910,7 @@ class GaussianStationaryProcess(object):
             def c_mo(v):
                 return matrixalgebra.mat_vect_prod(v, ind_obsj, ind_misj, maskj, cov_2n)
 
-            # eps = self.conditional_draw_fast(yj[ind_obsj], psd_2n, c_oo_inv,
-            #                                  c_mo, ind_obsj, ind_misj, maskj)
-            e = np.real(
-                generate_noise_from_psd(psd_2n, self.psd_cls.fs)[0 : maskj.shape[0]]
-            )
+            e = generate_noise_from_psd(psd_2n, self.psd_cls.fs)[0 : maskj.shape[0]]
 
             # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
             rhs = yj[ind_obsj] - e[ind_obsj]
@@ -997,19 +994,518 @@ class GaussianStationaryProcess(object):
         return mu_mis_j
 
 
-class GSP(object):
-    def __init__(self, mu, cov):
+class MultivariateGaussianStationaryProcess(object):
+    """
+    Skeleton class for multivariate, correlated Gaussian time-series
+    imputation from a PSD-CSD spectral matrix.
+
+    Notes
+    -----
+    This class mirrors the public API of GaussianStationaryProcess while
+    operating on arrays with shape (n_data, n_channels).
+    The numerical kernels for block-covariance application and conditional
+    draws are intentionally left as TODOs.
+    """
+
+    def __init__(
+        self,
+        y_mean,
+        mask,
+        psd_cls,
+        method="nearest",
+        precond="taper",
+        na=150,
+        nb=150,
+        p=60,
+        tol=1e-6,
+        n_it_max=1000,
+        n_wood_max=5000,
+        shared_mask=True,
+    ):
         """
-
-        New Gaussian stationary process class
-
         Parameters
         ----------
-        mu : callable
-            Mean function (of time)
-        cov : bayesdawn.operator.CovarianceOperator instance
-            Covariance operator of the Gaussian process
+        y_mean : array_like
+            Mean time series with shape (n_data, n_channels).
+        mask : array_like
+            If shared_mask is True, expected shape is (n_data,).
+            Otherwise expected shape is (n_data, n_channels).
+        psd_cls : object or callable
+            PSD/CSD provider.
+        method, precond, na, nb, p, tol, n_it_max, n_wood_max :
+            Same meaning as in GaussianStationaryProcess.
+        shared_mask : bool
+            If True, one time mask is shared by all channels.
         """
 
-        self.mu = mu
-        self.cov = cov
+        self.y_mean = np.asarray(copy.deepcopy(y_mean))
+        if self.y_mean.ndim != 2:
+            raise ValueError("y_mean must be a 2D array of shape (n_data, n_channels)")
+
+        self.n, self.n_chan = self.y_mean.shape
+        self.shared_mask = shared_mask
+
+        raw_mask = np.asarray(copy.deepcopy(mask))
+        if self.shared_mask:
+            if raw_mask.ndim != 1 or raw_mask.shape[0] != self.n:
+                raise ValueError(
+                    "With shared_mask=True, mask must be 1D with length n_data"
+                )
+            self.mask = raw_mask
+            self.mask_time = raw_mask
+        else:
+            if raw_mask.ndim != 2 or raw_mask.shape != self.y_mean.shape:
+                raise ValueError(
+                    "With shared_mask=False, mask must have shape (n_data, n_channels)"
+                )
+            self.mask = raw_mask
+            # Conservative definition: a time index is observed only if all
+            # channels are observed.
+            self.mask_time = np.prod(raw_mask, axis=1)
+
+        self.psd_cls = copy.deepcopy(psd_cls)
+        self.method = method
+        self.precond = precond
+        self.p = p
+        self.tol = tol
+        self.n_it_max = n_it_max
+        self.n_wood_max = n_wood_max
+        self.na = na
+        self.nb = nb
+
+        # Gap bookkeeping on the time axis
+        if np.any(self.mask_time == 0):
+            self.n_starts, self.n_ends = gapgenerator.find_ends(self.mask_time)
+            gap_lengths = self.n_ends - self.n_starts
+            self.n_max = int(na + nb + np.max(gap_lengths))
+            self.n_gaps = len(self.n_starts)
+            self.ind_mis_t = np.where(self.mask_time == 0)[0]
+            self.ind_obs_t = np.where(self.mask_time == 1)[0]
+        else:
+            self.n_starts, self.n_ends = 0, self.n
+            self.n_max = 0
+            self.n_gaps = 0
+            self.ind_mis_t = np.array([], dtype=int)
+            self.ind_obs_t = np.arange(0, self.n).astype(int)
+
+        if self.method != "nearest":
+            self.n_max = self.n
+        elif self.n_max > 2000:
+            warnings.warn("The maximum size of gap + conditional is high.", UserWarning)
+
+        self.indices = self._build_gap_segments(na, nb)
+
+        # Segment-level cache (time-domain view)
+        if self.indices is None:
+            self.segment_meta = None
+        else:
+            self.segment_meta = []
+            for indj in self.indices:
+                maskj = self.mask_time[indj]
+                ind_obsj = np.where(maskj == 1)[0]
+                ind_misj = np.where(maskj == 0)[0]
+                self.segment_meta.append(
+                    {
+                        "indices": indj,
+                        "mask": maskj,
+                        "ind_obs": ind_obsj,
+                        "ind_mis": ind_misj,
+                        "segment_size": int(self.na + self.nb + len(ind_misj)),
+                        "n_mis": len(ind_misj),
+                    }
+                )
+
+        # Offline caches for multivariate covariance model
+        self.crosscorr = None
+        self.s2_matrix = None
+        self.solve = None
+        self._cov_block_cache = {}
+
+    def _build_gap_segments(self, na, nb):
+        """Build time segments around each gap (same logic as univariate)."""
+
+        if self.n_gaps == 0:
+            return None
+
+        if self.n_gaps == 1:
+            return [
+                np.arange(
+                    int(np.max([self.n_starts[0] - na, 0])),
+                    int(np.min([self.n_ends[0] + nb, self.n])),
+                )
+            ]
+
+        indices = [
+            np.arange(
+                int(np.max([self.n_starts[0] - na, 0])),
+                int(np.min([self.n_ends[0] + nb, self.n_starts[1]])),
+            )
+        ]
+        indices = indices + [
+            np.arange(
+                int(np.max([self.n_starts[j] - na, self.n_ends[j - 1]])),
+                int(np.min([self.n_ends[j] + nb, self.n_starts[j + 1]])),
+            )
+            for j in range(1, self.n_gaps - 1)
+        ]
+        indices = indices + [
+            np.arange(
+                int(
+                    np.max(
+                        [
+                            self.n_starts[self.n_gaps - 1] - na,
+                            self.n_ends[self.n_gaps - 2],
+                        ]
+                    )
+                ),
+                int(np.min([self.n_ends[self.n_gaps - 1] + nb, self.n])),
+            )
+        ]
+        return indices
+
+    def update_psd(self, psd_cls):
+        """Update PSD/CSD provider."""
+
+        self.psd_cls = copy.deepcopy(psd_cls)
+        self.crosscorr = None
+        self.s2_matrix = None
+        self.solve = None
+        self._cov_block_cache = {}
+
+    def update_mean(self, y_mean):
+        """Update multichannel mean model."""
+
+        y_mean = np.asarray(y_mean)
+        if y_mean.shape != self.y_mean.shape:
+            raise ValueError("y_mean must keep shape (n_data, n_channels)")
+        self.y_mean = copy.deepcopy(y_mean)
+
+    def compute_offline(self):
+        """
+        Prepare multivariate covariance quantities from PSD/CSD model.
+        """
+
+        if self.method != "nearest":
+            raise NotImplementedError(
+                "Only method='nearest' is currently implemented for "
+                "MultivariateGaussianStationaryProcess."
+            )
+
+        if not self.shared_mask:
+            raise NotImplementedError(
+                "Only shared_mask=True is currently implemented for "
+                "MultivariateGaussianStationaryProcess."
+            )
+
+        if hasattr(self.psd_cls, "calculate"):
+            self.s2_matrix = np.asarray(self.psd_cls.calculate(2 * self.n_max))
+        elif callable(self.psd_cls):
+            f = np.fft.fftfreq(2 * self.n_max) * self.psd_cls.fs
+            self.s2_matrix = np.asarray(self.psd_cls(f))
+        else:
+            raise ValueError(
+                "psd_cls must provide a calculate method or be a callable "
+                "returning a PSD-CSD matrix."
+            )
+
+        if self.s2_matrix.ndim != 3:
+            raise ValueError(
+                "Multivariate PSD must have shape (n_freq, n_chan, n_chan)"
+            )
+        if (
+            self.s2_matrix.shape[1] != self.n_chan
+            or self.s2_matrix.shape[2] != self.n_chan
+        ):
+            raise ValueError(
+                "PSD-CSD matrix channel dimensions must match y_mean second dimension"
+            )
+
+        if hasattr(self.psd_cls, "calculate_autocorr"):
+            crosscorr = np.asarray(self.psd_cls.calculate_autocorr(self.n))
+            if crosscorr.ndim != 3:
+                raise ValueError(
+                    "calculate_autocorr must return a 3D array for multivariate mode"
+                )
+            if crosscorr.shape[0] == self.n_chan and crosscorr.shape[1] == self.n_chan:
+                self.crosscorr = crosscorr[:, :, 0 : self.n_max]
+            elif (
+                crosscorr.shape[1] == self.n_chan and crosscorr.shape[2] == self.n_chan
+            ):
+                self.crosscorr = np.transpose(crosscorr[0 : self.n_max], (1, 2, 0))
+            else:
+                raise ValueError(
+                    "Unexpected autocorrelation shape for multivariate mode"
+                )
+        else:
+            # Fallback: infer lag-domain cross-correlations from spectral matrices.
+            corr = ifft(self.s2_matrix, axis=0)
+            self.crosscorr = np.real(np.transpose(corr[0 : self.n_max], (1, 2, 0)))
+
+        # Invalidate cached covariance blocks whenever PSD-derived quantities change.
+        self._cov_block_cache = {}
+
+    def compute_preconditioner(self):
+        """
+        Build block preconditioner for multivariate C_oo systems.
+        """
+
+        raise NotImplementedError(
+            "Multivariate preconditioner construction is not implemented yet."
+        )
+
+    def impute(self, y, draw=True):
+        """Impute missing entries in a multichannel time series."""
+
+        y = np.asarray(y)
+        if y.shape != self.y_mean.shape:
+            raise ValueError("y must have shape (n_data, n_channels)")
+        if self.n_gaps > 0:
+            return self.draw_missing_data(y, draw=draw)
+        return y
+
+    def draw_missing_data(self, y, draw=True):
+        """Draw missing multichannel data from conditional distribution."""
+
+        if self.crosscorr is None or self.s2_matrix is None:
+            self.compute_offline()
+
+        if ((self.method == "PCG") | (self.method == "tapered")) and (
+            self.solve is None
+        ):
+            self.compute_preconditioner()
+
+        y_res = y - self.y_mean
+        y_mis_res = self.imputation(
+            y_res,
+            self.crosscorr,
+            self.s2_matrix,
+            solve=self.solve,
+            draw=draw,
+        )
+
+        y_rec = copy.deepcopy(y)
+        if self.shared_mask:
+            y_rec[self.ind_mis_t, :] = y_mis_res + self.y_mean[self.ind_mis_t, :]
+        else:
+            raise NotImplementedError(
+                "Channel-specific mask scattering is not implemented yet."
+            )
+
+        return y_rec
+
+    def apply_coo_inv(self, z_o, s2, solve=None):
+        """
+        Apply inverse observed-observed block covariance to a vector/matrix.
+        """
+
+        raise NotImplementedError(
+            "Multivariate C_oo^{-1} application is not implemented yet."
+        )
+
+    def imputation(self, y, r, s2, solve=None, draw=True):
+        """
+        Multivariate conditional imputation core.
+        """
+
+        if self.method != "nearest":
+            raise NotImplementedError(
+                "Only method='nearest' is currently implemented for multivariate mode."
+            )
+
+        y_mis = np.empty((len(self.ind_mis_t), self.n_chan), dtype=y.dtype)
+        offset = 0
+        for seg in self.segment_meta:
+            yj = y[seg["indices"], :]
+            c_seg = self._build_segment_block_toeplitz(yj.shape[0])
+            if draw:
+                out = self.single_imputation(
+                    yj,
+                    seg["mask"],
+                    c=c_seg,
+                    r=r,
+                    psd_2n=s2,
+                    ind_obsj=seg["ind_obs"],
+                    ind_misj=seg["ind_mis"],
+                    segment_size=seg["segment_size"],
+                )
+            else:
+                out = self.single_conditional_mean(
+                    yj,
+                    seg["mask"],
+                    c=c_seg,
+                    r=r,
+                    psd_2n=s2,
+                    ind_obsj=seg["ind_obs"],
+                    ind_misj=seg["ind_mis"],
+                    segment_size=seg["segment_size"],
+                )
+            n_mis = seg["n_mis"]
+            y_mis[offset : offset + n_mis, :] = out
+            offset += n_mis
+
+        return y_mis
+
+    def _flatten_channel_major(self, yj_sub):
+        """Flatten a (n_time, n_chan) array as channel-wise concatenated series."""
+
+        return np.concatenate([yj_sub[:, k] for k in range(self.n_chan)])
+
+    def _reshape_channel_major_missing(self, vec, n_mis):
+        """Map channel-major missing vector back to (n_mis, n_chan)."""
+
+        return vec.reshape(self.n_chan, n_mis).T
+
+    def _channel_major_time_indices(self, ind_time, segment_length):
+        """Map local time indices to channel-major flattened vector indices."""
+
+        return np.concatenate(
+            [ind_time + k * segment_length for k in range(self.n_chan)]
+        )
+
+    def _build_segment_block_toeplitz(self, segment_length):
+        """
+        Build channel-major covariance block Toeplitz for one segment length.
+        """
+
+        if segment_length in self._cov_block_cache:
+            return self._cov_block_cache[segment_length]
+
+        if self.crosscorr is None:
+            raise ValueError("crosscorr is not available, call compute_offline first")
+
+        if segment_length > self.crosscorr.shape[2]:
+            raise ValueError(
+                "segment length exceeds available autocorrelation lag range"
+            )
+
+        blocks = [
+            [
+                linalg.toeplitz(self.crosscorr[i, j, 0:segment_length])
+                for j in range(self.n_chan)
+            ]
+            for i in range(self.n_chan)
+        ]
+        cov = np.block(blocks)
+        self._cov_block_cache[segment_length] = cov
+        return cov
+
+    def _build_local_covariance_blocks(self, ind_misj, ind_obsj, segment_length=None):
+        """
+        Build C_mo and C_oo for one segment using index selection from the
+        channel-major block Toeplitz covariance.
+        """
+
+        if segment_length is None:
+            segment_length = int(
+                np.max(np.concatenate((ind_misj, ind_obsj))).astype(int) + 1
+            )
+
+        c = self._build_segment_block_toeplitz(segment_length)
+        ind_mis_flat = self._channel_major_time_indices(ind_misj, segment_length)
+        ind_obs_flat = self._channel_major_time_indices(ind_obsj, segment_length)
+
+        c_mo = c[np.ix_(ind_mis_flat, ind_obs_flat)]
+        c_oo = c[np.ix_(ind_obs_flat, ind_obs_flat)]
+
+        return c_mo, c_oo
+
+    def _build_local_covariance(self, ind_row, ind_col, segment_length=None):
+        """Select block covariance between two local time index sets."""
+
+        if segment_length is None:
+            segment_length = int(
+                np.max(np.concatenate((ind_row, ind_col))).astype(int) + 1
+            )
+
+        c = self._build_segment_block_toeplitz(segment_length)
+        ind_row_flat = self._channel_major_time_indices(ind_row, segment_length)
+        ind_col_flat = self._channel_major_time_indices(ind_col, segment_length)
+        return c[np.ix_(ind_row_flat, ind_col_flat)]
+
+    def single_imputation(
+        self,
+        yj,
+        maskj,
+        c,
+        r,
+        psd_2n,
+        threshold=2000,
+        ind_obsj=None,
+        ind_misj=None,
+        segment_size=None,
+    ):
+        """
+        Segment-level multivariate conditional draw.
+        """
+
+        if ind_obsj is None:
+            ind_obsj = np.where(maskj == 1)[0]
+        if ind_misj is None:
+            ind_misj = np.where(maskj == 0)[0]
+
+        n_mis = len(ind_misj)
+        if n_mis == 0:
+            return np.empty((0, self.n_chan), dtype=yj.dtype)
+
+        seg_len = yj.shape[0]
+        if c is None:
+            c = self._build_segment_block_toeplitz(seg_len)
+        ind_obs_flat = self._channel_major_time_indices(ind_obsj, seg_len)
+        ind_mis_flat = self._channel_major_time_indices(ind_misj, seg_len)
+
+        c_mo = c[np.ix_(ind_mis_flat, ind_obs_flat)]
+        c_oo = c[np.ix_(ind_obs_flat, ind_obs_flat)]
+        c_mm = c[np.ix_(ind_mis_flat, ind_mis_flat)]
+
+        y_obs = self._flatten_channel_major(yj[ind_obsj, :])
+        u = linalg.solve(c_oo, y_obs, assume_a="pos")
+        mu_mis = c_mo.dot(u)
+
+        c_om = c_mo.T
+        cond_cov = c_mm - c_mo.dot(linalg.solve(c_oo, c_om, assume_a="pos"))
+        # Symmetrize and lightly regularize to mitigate round-off issues.
+        cond_cov = 0.5 * (cond_cov + cond_cov.T)
+        cond_cov = cond_cov + 1e-12 * np.eye(cond_cov.shape[0])
+
+        draw_mis = np.random.multivariate_normal(mu_mis, cond_cov)
+
+        return self._reshape_channel_major_missing(draw_mis, n_mis)
+
+    def single_conditional_mean(
+        self,
+        yj,
+        maskj,
+        c,
+        r,
+        psd_2n,
+        threshold=2000,
+        ind_obsj=None,
+        ind_misj=None,
+        segment_size=None,
+    ):
+        """
+        Segment-level multivariate conditional mean.
+        """
+
+        if ind_obsj is None:
+            ind_obsj = np.where(maskj == 1)[0]
+        if ind_misj is None:
+            ind_misj = np.where(maskj == 0)[0]
+
+        if len(ind_misj) == 0:
+            return np.empty((0, self.n_chan), dtype=yj.dtype)
+
+        seg_len = yj.shape[0]
+        if c is None:
+            c = self._build_segment_block_toeplitz(seg_len)
+        ind_obs_flat = self._channel_major_time_indices(ind_obsj, seg_len)
+        ind_mis_flat = self._channel_major_time_indices(ind_misj, seg_len)
+
+        c_mo = c[np.ix_(ind_mis_flat, ind_obs_flat)]
+        c_oo = c[np.ix_(ind_obs_flat, ind_obs_flat)]
+        y_obs = self._flatten_channel_major(yj[ind_obsj, :])
+
+        rhs = linalg.solve(c_oo, y_obs, assume_a="pos")
+        mu_mis_vec = c_mo.dot(rhs)
+
+        return self._reshape_channel_major_missing(mu_mis_vec, len(ind_misj))
