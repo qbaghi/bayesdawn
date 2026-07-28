@@ -374,30 +374,30 @@ def pcg_solve(ind_obs, mask, s_2n, b, x0, tol, maxiter, p_solver, pcg_algo):
         def coo_func(x):
             return mat_vect_prod(x, ind_obs, ind_obs, mask, s_2n)
 
-        u, sr, info = precond_bicgstab(x0, b, coo_func, maxiter, tol, p_solver)
+        u, _, info = precond_bicgstab(x0, b, coo_func, maxiter, tol, p_solver)
 
     elif "scipy" in pcg_algo:
         coo_op = cov_linear_op(ind_obs, ind_obs, mask, s_2n)
         p_op = precond_linear_op(p_solver, n_o, n_o)
-        tol_eff = np.min([tol, tol * LA.norm(b)])
+        # tol_eff = np.min([tol, tol * LA.norm(b)])
         if (pcg_algo == "scipy") | (pcg_algo == "scipy.bicgstab"):
             u, info = sparse.linalg.bicgstab(
-                coo_op, b, x0=x0, tol=tol_eff, maxiter=maxiter, M=p_op, callback=None
+                coo_op, b, x0=x0, rtol=tol, maxiter=maxiter, M=p_op, callback=None
             )
             print_pcg_status(info)
         elif pcg_algo == "scipy.bicg":
             u, info = sparse.linalg.bicg(
-                coo_op, b, x0=x0, tol=tol_eff, maxiter=maxiter, M=p_op, callback=None
+                coo_op, b, x0=x0, rtol=tol, maxiter=maxiter, M=p_op, callback=None
             )
             print_pcg_status(info)
         elif pcg_algo == "scipy.cg":
             u, info = sparse.linalg.cg(
-                coo_op, b, x0=x0, tol=tol_eff, maxiter=maxiter, M=p_op, callback=None
+                coo_op, b, x0=x0, rtol=tol, maxiter=maxiter, M=p_op, callback=None
             )
             print_pcg_status(info)
         elif pcg_algo == "scipy.cgs":
             u, info = sparse.linalg.cgs(
-                coo_op, b, x0=x0, tol=tol_eff, maxiter=maxiter, M=p_op, callback=None
+                coo_op, b, x0=x0, rtol=tol, maxiter=maxiter, M=p_op, callback=None
             )
             print_pcg_status(info)
         else:

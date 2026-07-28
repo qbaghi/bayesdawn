@@ -60,6 +60,7 @@ class GaussianStationaryProcess(object):
         psd_cls,
         method="nearest",
         precond="taper",
+        pcg_algo="scipy",
         na=150,
         nb=150,
         p=60,
@@ -87,6 +88,9 @@ class GaussianStationaryProcess(object):
             'woodbury': low-rank formulation, non-iterative, exact method.
         precond : str
             Preconditionning methods among {'taper', 'circulant'}.
+        pcg_algo : str
+            PCG algorithm among {'scipy', 'scipy.bicgstab', 'scipy.bicg',
+            'scipy.cg', 'scipy.cgs'}.
         na : scalar integer
             number of points to consider before each gap (for the conditional
             distribution of gap data)
@@ -109,9 +113,11 @@ class GaussianStationaryProcess(object):
         self.method = method
         # Preconditionning method
         self.precond = precond
+        # Preconditioned gradient descent algorithm to solve the linear system
+        self.pcg_algo = pcg_algo
         # Tappering number for sparse approximation of the covariance
         self.p = p
-        # Error tolerance to reach to end PCG algorithm iterations
+        # Relative error tolerance to reach to end PCG algorithm iterations
         self.tol = tol
         # Maximum number of iterations for the PCG algorithm
         self.n_it_max = n_it_max
@@ -474,7 +480,7 @@ class GaussianStationaryProcess(object):
                 self.tol,
                 self.n_it_max,
                 solve,
-                "scipy",
+                self.pcg_algo,
             )
         elif self.method == "woodbury":
             epsilon_masked = np.zeros(self.n)
@@ -563,6 +569,10 @@ class GaussianStationaryProcess(object):
                 offset += n_mis
 
         else:
+            # Compute the DFT covariances from the one-sided PSD S(f), which should be 
+            # cov = n_points * S(f) * fs / 2 but the factor of npoints is already accounted for in 
+            # the IFFT normalization
+            cov_2n = s2 * self.psd_cls.fs / 2.0
             if draw:
                 # For missing data draw:
                 e = generate_noise_from_psd(s2, self.psd_cls.fs)[0 : self.n]
@@ -571,7 +581,7 @@ class GaussianStationaryProcess(object):
                 )
                 # Z u | o = Z_tilde_u + Cmo Coo^-1 ( Z_o - Z_tilde_o )
                 y_mis = e[self.ind_mis] + matrixalgebra.mat_vect_prod(
-                    u, self.ind_obs, self.ind_mis, self.mask, s2
+                    u, self.ind_obs, self.ind_mis, self.mask, cov_2n
                 )
             else:
                 # For conditional mean computation:
@@ -579,7 +589,7 @@ class GaussianStationaryProcess(object):
                 u = self.apply_coo_inv(y[self.ind_obs], s2, solve=solve)
                 # Compute the missing data conditional mean via z|o = Cmo u
                 y_mis = matrixalgebra.mat_vect_prod(
-                    u, self.ind_obs, self.ind_mis, self.mask, s2
+                    u, self.ind_obs, self.ind_mis, self.mask, cov_2n
                 )
 
         return y_mis
