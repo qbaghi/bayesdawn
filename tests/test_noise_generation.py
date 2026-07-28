@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 
-from bayesdawn.datamodel import generate_freq_noise_from_psd, generate_noise_from_psd
+from bayesdawn.noisegenerator import generate_freq_noise_from_psd, generate_noise_from_psd
 
 
 def _plot_enabled():
