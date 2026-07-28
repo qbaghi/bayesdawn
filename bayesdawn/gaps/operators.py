@@ -22,6 +22,7 @@ class MappingOperator:
     Implement W_o and W_m operators mapping the observed/missing data
     to the full data vector and conversely.
     """
+
     def __init__(self, inds, n_data):
         """
         Class constructor.
@@ -194,6 +195,7 @@ class CovarianceOperator:
     Toeplitz Noise covariance operator defined by a an autocovariance
     function calculated at sampling times.
     """
+
     def __init__(self, autocorr, inds_obs, inds_mis):
         """Initialize the covariance operator.
 

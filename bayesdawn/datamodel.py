@@ -7,11 +7,11 @@ Created on Fri Feb  1 13:24:27 2019
 This module provide classes to perform missing data imputation steps based on
 Gaussian conditional model
 """
+
 import copy
 import warnings
-from numpy import ndarray
 import numpy as np
-from scipy import signal, linalg
+from scipy import linalg
 import pyfftw
 from pyfftw.interfaces.numpy_fft import fft, ifft
 from .algebra import matrixalgebra, fastoeplitz
@@ -25,7 +25,7 @@ pyfftw.interfaces.cache.enable()
 def toeplitz(r, inds):
     """
     Build a Toeplitz matrix from a vector r and a set of indices inds.
-    
+
     Parameters
     ----------
     r : array_like
@@ -163,14 +163,15 @@ class GaussianStationaryProcess(object):
             ]
 
         elif self.n_gaps > 1:
-            # first segment
+            # First segment
             self.indices = [
                 np.arange(
                     int(np.max([self.n_starts[0] - na, 0])),
                     int(np.min([self.n_ends[0] + nb, self.n_starts[1]])),
                 )
             ]
-            # most of the segments
+            # Most of the segments: select data around each gap, na before and nb after, but not
+            # overlapping with the next gap
             self.indices = self.indices + [
                 np.arange(
                     int(np.max([self.n_starts[j] - na, self.n_ends[j - 1]])),
@@ -178,7 +179,7 @@ class GaussianStationaryProcess(object):
                 )
                 for j in range(1, self.n_gaps - 1)
             ]
-            # last segment
+            # Last segment
             self.indices = self.indices + [
                 np.arange(
                     int(
