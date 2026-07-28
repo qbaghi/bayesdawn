@@ -17,11 +17,14 @@ from bayesdawn.algebra import fastoeplitz
 pyfftw.interfaces.cache.enable()
 
 
-class MappingOperator(object):
+class MappingOperator:
+    """
+    Implement W_o and W_m operators mapping the observed/missing data
+    to the full data vector and conversely.
+    """
     def __init__(self, inds, n_data):
-        """Implement W_o and W_m operators mapping the observed/missing data
-        to the full data vector and conversely.
-
+        """
+        Class constructor.
         W_o matrix has size N_o x n_data
 
         Parameters
@@ -146,13 +149,13 @@ class MappingOperator(object):
 
         if len(y_tilde.shape) == 1:
             return self.apply(ifft(y_tilde) / np.sqrt(self.n_data))
-        elif len(y_tilde.shape) == 2:
-            return np.array(
-                [
-                    self.apply(ifft(y_tilde[:, i]) / np.sqrt(self.n_data))
-                    for i in range(y_tilde.shape[1])
-                ]
-            ).T
+
+        return np.array(
+            [
+                self.apply(ifft(y_tilde[:, i]) / np.sqrt(self.n_data))
+                for i in range(y_tilde.shape[1])
+            ]
+        ).T
 
     def apply_transpose_fourier(self, y_o):
         """Apply transformation
@@ -180,13 +183,19 @@ class MappingOperator(object):
                     for i in range(y_o.shape[1])
                 ]
             ).T
+        else:
+            raise ValueError(
+                "Input array must be 1D or 2D, but has shape {}".format(y_o.shape)
+            )
 
 
-class CovarianceOperator(object):
+class CovarianceOperator:
+    """
+    Toeplitz Noise covariance operator defined by a an autocovariance
+    function calculated at sampling times.
+    """
     def __init__(self, autocorr, inds_obs, inds_mis):
-        """
-        Toeplitz Noise covariance operator defined by a an autocovariance
-        function calculated at sampling times.
+        """Initialize the covariance operator.
 
         Parameters
         ----------
@@ -212,6 +221,7 @@ class CovarianceOperator(object):
         self.c2_mm = np.array([])
         # Cubic covariance at missing data points
         self.c3_mm = np.array([])
+        self.k_mat = np.array([])
 
     def get_cmm(self):
         """
