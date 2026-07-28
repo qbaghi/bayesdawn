@@ -13,7 +13,7 @@ import warnings
 import numpy as np
 from scipy import linalg
 import pyfftw
-from pyfftw.interfaces.numpy_fft import fft, ifft
+from pyfftw.interfaces.numpy_fft import ifft
 from .algebra import matrixalgebra, fastoeplitz
 from .gaps import gapgenerator, operators
 from .noisegenerator import generate_noise_from_psd
@@ -569,8 +569,8 @@ class GaussianStationaryProcess(object):
                 offset += n_mis
 
         else:
-            # Compute the DFT covariances from the one-sided PSD S(f), which should be 
-            # cov = n_points * S(f) * fs / 2 but the factor of npoints is already accounted for in 
+            # Compute the DFT covariances from the one-sided PSD S(f), which should be
+            # cov = n_points * S(f) * fs / 2 but the factor of npoints is already accounted for in
             # the IFFT normalization
             cov_2n = s2 * self.psd_cls.fs / 2.0
             if draw:
