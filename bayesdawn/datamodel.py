@@ -94,7 +94,7 @@ class GaussianStationaryProcess(object):
         na : scalar integer
             number of points to consider before each gap (for the conditional
             distribution of gap data)
-        na : scalar integer
+        nb : scalar integer
             number of points to consider after each gap
         p : int
             number of points to keep before truncation for the preconditionner
@@ -205,10 +205,18 @@ class GaussianStationaryProcess(object):
             self.segment_meta = None
         else:
             self.segment_meta = []
+            batchable_segment_count = 0
             for indj in self.indices:
                 maskj = self.mask[indj]
+                # Observed and missing indices within the segment, relative to the segment
                 ind_obsj = np.where(maskj == 1)[0]
                 ind_misj = np.where(maskj == 0)[0]
+                # Identify the segments for which the observed data has exactly the size na + nb
+                if len(ind_obsj) == self.na + self.nb:
+                    batchable = True
+                    batchable_segment_count += 1
+                else:
+                    batchable = False
                 self.segment_meta.append(
                     {
                         "indices": indj,
@@ -217,8 +225,11 @@ class GaussianStationaryProcess(object):
                         "ind_mis": ind_misj,
                         "segment_size": int(self.na + self.nb + len(ind_misj)),
                         "n_mis": len(ind_misj),
+                        "batchable": batchable,
                     }
                 )
+
+            print("Number of segments that can be batched: ", batchable_segment_count)
 
         # ==
         # Store quantities that can be computed offline
@@ -231,7 +242,7 @@ class GaussianStationaryProcess(object):
         # Preconditionner for PCG or tapered methods
         self.solve = None
         # Inverted matrix for woodbury method
-        self.sig_inv_mm_inv = None
+        self.q_matrix = None
         self.w_m_cls = None
         self.a = None
         self.lambda_n = None
@@ -278,13 +289,15 @@ class GaussianStationaryProcess(object):
             ]
             self.s2 = [psd.calculate(2 * self.n_max) for psd in self.psd_cls]
 
-        if self.method == "woodbury":
+        if (self.method == "PCG") | (self.method == "tapered"):
+            self.compute_preconditioner()
+
+        elif self.method == "woodbury":
             if len(self.ind_mis) <= self.n_wood_max:
                 print("Start Toeplitz system precomputations...")
+                # Build the operator that maps the missing data to the full data vector
                 self.w_m_cls = operators.MappingOperator(self.ind_mis, self.n)
                 w_m = self.w_m_cls.build_matrix(sp=False)
-                # s_n = self.psd_cls.calculate(self.n_max)
-                # sigma_inv_wmt = ifft(fft(w_m.T, axis=0) / np.array([s_n]).T, axis=0)
                 if not isinstance(self.psd_cls, list):
                     autocorr = self.autocorr[:]
                 else:
@@ -299,10 +312,14 @@ class GaussianStationaryProcess(object):
                     method="levinson",
                     precond=self.precond,
                 )
+                # Compute Sigma^{-1} W_m^T
                 sigma_inv_wmt = fastoeplitz.multiple_toepltiz_inverse(
                     w_m.T, self.lambda_n, self.a
                 )
-                self.sig_inv_mm_inv = linalg.pinv(w_m.dot(sigma_inv_wmt))
+                # Store the matrix Q = W_m Sigma^{-1} W_m^T
+                self.q_matrix = w_m.dot(sigma_inv_wmt)
+                # # Compute the inverse of W_m Sigma^{-1} W_m^T
+                # self.sig_inv_mm_inv = linalg.pinv(w_m.dot(sigma_inv_wmt))
 
             else:
                 msg = "Number of missing data is too large for woodbury method."
@@ -397,9 +414,6 @@ class GaussianStationaryProcess(object):
         if self.autocorr is None:
             # print('recomputing offline elements')
             self.compute_offline()
-        if ((self.method == "PCG") | (self.method == "tapered")) & (self.solve is None):
-            self.compute_preconditioner()
-            # print('recomputing preconditioner')
         # If there is only one array
         if isinstance(y, np.ndarray):
             # Impute the missing data: estimation of missing residuals
@@ -490,7 +504,10 @@ class GaussianStationaryProcess(object):
                 epsilon_masked, self.lambda_n, self.a
             )
             y_ = np.zeros(self.n)
-            y_[self.ind_mis] = self.sig_inv_mm_inv.dot(v_[self.ind_mis])
+            # Solve the system Q y = W_m Sigma^{-1} z_o
+            y_[self.ind_mis] = linalg.solve(
+                self.q_matrix, v_[self.ind_mis], assume_a="pos"
+            )
             e_ = v_ - fastoeplitz.toepltiz_inverse_jain(y_, self.lambda_n, self.a)
             x = e_[self.ind_obs]
 
@@ -1028,11 +1045,6 @@ class MultivariateGaussianStationaryProcess(object):
 
         if self.crosscorr is None or self.s2_matrix is None:
             self.compute_offline()
-
-        if ((self.method == "PCG") | (self.method == "tapered")) and (
-            self.solve is None
-        ):
-            self.compute_preconditioner()
 
         y_res = y - self.y_mean
         y_mis_res = self.imputation(
