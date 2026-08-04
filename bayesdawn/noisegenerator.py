@@ -3,7 +3,90 @@
 """Module to generate colored noise from a given PSD"""
 import warnings
 import numpy as np
-from pyfftw.interfaces.numpy_fft import ifft
+from pyfftw.interfaces.numpy_fft import irfft
+from scipy.signal import ShortTimeFFT
+
+
+def _generate_positive_freq_noise_from_psd(psd, myseed=None):
+    """Generate the nonnegative-frequency half-spectrum for a real process."""
+
+    n_psd = len(psd)
+    np.random.seed(myseed)
+    half_len = n_psd // 2 + 1
+
+    if psd.ndim == 1:
+        if n_psd % 2 == 0:
+            psd_sqrt = np.sqrt(psd[:half_len])
+            noise_tf_real = (
+                np.sqrt(0.5)
+                * psd_sqrt[: half_len - 1]
+                * np.random.normal(loc=0.0, scale=1.0, size=half_len - 1)
+            )
+            noise_tf_im = (
+                np.sqrt(0.5)
+                * psd_sqrt[: half_len - 1]
+                * np.random.normal(loc=0.0, scale=1.0, size=half_len - 1)
+            )
+            noise_tf_im[0] = 0.0
+            noise_tf_real[0] = noise_tf_real[0] * np.sqrt(2.0)
+            noise_tf = noise_tf_real + 1j * noise_tf_im
+            noise_tf = np.concatenate((noise_tf, np.array([psd_sqrt[-1] * np.random.normal(0, 1)])))
+        else:
+            psd_sqrt = np.sqrt(psd[:half_len])
+            noise_tf_real = (
+                np.sqrt(0.5)
+                * psd_sqrt
+                * np.random.normal(loc=0.0, scale=1.0, size=half_len)
+            )
+            noise_tf_im = (
+                np.sqrt(0.5)
+                * psd_sqrt
+                * np.random.normal(loc=0.0, scale=1.0, size=half_len)
+            )
+            noise_tf_im[0] = 0.0
+            noise_tf_real[0] = noise_tf_real[0] * np.sqrt(2.0)
+            noise_tf = noise_tf_real + 1j * noise_tf_im
+
+    elif psd.ndim == 3:
+        p = psd.shape[1]
+
+        if n_psd % 2 == 0:
+            cov = psd[: half_len - 1]
+            psd_sqrt = np.linalg.cholesky(cov)
+            w_real = np.sqrt(0.5) * np.random.multivariate_normal(
+                np.zeros(p), np.eye(p), size=half_len - 1
+            )
+            w_imag = np.sqrt(0.5) * np.random.multivariate_normal(
+                np.zeros(p), np.eye(p), size=half_len - 1
+            )
+            noise_tf = np.einsum("...jk, ...k", psd_sqrt, w_real + 1j * w_imag)
+            noise_tf[0].imag = 0
+            noise_tf[0].real = noise_tf[0].real * np.sqrt(2.0)
+
+            psd_sqrt_nyq = np.linalg.cholesky(psd[-1])
+            noise_sym0 = psd_sqrt_nyq @ np.random.multivariate_normal(
+                np.zeros(p), np.eye(p)
+            )
+            noise_tf = np.concatenate((noise_tf, noise_sym0[np.newaxis, :]))
+        else:
+            cov = psd[:half_len]
+            psd_sqrt = np.linalg.cholesky(cov)
+            w_real = np.sqrt(0.5) * np.random.multivariate_normal(
+                np.zeros(p), np.eye(p), size=half_len
+            )
+            w_imag = np.sqrt(0.5) * np.random.multivariate_normal(
+                np.zeros(p), np.eye(p), size=half_len
+            )
+            noise_tf = np.einsum("...jk, ...k", psd_sqrt, w_real + 1j * w_imag)
+            noise_tf[0].imag = 0
+            noise_tf[0].real = noise_tf[0].real * np.sqrt(2.0)
+    else:
+        warnings.WarningMessage(
+            "Invalid spectrum dimension", UserWarning, "invalid_dim", 149
+        )
+        return None
+
+    return noise_tf
 
 
 def generate_freq_noise_from_psd(psd, fs, myseed=None):
@@ -36,82 +119,19 @@ def generate_freq_noise_from_psd(psd, fs, myseed=None):
         frequency sample of the colored noise (size N)
     """
 
-    # Size of the DSP
     n_psd = len(psd)
-    # Initialize seed for generating random numbers
-    np.random.seed(myseed)
-
-    n_fft = int((n_psd - 1) / 2)
+    noise_tf = _generate_positive_freq_noise_from_psd(psd, myseed=myseed)
 
     if psd.ndim == 1:
-        psd_sqrt = np.sqrt(psd[0 : n_fft + 2])
-        # Real part of the Noise fft : it is a gaussian random variable
-        noise_tf_real = (
-            np.sqrt(0.5)
-            * psd_sqrt[0 : n_fft + 1]
-            * np.random.normal(loc=0.0, scale=1.0, size=n_fft + 1)
-        )
-        # Imaginary part of the Noise fft :
-        noise_tf_im = (
-            np.sqrt(0.5)
-            * psd_sqrt[0 : n_fft + 1]
-            * np.random.normal(loc=0.0, scale=1.0, size=n_fft + 1)
-        )
-        # The Fourier transform must be real in f = 0
-        noise_tf_im[0] = 0.0
-        noise_tf_real[0] = noise_tf_real[0] * np.sqrt(2.0)
-        # Create the NoiseTF complex numbers for positive frequencies
-        noise_tf = noise_tf_real + 1j * noise_tf_im
+        if n_psd % 2 == 0:
+            noise_tf = np.hstack((noise_tf, np.conj(noise_tf[1:-1])[::-1]))
+        else:
+            noise_tf = np.hstack((noise_tf, np.conj(noise_tf[1:])[::-1]))
     elif psd.ndim == 3:
-        # Number of variables
-        p = psd.shape[1]
-        # Form the covariance matrices in the Fourier domain
-        cov = psd[0 : n_fft + 1]
-        # Perform Cholesky factorization of the spectrum matrices
-        psd_sqrt = np.linalg.cholesky(cov)
-        # Real part of the Noise fft : it is a gaussian random variable
-        w_real = np.sqrt(0.5) * np.random.multivariate_normal(
-            np.zeros(p), np.eye(p), size=n_fft + 1
-        )
-        w_imag = np.sqrt(0.5) * np.random.multivariate_normal(
-            np.zeros(p), np.eye(p), size=n_fft + 1
-        )
-        # Generate the Z_m in the Fourier domain
-        noise_tf = np.einsum("...jk, ...k", psd_sqrt, w_real + 1j * w_imag)
-        # The Fourier transform must be real in f = 0
-        noise_tf[0].imag = 0
-        noise_tf[0].real = noise_tf[0].real * np.sqrt(2.0)
-
-    # To get a real valued signal we must have NoiseTF(-f) = NoiseTF*
-    if (n_psd % 2 == 0) & (psd.ndim == 1):
-        # The TF at Nyquist frequency must be real in the case of an even number of data
-        noise_sym0 = np.array([psd_sqrt[n_fft + 1] * np.random.normal(0, 1)])
-        # Add the symmetric part corresponding to negative frequencies
-        noise_tf = np.hstack(
-            (noise_tf, noise_sym0, np.conj(noise_tf[1 : n_fft + 1])[::-1])
-        )
-    elif (n_psd % 2 != 0) & (psd.ndim == 1):
-        noise_tf = np.hstack((noise_tf, np.conj(noise_tf[1 : n_fft + 1])[::-1]))
-
-    elif (n_psd % 2 == 0) & (psd.ndim == 3):
-        psd_sqrt_nyq = np.linalg.cholesky(psd[n_fft + 1])
-        noise_sym0 = psd_sqrt_nyq @ np.random.multivariate_normal(
-            np.zeros(p), np.eye(p)
-        )
-        noise_tf = np.concatenate(
-            (
-                noise_tf,
-                noise_sym0[np.newaxis, :],
-                np.conj(noise_tf[1 : n_fft + 1])[::-1],
-            )
-        )
-
-    elif (n_psd % 2 != 0) & (psd.ndim == 3):
-        noise_tf = np.concatenate((noise_tf, np.conj(noise_tf[1 : n_fft + 1])[::-1]))
-    else:
-        warnings.WarningMessage(
-            "Invalid spectrum dimension", UserWarning, "invalid_dim", 149
-        )
+        if n_psd % 2 == 0:
+            noise_tf = np.concatenate((noise_tf, np.conj(noise_tf[1:-1])[::-1]))
+        else:
+            noise_tf = np.concatenate((noise_tf, np.conj(noise_tf[1:])[::-1]))
 
     return np.sqrt(n_psd * fs / 2.0) * noise_tf
 
@@ -133,9 +153,7 @@ def generate_noise_from_psd(psd, fs, myseed=None):
         noise DSP calculated at frequencies between -fe/N_DSP and fe/N_DSP where
         fe is the sampling frequency and N is the size of the time series
         (it will be the size of the returned temporal noise vector b)
-    N : scalar integer
-        Size of the output time series
-    fe : scalar float
+    fs : scalar float
         sampling frequency
     myseed : scalar integer or None
         seed of the random number generator
@@ -146,4 +164,62 @@ def generate_noise_from_psd(psd, fs, myseed=None):
         time sample of the colored noise (size N)
     """
 
-    return np.real(ifft(generate_freq_noise_from_psd(psd, fs, myseed=myseed), axis=0))
+    noise_tf = _generate_positive_freq_noise_from_psd(psd, myseed=myseed)
+    return irfft(np.sqrt(len(psd) * fs / 2.0) * noise_tf, n=len(psd), axis=0)
+
+
+def generate_time_noise_from_evolutionary_psd_function(psd_func, win, hop, fs, n_samples,
+                                                       myseeds=None):
+    """
+    Generate a Gaussian random field in the time domain assuming a locally stationary
+    process for each time window.
+
+    Parameters
+    ----------
+    psd_func : callable
+        Function that takes frequency and time as input and returns the one-sided PSD at that 
+        frequency and time. It can also return a 2d array of size (n_freq, n_chan, n_chan) for 
+        multivariate processes.
+    win : ndarray
+        Tapper window.
+    hop : int
+        Hop size for the ShortTimeFFT. 
+    fs : float
+        Sampling frequency.
+    n_samples : int
+        Total number of samples to generate.
+    myseeds : _type_, optional
+        Array of Seeds for the random number generator, by default None.
+    
+    Returns
+    -------
+    noise_time : ndarray
+        Generated time-domain noise of size (n_samples, n_chan) where n_chan is the number of
+        channels.
+    """
+
+    # Instantiate the ShortTimeFFT class to get the time and frequency bins
+    mfft = 2 * win.size  # Use twice the window size to avoid periodicity issues
+    stft_cls = ShortTimeFFT(win, hop, fs, fft_mode='onesided', mfft=mfft)
+    # Get the time and frequency bins for the STFT
+    time_points = stft_cls.t(n_samples)
+    freq_bins = stft_cls.f
+    print("Size of expected time points:", time_points.size)
+    print("Size of expected frequency bins:", freq_bins.size)
+
+    # Full frequency array
+    f_full = np.fft.fftfreq(mfft, d=1.0 / fs)
+    # Generate the evolutionary PSD for each time window,  shape (n_freq, n_windows)
+    psd_evolutionary = np.array([psd_func(f_full, t) for t in time_points]).T
+
+    if myseeds is None:
+        myseeds = [None] * psd_evolutionary.shape[1]
+
+    # Generate a frequency series of size mfft for each time window, shape (n_windows, n_freq)
+    noise_samples = np.asarray(
+        [_generate_positive_freq_noise_from_psd(psd_evolutionary[:, t], myseed=myseeds[t]) 
+         for t in range(psd_evolutionary.shape[1])]).T
+    # Now convert to time domain using the inverse stft
+    noise_time = stft_cls.istft(np.sqrt(mfft * fs / 2.0) * noise_samples)
+
+    return noise_time

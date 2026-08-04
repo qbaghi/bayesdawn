@@ -300,9 +300,6 @@ class PSD(object):
         else:
             self.fmax = fmax
 
-        # Flexible interpolation of the estimated PSD
-        self.log_psd_fn = None
-
     def periodogram(self, y_fft, k2=None):
         """
         Simple periodogram with no windowing.
@@ -349,7 +346,8 @@ class PSD(object):
             the time series
 
         """
-        return np.exp(self.log_psd_fn(np.log(x)))
+        # Not implemented
+        raise NotImplementedError("PSD subclasses must implement psd_fn(x).")
 
     def calculate(self, arg):
         """
@@ -550,6 +548,140 @@ class MultivariatePSD(PSD):
 
         corr = ifft(self.calculate(2 * N), axis=0)
         return np.real(corr[0:N]) * self.fs / 2
+
+
+class EvolutionaryPSD(object):
+    """
+    Class to calculate the evolutionarypower spectral density of a locally stationary univariate
+    time series.
+    """
+
+    def __init__(self, n_data, fs, fmin=None, fmax=None):
+        """Instantiate the PSD estimator class.
+
+        Parameters
+        ----------
+        n_data : int
+            size of analyzed data
+        fs : float
+            sampling frequency of analyzed data
+        fmin : float
+            minimum frequency where to estimate the PSD
+        fmax : float
+            maximum frequency where to estimate the PSD
+        """
+
+        # Sampling frequency
+        self.fs = fs
+        # Size of the sample
+        self.n_data = n_data
+        self.f = np.fft.fftfreq(n_data) * fs
+        self.n = int((n_data - 1) / 2.0)
+
+        if fmin is None:
+            self.fmin = fs / n_data
+        else:
+            self.fmin = fmin
+        if fmax is None:
+            self.fmax = fs / 2
+        else:
+            self.fmax = fmax
+
+    def psd_fn(self, x, t):
+        """
+
+        Returns the value of the PSD estimate at frequency x and time t.
+
+        Parameters
+        ----------
+        x : array_like
+            frequency
+        t : array_like or float
+            time or array of times where to compute the PSD
+
+        Returns
+        -------
+        psd : ndarray
+            one-sided PSD values in A^2 / Hz, where A is the unit of
+            the time series
+
+        """
+        # Not implemented
+        raise NotImplementedError("PSD subclasses must implement psd_fn(x, t).")
+
+    def calculate(self, arg, t):
+        """
+
+        Calculate the power spectral density at an arbitrary frequency
+        and time.
+        Note that the PSD is calculated on the Fourier grid of size N, for both positive and
+        negative frequencies. Over the segment of size N, the PSD is assumed to be stationary.
+
+        Parameters
+        ----------
+        arg : ndarray or int
+            frequency array where to compute the PSD, or data size N.
+            If N is given, computes the PSD on the Fourier grid of size N,
+            for both positive and negative frequencies.
+        t : float
+            time where to compute the PSD
+
+        Returns
+        -------
+        spectr_sym : ndarray
+            one-sided power spectral density expressed in [Units / Hz]
+            WE DROPPEP THE FACTOR OF fs / 2!
+
+        """
+
+        if isinstance(arg, int):
+            n_data = arg
+            # Symmetrize the estimates
+            if n_data % 2 == 0:  # if n_data is even
+                # Compute PSD from f=0 to f = fs/2
+                if n_data == self.n_data:
+                    n = self.n
+                    f_tot = np.abs(np.concatenate(([self.f[1]], self.f[1 : n + 2])))
+                else:
+                    f = np.fft.fftfreq(n_data) * self.fs
+                    n = int((n_data - 1) / 2.0)
+                    f_tot = np.abs(np.concatenate(([f[1]], f[1 : n + 2])))
+
+                spectr = self.psd_fn(f_tot, t)
+                spectr_sym = np.concatenate(
+                    (spectr[0 : n + 1], spectr[1 : n + 2][::-1])
+                )
+
+            else:  # if n_data is odd
+                if n_data == self.n_data:
+                    n = self.n
+                    f_tot = np.abs(np.concatenate(([self.f[1]], self.f[1 : n + 1])))
+                else:
+                    f = np.fft.fftfreq(n_data) * self.fs
+                    n = int((n_data - 1) / 2.0)
+                    f_tot = np.abs(np.concatenate(([f[1]], f[1 : n + 1])))
+
+                spectr = self.psd_fn(f_tot, t)
+                spectr_sym = np.concatenate(
+                    (spectr[0 : n + 1], spectr[1 : n + 1][::-1])
+                )
+
+        elif isinstance(arg, np.ndarray):
+            f = arg[:]
+            spectr_sym = self.psd_fn(f, t)
+
+        else:
+            raise TypeError("Argument must be integer or ndarray")
+
+        return spectr_sym
+
+    def calculate_autocorr(self, n_data, t):
+        """
+        Compute the autocovariance function from the PSD.
+
+        """
+
+        return np.real(ifft(self.calculate(2 * n_data, t))[0:n_data]) * self.fs / 2
 
 
 # ==============================================================================

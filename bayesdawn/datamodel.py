@@ -14,6 +14,7 @@ import numpy as np
 from scipy import linalg
 import pyfftw
 from pyfftw.interfaces.numpy_fft import ifft
+
 from .algebra import matrixalgebra, fastoeplitz
 from .gaps import gapgenerator, operators
 from .noisegenerator import generate_noise_from_psd
@@ -217,6 +218,9 @@ class GaussianStationaryProcess(object):
                     batchable_segment_count += 1
                 else:
                     batchable = False
+                # Segment central time
+                tj = (indj[-1] - indj[0]) / 2.0 * self.psd_cls.fs
+                # Store the metadata for the segment
                 self.segment_meta.append(
                     {
                         "indices": indj,
@@ -226,6 +230,7 @@ class GaussianStationaryProcess(object):
                         "segment_size": int(self.na + self.nb + len(ind_misj)),
                         "n_mis": len(ind_misj),
                         "batchable": batchable,
+                        "t": tj,
                     }
                 )
 
@@ -381,70 +386,43 @@ class GaussianStationaryProcess(object):
 
         # If there is only one single channel
         if self.n_gaps > 0:
-            return self.draw_missing_data(y, draw=draw)
-        else:
-            return y
-
-    def draw_missing_data(self, y, draw=True):
-        """
-
-        Draw the missing data from their conditional distributions on the
-        observed data
-
-        Parameters
-        ----------
-        y : ndarray or list of ndarrays
-            masked data y = mask * x. If a list is given, draw as many
-            vectors as there are arrays in the list.
-        draw : bool
-            if True (default), the data vector is drawn from the conditional
-            distribution given the observed data. If False, the expectation of
-            the conditional distribution is returned (in that case the output
-            is deterministic, as it does not involved any random number
-            generation.)
-
-        Returns
-        -------
-        y_rec : array_like
-            realization of the full data vector conditionnally to the observed
-            data
-
-        """
-
-        if self.autocorr is None:
-            # print('recomputing offline elements')
-            self.compute_offline()
-        # If there is only one array
-        if isinstance(y, np.ndarray):
-            # Impute the missing data: estimation of missing residuals
-            y_mis_res = self.imputation(
-                y - self.y_mean, self.autocorr, self.s2, solve=self.solve, draw=draw
-            )
-            # Construct the full imputed data vector
-            # at observed value this is the same
-            y_rec = copy.deepcopy(y)
-            y_rec[self.ind_mis] = y_mis_res + self.y_mean[self.ind_mis]
-
-        elif isinstance(y, list):
-            y_mis_res = [
-                self.imputation(
-                    y[i] - self.y_mean[i],
-                    self.autocorr[i],
-                    self.s2[i],
-                    solve=self.solve[i],
-                    draw=draw,
+            if self.autocorr is None:
+                # print('recomputing offline elements')
+                self.compute_offline()
+            # If there is only one array
+            if isinstance(y, np.ndarray):
+                # Impute the missing data: estimation of missing residuals
+                y_mis_res = self.imputation(
+                    y - self.y_mean, self.autocorr, self.s2, solve=self.solve, draw=draw
                 )
-                for i in range(len(y))
-            ]
-            y_rec = copy.deepcopy(y)
+                # Construct the full imputed data vector
+                # at observed value this is the same
+                y_rec = copy.deepcopy(y)
+                y_rec[self.ind_mis] = y_mis_res + self.y_mean[self.ind_mis]
 
-            for i in range(len(y)):
-                y_rec[i][self.ind_mis] = y_mis_res[i] + self.y_mean[i][self.ind_mis]
+            elif isinstance(y, list):
+                y_mis_res = [
+                    self.imputation(
+                        y[i] - self.y_mean[i],
+                        self.autocorr[i],
+                        self.s2[i],
+                        solve=self.solve[i],
+                        draw=draw,
+                    )
+                    for i in range(len(y))
+                ]
+                y_rec = copy.deepcopy(y)
 
-        else:
-            raise ValueError("Unknown input type for y")
+                for i in range(len(y)):
+                    y_rec[i][self.ind_mis] = y_mis_res[i] + self.y_mean[i][self.ind_mis]
 
-        return y_rec
+            else:
+                raise ValueError("Unknown input type for y")
+
+            return y_rec
+
+        # If there is no gap, return the input data
+        return y
 
     def apply_coo_inv(self, z_o, s2, solve=None):
         """
@@ -769,6 +747,121 @@ class GaussianStationaryProcess(object):
             mu_mis_j = c_mo(linalg.solve(c_oo, yj[ind_obsj], assume_a="pos"))
 
         return mu_mis_j
+
+
+class GaussianLocallyStationaryProcess(GaussianStationaryProcess):
+    """
+    Implements the nearest-neighboor method for missing data imputation on
+    locally stationary Gaussian processes, where the PSD is allowed to vary
+    slowly with time. The PSD is assumed to be constant on each segment of the
+    time series, and the segment-level PSD is used to compute the conditional
+    distribution of the missing data given the observed data.
+    """
+
+    def compute_offline(self):
+        """
+        Performs all necessary offline computations that depend on PSD and
+        mean vector.
+        """
+
+        # Compute the autocovariance from the full PSD and restrict it to N_max
+        # points
+        self.autocorr = []
+        self.s2 = []
+        # For each segment middle time, compute the autocovariance and the PSD on 2*N_max points
+        for seg in self.segment_meta:
+            if not isinstance(self.psd_cls, list):
+                tj = seg.get("t", 0.0)
+                self.autocorr.append(
+                    self.psd_cls.calculate_autocorr(self.n, tj)[0 : self.n_max]
+                )
+                # Compute the spectrum on 2*N_max points
+                self.s2.append(self.psd_cls.calculate(2 * self.n_max, tj))
+            else:
+                self.autocorr.append(
+                    [
+                        psd.calculate_autocorr(self.n, tj)[0 : self.n_max]
+                        for psd in self.psd_cls
+                    ]
+                )
+                self.s2.append(
+                    [psd.calculate(2 * self.n_max, tj) for psd in self.psd_cls]
+                )
+
+    def imputation(self, y, r, s2, solve=None, draw=True):
+        """
+
+        Impute the missing data using a conditional draw.
+
+        Parameters
+        ----------
+        y : array_like
+            masked residuals (size n_data)
+        r : array_like
+            autocovariance function until lag N_max
+        s2 : array_like
+            values of the noise one-sided PSD calculated on a Fourier grid of size
+            2 N_max. WARNING: it used to be the noise spectrum S fs / 2
+            Now it is a list of PSDs, one for each time segment.
+        solve : linear operator
+            preconditionner
+        draw : bool, optional
+            if True (default), the missing data are drawn from their
+            conditional distribution. If False, their conditional expectation
+            is returned.
+
+
+        Returns
+        -------
+        y_mis : 1d numpy array
+            imputed missing value
+
+        """
+
+        if self.method == "nearest":
+            # =================================================================
+            # Gap per gap imputation
+            # =================================================================
+            y_mis = np.empty(len(self.ind_mis), dtype=y.dtype)
+            offset = 0
+            for j, seg in enumerate(self.segment_meta):
+                yj = y[seg["indices"]]
+                if self.n_max <= 2000:
+                    cj = linalg.toeplitz(r[j])
+                else:
+                    cj = None
+
+                if draw:
+                    out = self.single_imputation(
+                        yj,
+                        seg["mask"],
+                        cj,
+                        r[j],
+                        s2[j],
+                        ind_obsj=seg["ind_obs"],
+                        ind_misj=seg["ind_mis"],
+                        segment_size=seg["segment_size"],
+                    )
+                else:
+                    out = self.single_conditional_mean(
+                        yj,
+                        seg["mask"],
+                        cj,
+                        r[j],
+                        s2[j],
+                        ind_obsj=seg["ind_obs"],
+                        ind_misj=seg["ind_mis"],
+                        segment_size=seg["segment_size"],
+                    )
+
+                n_mis = seg["n_mis"]
+                y_mis[offset : offset + n_mis] = out
+                offset += n_mis
+
+        else:
+            NotImplementedError("The 'nearest' method is the only one implemented.")
+
+        return y_mis
 
 
 class MultivariateGaussianStationaryProcess(object):
