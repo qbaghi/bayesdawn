@@ -303,18 +303,21 @@ def test_generate_time_noise_from_multivariate_psd_matches_target_covariance():
 
 
 def test_generate_time_noise_from_evolutionary_psd_function_matches_target_power():
-    fs = 2.0
+    fs = 4.0
     n_samples = 2048
     win = np.hanning(256)
     hop = 128
 
+    # STFT object to compute time-frequency representation of generated noise.
+    stft_cls = ShortTimeFFT(win, hop, fs)
+
     # Generate time-domain samples from the evolutionary PSD function.
     time_samples = generate_time_noise_from_evolutionary_psd_function(
-        arbitrary_evolutionary_psd, win, hop, fs, n_samples, alpha=0.5
+        arbitrary_evolutionary_psd, win, hop, fs, n_samples, alpha=0.5, 
+        myseeds=range(100)
     )
 
     # Compute the STFT of the generated time samples.
-    stft_cls = ShortTimeFFT(win, hop, fs)
     stft_samples = stft_cls.stft(time_samples)
     scalogram = np.abs(stft_samples) ** 2 * 2 / (fs * np.sum(win**2))
 

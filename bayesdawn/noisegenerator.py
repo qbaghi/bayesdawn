@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # Author: Quentin Baghi 2026
 """Module to generate colored noise from a given PSD"""
+
 import warnings
 import numpy as np
 from pyfftw.interfaces.numpy_fft import irfft
@@ -30,7 +31,9 @@ def generate_positive_freq_noise_from_psd(psd, myseed=None):
             noise_tf_im[0] = 0.0
             noise_tf_real[0] = noise_tf_real[0] * np.sqrt(2.0)
             noise_tf = noise_tf_real + 1j * noise_tf_im
-            noise_tf = np.concatenate((noise_tf, np.array([psd_sqrt[-1] * np.random.normal(0, 1)])))
+            noise_tf = np.concatenate(
+                (noise_tf, np.array([psd_sqrt[-1] * np.random.normal(0, 1)]))
+            )
         else:
             psd_sqrt = np.sqrt(psd[:half_len])
             noise_tf_real = (
@@ -195,11 +198,9 @@ def overlap_add(segments, win, hop, n_data):
     p = np.arange(SFT.p_min, SFT.p_max(n_data))
 
     if len(p) != len(segments):
-        raise ValueError(
-            f"Expected {len(p)} segments, got {len(segments)}."
-        )
+        raise ValueError(f"Expected {len(p)} segments, got {len(segments)}.")
 
-    x = np.zeros(n_data + L + (segments.shape[0]-1) * hop)
+    x = np.zeros(n_data + L + (segments.shape[0] - 1) * hop)
     wsum = np.zeros_like(x)
 
     offset = L
@@ -207,21 +208,22 @@ def overlap_add(segments, win, hop, n_data):
     for seg, pi in zip(segments, p):
         start = offset + pi * hop
 
-        x[start:start+L] += seg * win
-        wsum[start:start+L] += win**2
+        x[start : start + L] += seg * win
+        wsum[start : start + L] += win**2
 
     # Normalize where windows overlap
     mask = wsum > 0
-    x[mask] /= np.sqrt(wsum[mask])# Normalization to preserve the variance
+    x[mask] /= np.sqrt(wsum[mask])  # Normalization to preserve the variance
 
     # Remove padding
-    x = x[offset:offset+n_data]
+    x = x[offset : offset + n_data]
 
     return x
 
 
-def generate_time_noise_from_evolutionary_psd_function(psd_func, win, hop, fs, n_samples, 
-                                                       myseeds=None, **kwargs):
+def generate_time_noise_from_evolutionary_psd_function(
+    psd_func, win, hop, fs, n_samples, myseeds=None, **kwargs
+):
     """
     Generate a Gaussian random field in the time domain assuming a locally stationary
     process for each time window.
@@ -229,20 +231,20 @@ def generate_time_noise_from_evolutionary_psd_function(psd_func, win, hop, fs, n
     Parameters
     ----------
     psd_func : callable
-        Function that takes frequency and time as input and returns the one-sided PSD at that 
-        frequency and time. It can also return a 2d array of size (n_freq, n_chan, n_chan) for 
+        Function that takes frequency and time as input and returns the one-sided PSD at that
+        frequency and time. It can also return a 2d array of size (n_freq, n_chan, n_chan) for
         multivariate processes.
     win : ndarray
         Tapper window.
     hop : int
-        Hop size for the ShortTimeFFT. 
+        Hop size for the ShortTimeFFT.
     fs : float
         Sampling frequency.
     n_samples : int
         Total number of samples to generate.
     myseeds : _type_, optional
         Array of Seeds for the random number generator, by default None.
-    
+
     Returns
     -------
     noise_time : ndarray
@@ -252,13 +254,15 @@ def generate_time_noise_from_evolutionary_psd_function(psd_func, win, hop, fs, n
 
     # Instantiate the ShortTimeFFT class to get the time and frequency bins
     mfft = 2 * win.size  # Use twice the window size to avoid periodicity issues
-    stft_cls = ShortTimeFFT(win, hop, fs, fft_mode='onesided', mfft=mfft)
+    stft_cls = ShortTimeFFT(win, hop, fs, fft_mode="onesided", mfft=mfft)
     # Increase the desired signal length to avoid edge effects
     pad = win.size
     n_ext = n_samples + 2 * pad
 
     # Get the time and frequency bins for the STFT
-    time_points = stft_cls.t(n_ext) - pad / fs / 2.0 # Adjust time points to account for padding
+    time_points = (
+        stft_cls.t(n_ext) - pad / fs / 2.0
+    )  # Adjust time points to account for padding
 
     # Full frequency array
     f_full = np.fft.fftfreq(mfft, d=1.0 / fs)
@@ -269,8 +273,13 @@ def generate_time_noise_from_evolutionary_psd_function(psd_func, win, hop, fs, n
         myseeds = [None] * psd_evolutionary.shape[1]
 
     noise_samples = np.asarray(
-        [generate_noise_from_psd(psd_evolutionary[:, t], fs, myseed=myseeds[t])[0:win.size]
-         for t in range(psd_evolutionary.shape[1])])
+        [
+            generate_noise_from_psd(psd_evolutionary[:, t], fs, myseed=myseeds[t])[
+                0 : win.size
+            ]
+            for t in range(psd_evolutionary.shape[1])
+        ]
+    )
     noise_time = overlap_add(noise_samples, win, hop, n_ext)
     # Crop the time series by one hop on each side to avoid edge effects
     noise_time = noise_time[pad:-pad]
