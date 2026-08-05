@@ -2,8 +2,9 @@ import os
 from pathlib import Path
 
 import numpy as np
-
-from bayesdawn.noisegenerator import generate_freq_noise_from_psd, generate_noise_from_psd
+from scipy.signal import ShortTimeFFT
+from bayesdawn.noisegenerator import (generate_freq_noise_from_psd, generate_noise_from_psd,
+                                      generate_time_noise_from_evolutionary_psd_function)
 
 
 def _plot_enabled():
@@ -183,6 +184,14 @@ def arbitrary_multivariate_psd(freq):
 
     return psd
 
+def modulation_function(time, alpha=0.5):
+    """A simple modulation function that varies with time."""
+    return 1 + alpha * np.sin(2 * np.pi * time / 700.0)
+
+def arbitrary_evolutionary_psd(freq, time, alpha=0.5):
+    """A simple evolutionary PSD that varies with time."""
+    modulation = modulation_function(time, alpha)
+    return arbitrary_univariate_psd(freq) * modulation**2
 
 def test_generate_freq_noise_from_univariate_psd_matches_target_power():
     fs = 2.0
@@ -291,3 +300,34 @@ def test_generate_time_noise_from_multivariate_psd_matches_target_covariance():
     if _plot_enabled():
         empirical_spec = empirical_cov / scale
         _save_multivariate_time_domain_plot(freq[inds], psd[inds], empirical_spec)
+
+
+def test_generate_time_noise_from_evolutionary_psd_function_matches_target_power():
+    fs = 2.0
+    n_samples = 2048
+    win = np.hanning(256)
+    hop = 128
+
+    # Generate time-domain samples from the evolutionary PSD function.
+    time_samples = generate_time_noise_from_evolutionary_psd_function(
+        arbitrary_evolutionary_psd, win, hop, fs, n_samples, alpha=0.5
+    )
+
+    # Compute the STFT of the generated time samples.
+    stft_cls = ShortTimeFFT(win, hop, fs)
+    stft_samples = stft_cls.stft(time_samples)
+    scalogram = np.abs(stft_samples) ** 2 * 2 / (fs * np.sum(win**2))
+
+    # True time points and frequency bins for the STFT.
+    time_points = stft_cls.t(n_samples)
+    freq_bins = stft_cls.f
+    # Compute the expected evolutionary PSD at each time point and frequency bin.
+    psd_evolutionary = arbitrary_evolutionary_psd(freq_bins[:, np.newaxis], 
+                                                  time_points[np.newaxis, :], alpha=0.5)
+    # Chi2 statistics
+    chi2 = 2 * scalogram / psd_evolutionary
+
+    # The mean of the chi2 statistics should be close to 2 for a good match.
+    mean_chi2 = np.mean(chi2)
+    np.testing.assert_allclose(mean_chi2, 2.0, atol=0.1)
+

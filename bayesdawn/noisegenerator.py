@@ -7,7 +7,7 @@ from pyfftw.interfaces.numpy_fft import irfft
 from scipy.signal import ShortTimeFFT
 
 
-def _generate_positive_freq_noise_from_psd(psd, myseed=None):
+def generate_positive_freq_noise_from_psd(psd, myseed=None):
     """Generate the nonnegative-frequency half-spectrum for a real process."""
 
     n_psd = len(psd)
@@ -120,7 +120,7 @@ def generate_freq_noise_from_psd(psd, fs, myseed=None):
     """
 
     n_psd = len(psd)
-    noise_tf = _generate_positive_freq_noise_from_psd(psd, myseed=myseed)
+    noise_tf = generate_positive_freq_noise_from_psd(psd, myseed=myseed)
 
     if psd.ndim == 1:
         if n_psd % 2 == 0:
@@ -164,12 +164,64 @@ def generate_noise_from_psd(psd, fs, myseed=None):
         time sample of the colored noise (size N)
     """
 
-    noise_tf = _generate_positive_freq_noise_from_psd(psd, myseed=myseed)
+    noise_tf = generate_positive_freq_noise_from_psd(psd, myseed=myseed)
     return irfft(np.sqrt(len(psd) * fs / 2.0) * noise_tf, n=len(psd), axis=0)
 
 
-def generate_time_noise_from_evolutionary_psd_function(psd_func, win, hop, fs, n_samples,
-                                                       myseeds=None):
+def overlap_add(segments, win, hop, n_data):
+    """
+    Reconstruct a signal from overlapping time-domain segments.
+
+    Parameters
+    ----------
+    segments : ndarray, shape (n_frames, L)
+        Time-domain segments.
+    win : ndarray, shape (L,)
+        Synthesis window.
+    hop : int
+        Hop size.
+    n_data : int
+        Desired output length.
+
+    Returns
+    -------
+    x : ndarray, shape (n_data,)
+        Reconstructed signal.
+    """
+    L = len(win)
+
+    # Use SciPy's own frame indexing
+    SFT = ShortTimeFFT(win, hop=hop, fs=1.0)
+    p = np.arange(SFT.p_min, SFT.p_max(n_data))
+
+    if len(p) != len(segments):
+        raise ValueError(
+            f"Expected {len(p)} segments, got {len(segments)}."
+        )
+
+    x = np.zeros(n_data + L + (segments.shape[0]-1) * hop)
+    wsum = np.zeros_like(x)
+
+    offset = L
+
+    for seg, pi in zip(segments, p):
+        start = offset + pi * hop
+
+        x[start:start+L] += seg * win
+        wsum[start:start+L] += win**2
+
+    # Normalize where windows overlap
+    mask = wsum > 0
+    x[mask] /= np.sqrt(wsum[mask])# Normalization to preserve the variance
+
+    # Remove padding
+    x = x[offset:offset+n_data]
+
+    return x
+
+
+def generate_time_noise_from_evolutionary_psd_function(psd_func, win, hop, fs, n_samples, 
+                                                       myseeds=None, **kwargs):
     """
     Generate a Gaussian random field in the time domain assuming a locally stationary
     process for each time window.
@@ -201,25 +253,25 @@ def generate_time_noise_from_evolutionary_psd_function(psd_func, win, hop, fs, n
     # Instantiate the ShortTimeFFT class to get the time and frequency bins
     mfft = 2 * win.size  # Use twice the window size to avoid periodicity issues
     stft_cls = ShortTimeFFT(win, hop, fs, fft_mode='onesided', mfft=mfft)
+    # Increase the desired signal length to avoid edge effects
+    pad = win.size
+    n_ext = n_samples + 2 * pad
+
     # Get the time and frequency bins for the STFT
-    time_points = stft_cls.t(n_samples)
-    freq_bins = stft_cls.f
-    print("Size of expected time points:", time_points.size)
-    print("Size of expected frequency bins:", freq_bins.size)
+    time_points = stft_cls.t(n_ext) - pad / fs / 2.0 # Adjust time points to account for padding
 
     # Full frequency array
     f_full = np.fft.fftfreq(mfft, d=1.0 / fs)
     # Generate the evolutionary PSD for each time window,  shape (n_freq, n_windows)
-    psd_evolutionary = np.array([psd_func(f_full, t) for t in time_points]).T
+    psd_evolutionary = np.array([psd_func(f_full, t, **kwargs) for t in time_points]).T
 
     if myseeds is None:
         myseeds = [None] * psd_evolutionary.shape[1]
 
-    # Generate a frequency series of size mfft for each time window, shape (n_windows, n_freq)
     noise_samples = np.asarray(
-        [_generate_positive_freq_noise_from_psd(psd_evolutionary[:, t], myseed=myseeds[t]) 
-         for t in range(psd_evolutionary.shape[1])]).T
-    # Now convert to time domain using the inverse stft
-    noise_time = stft_cls.istft(np.sqrt(mfft * fs / 2.0) * noise_samples)
-
+        [generate_noise_from_psd(psd_evolutionary[:, t], fs, myseed=myseeds[t])[0:win.size]
+         for t in range(psd_evolutionary.shape[1])])
+    noise_time = overlap_add(noise_samples, win, hop, n_ext)
+    # Crop the time series by one hop on each side to avoid edge effects
+    noise_time = noise_time[pad:-pad]
     return noise_time
