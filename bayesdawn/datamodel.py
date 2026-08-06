@@ -244,6 +244,8 @@ class GaussianStationaryProcess(object):
         self.autocorr = None
         # Power spectral density computed on a frequency grid of size 2n
         self.s2 = None
+        # Cached dense covariance blocks used by nearest-neighbor local solvers
+        self._segment_cov_cache = None
         # Preconditionner for PCG or tapered methods
         self.solve = None
         # Inverted matrix for woodbury method
@@ -263,6 +265,7 @@ class GaussianStationaryProcess(object):
         """
 
         self.psd_cls = copy.deepcopy(psd_cls)
+        self._segment_cov_cache = None
 
     def update_mean(self, y_mean):
         """
@@ -293,6 +296,18 @@ class GaussianStationaryProcess(object):
                 psd.calculate_autocorr(self.n)[0 : self.n_max] for psd in self.psd_cls
             ]
             self.s2 = [psd.calculate(2 * self.n_max) for psd in self.psd_cls]
+
+        if (
+            self.method == "nearest"
+            and self.n_max <= 2000
+            and self.segment_meta is not None
+        ):
+            if not isinstance(self.psd_cls, list):
+                self._segment_cov_cache = linalg.toeplitz(self.autocorr)
+            else:
+                self._segment_cov_cache = None
+        else:
+            self._segment_cov_cache = None
 
         if (self.method == "PCG") | (self.method == "tapered"):
             self.compute_preconditioner()
@@ -528,7 +543,9 @@ class GaussianStationaryProcess(object):
             # Gap per gap imputation
             # =================================================================
             if self.n_max <= 2000:
-                c = linalg.toeplitz(r)
+                c = self._segment_cov_cache
+                if c is None:
+                    c = linalg.toeplitz(r)
             else:
                 c = None
 
@@ -768,25 +785,30 @@ class GaussianLocallyStationaryProcess(GaussianStationaryProcess):
         # points
         self.autocorr = []
         self.s2 = []
+        self._segment_cov_cache = (
+            [] if self.n_max <= 2000 and self.segment_meta is not None else None
+        )
         # For each segment middle time, compute the autocovariance and the PSD on 2*N_max points
         for seg in self.segment_meta:
             if not isinstance(self.psd_cls, list):
                 tj = seg.get("t", 0.0)
-                self.autocorr.append(
-                    self.psd_cls.calculate_autocorr(self.n, tj)[0 : self.n_max]
-                )
+                rj = self.psd_cls.calculate_autocorr(self.n, tj)[0 : self.n_max]
+                self.autocorr.append(rj)
                 # Compute the spectrum on 2*N_max points
                 self.s2.append(self.psd_cls.calculate(2 * self.n_max, tj))
+                if self._segment_cov_cache is not None:
+                    self._segment_cov_cache.append(linalg.toeplitz(rj))
             else:
-                self.autocorr.append(
-                    [
-                        psd.calculate_autocorr(self.n, tj)[0 : self.n_max]
-                        for psd in self.psd_cls
-                    ]
-                )
+                rj_list = [
+                    psd.calculate_autocorr(self.n, tj)[0 : self.n_max]
+                    for psd in self.psd_cls
+                ]
+                self.autocorr.append(rj_list)
                 self.s2.append(
                     [psd.calculate(2 * self.n_max, tj) for psd in self.psd_cls]
                 )
+                # For list-based PSD providers, keep this unset to avoid ambiguous cache format.
+                self._segment_cov_cache = None
 
     def imputation(self, y, r, s2, solve=None, draw=True):
         """
@@ -827,7 +849,13 @@ class GaussianLocallyStationaryProcess(GaussianStationaryProcess):
             for j, seg in enumerate(self.segment_meta):
                 yj = y[seg["indices"]]
                 if self.n_max <= 2000:
-                    cj = linalg.toeplitz(r[j])
+                    cj = (
+                        None
+                        if self._segment_cov_cache is None
+                        else self._segment_cov_cache[j]
+                    )
+                    if cj is None:
+                        cj = linalg.toeplitz(r[j])
                 else:
                     cj = None
 
@@ -988,6 +1016,7 @@ class MultivariateGaussianStationaryProcess(object):
         # Offline caches for multivariate covariance model
         self.crosscorr = None
         self.s2_matrix = None
+        self._segment_cov_cache = None
         self.solve = None
         self._cov_block_cache = {}
 
@@ -1039,6 +1068,7 @@ class MultivariateGaussianStationaryProcess(object):
         self.psd_cls = copy.deepcopy(psd_cls)
         self.crosscorr = None
         self.s2_matrix = None
+        self._segment_cov_cache = None
         self.solve = None
         self._cov_block_cache = {}
 
@@ -1113,6 +1143,13 @@ class MultivariateGaussianStationaryProcess(object):
 
         # Invalidate cached covariance blocks whenever PSD-derived quantities change.
         self._cov_block_cache = {}
+        if self.segment_meta is not None:
+            self._segment_cov_cache = [
+                self._build_segment_block_toeplitz(len(seg["indices"]))
+                for seg in self.segment_meta
+            ]
+        else:
+            self._segment_cov_cache = None
 
     def compute_preconditioner(self):
         """
@@ -1179,9 +1216,12 @@ class MultivariateGaussianStationaryProcess(object):
 
         y_mis = np.empty((len(self.ind_mis_t), self.n_chan), dtype=y.dtype)
         offset = 0
-        for seg in self.segment_meta:
+        for j, seg in enumerate(self.segment_meta):
             yj = y[seg["indices"], :]
-            c_seg = self._build_segment_block_toeplitz(yj.shape[0])
+            if self._segment_cov_cache is None:
+                c_seg = self._build_segment_block_toeplitz(yj.shape[0])
+            else:
+                c_seg = self._segment_cov_cache[j]
             if draw:
                 out = self.single_imputation(
                     yj,
@@ -1374,3 +1414,167 @@ class MultivariateGaussianStationaryProcess(object):
         mu_mis_vec = c_mo.dot(rhs)
 
         return self._reshape_channel_major_missing(mu_mis_vec, len(ind_misj))
+
+
+class MultivariateGaussianLocallyStationaryProcess(
+    MultivariateGaussianStationaryProcess
+):
+    """
+    Multivariate extension of locally stationary Gaussian-process imputation.
+
+    This class mirrors GaussianLocallyStationaryProcess and reuses the
+    multivariate conditional kernels from MultivariateGaussianStationaryProcess,
+    while allowing segment-dependent PSD/CSD matrices S(f, t).
+    """
+
+    def compute_offline(self):
+        """
+        Compute segment-wise cross-correlations and PSD/CSD matrices.
+        """
+
+        if self.method != "nearest":
+            raise NotImplementedError(
+                "Only method='nearest' is currently implemented for "
+                "MultivariateGaussianLocallyStationaryProcess."
+            )
+
+        if not self.shared_mask:
+            raise NotImplementedError(
+                "Only shared_mask=True is currently implemented for "
+                "MultivariateGaussianLocallyStationaryProcess."
+            )
+
+        self.crosscorr = []
+        self.s2_matrix = []
+        self._segment_cov_cache = [] if self.segment_meta is not None else None
+
+        for seg in self.segment_meta:
+            tj = (seg["indices"][-1] - seg["indices"][0]) / 2.0 * self.psd_cls.fs
+
+            if hasattr(self.psd_cls, "calculate"):
+                s2_j = np.asarray(self.psd_cls.calculate(2 * self.n_max, tj))
+            elif callable(self.psd_cls):
+                f = np.fft.fftfreq(2 * self.n_max) * self.psd_cls.fs
+                s2_j = np.asarray(self.psd_cls(f, tj))
+            else:
+                raise ValueError(
+                    "psd_cls must provide a calculate method or be a callable "
+                    "returning a PSD-CSD matrix."
+                )
+
+            if s2_j.ndim != 3:
+                raise ValueError(
+                    "Multivariate PSD must have shape (n_freq, n_chan, n_chan)"
+                )
+            if s2_j.shape[1] != self.n_chan or s2_j.shape[2] != self.n_chan:
+                raise ValueError(
+                    "PSD-CSD matrix channel dimensions must match y_mean second dimension"
+                )
+            self.s2_matrix.append(s2_j)
+
+            if hasattr(self.psd_cls, "calculate_autocorr"):
+                crosscorr_j = np.asarray(self.psd_cls.calculate_autocorr(self.n, tj))
+                if crosscorr_j.ndim != 3:
+                    raise ValueError(
+                        "calculate_autocorr must return a 3D array for multivariate mode"
+                    )
+                if (
+                    crosscorr_j.shape[0] == self.n_chan
+                    and crosscorr_j.shape[1] == self.n_chan
+                ):
+                    crosscorr_j = crosscorr_j[:, :, 0 : self.n_max]
+                elif (
+                    crosscorr_j.shape[1] == self.n_chan
+                    and crosscorr_j.shape[2] == self.n_chan
+                ):
+                    crosscorr_j = np.transpose(crosscorr_j[0 : self.n_max], (1, 2, 0))
+                else:
+                    raise ValueError(
+                        "Unexpected autocorrelation shape for multivariate mode"
+                    )
+            else:
+                corr_j = ifft(s2_j, axis=0)
+                crosscorr_j = np.real(np.transpose(corr_j[0 : self.n_max], (1, 2, 0)))
+
+            self.crosscorr.append(crosscorr_j)
+
+            if self._segment_cov_cache is not None:
+                self._segment_cov_cache.append(
+                    self._build_segment_block_toeplitz_from_crosscorr(
+                        crosscorr_j, len(seg["indices"])
+                    )
+                )
+
+        self._cov_block_cache = {}
+
+    @staticmethod
+    def _build_segment_block_toeplitz_from_crosscorr(crosscorr_seg, segment_length):
+        """Build one channel-major block Toeplitz covariance from local crosscorr."""
+
+        if segment_length > crosscorr_seg.shape[2]:
+            raise ValueError(
+                "segment length exceeds available autocorrelation lag range"
+            )
+
+        n_chan = crosscorr_seg.shape[0]
+        blocks = [
+            [
+                linalg.toeplitz(crosscorr_seg[i, j, 0:segment_length])
+                for j in range(n_chan)
+            ]
+            for i in range(n_chan)
+        ]
+        return np.block(blocks)
+
+    def imputation(self, y, r, s2, solve=None, draw=True):
+        """
+        Multivariate locally-stationary conditional imputation core.
+
+        Here, ``r`` and ``s2`` are lists indexed by segment.
+        """
+
+        if self.method != "nearest":
+            raise NotImplementedError(
+                "Only method='nearest' is currently implemented for multivariate mode."
+            )
+
+        y_mis = np.empty((len(self.ind_mis_t), self.n_chan), dtype=y.dtype)
+        offset = 0
+
+        for j, seg in enumerate(self.segment_meta):
+            yj = y[seg["indices"], :]
+            if self._segment_cov_cache is None:
+                c_seg = self._build_segment_block_toeplitz_from_crosscorr(
+                    r[j], yj.shape[0]
+                )
+            else:
+                c_seg = self._segment_cov_cache[j]
+
+            if draw:
+                out = self.single_imputation(
+                    yj,
+                    seg["mask"],
+                    c=c_seg,
+                    r=r[j],
+                    psd_2n=s2[j],
+                    ind_obsj=seg["ind_obs"],
+                    ind_misj=seg["ind_mis"],
+                    segment_size=seg["segment_size"],
+                )
+            else:
+                out = self.single_conditional_mean(
+                    yj,
+                    seg["mask"],
+                    c=c_seg,
+                    r=r[j],
+                    psd_2n=s2[j],
+                    ind_obsj=seg["ind_obs"],
+                    ind_misj=seg["ind_mis"],
+                    segment_size=seg["segment_size"],
+                )
+
+            n_mis = seg["n_mis"]
+            y_mis[offset : offset + n_mis, :] = out
+            offset += n_mis
+
+        return y_mis
